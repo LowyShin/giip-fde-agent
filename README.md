@@ -34,7 +34,7 @@ Gemini API를 사용하기 위해 API Key 설정이 필요합니다.
 .agent/
 ├── roles/          # 각 에이전트(Developer, Tester 등)의 페르소나와 책임 정의
 ├── dispatch/       # 태스크 정의 파일 (TASK_YYYYMMDD-ID.md)
-├── scripts/        # 시스템 운영을 위한 PowerShell 스크립트 도구
+├── scripts/        # [시스템 운영을 위한 PowerShell 스크립트 도구](./.agent/scripts/README.md)
 ├── work_history/   # 작업 이력 기록 (Rule compliance)
 └── README.md       # 시스템 상세 가이드 (영문)
 ```

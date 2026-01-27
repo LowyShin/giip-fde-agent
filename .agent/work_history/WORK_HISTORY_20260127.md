@@ -18,3 +18,5 @@
 - 20260127 13:45:30: [Antigravity] 모든 스크립트 내 절대 경로를 상대 경로 및 환경 변수로 변환 완료.
 - 20260127 13:48:12: [Antigravity] README.md 에 설치 요구사항 및 API Key 설정 가이드 추가 작업 시작.
 - 20260127 13:51:30: [Antigravity] README.md 사전 준비 사항 및 API Key 상세 설정 가이드 보완 완료.
+- 20260127 13:54:12: [Antigravity] .agent/scripts/README.md 작성 및 루트 README.md 링크 작업 시작.
+- 20260127 13:57:45: [Antigravity] 개별 스크립트 상세 가이드 문서 작성 및 루트 README 연결 완료.
