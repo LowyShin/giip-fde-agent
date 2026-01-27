@@ -2,6 +2,30 @@
 
 이 레포지토리는 GIIP AI Agent 시스템의 설정, 역할 정의 및 워크플로우를 관리하기 위한 공간입니다. 오케스트레이터(Orchestrator)와 다양한 전문 에이전트들이 협업하여 복잡한 개발 태스크를 자동으로 수행할 수 있도록 설계되었습니다.
 
+## 🛠️ 사전 준비 사항 (Prerequisites)
+
+이 시스템을 사용하기 위해 다음 도구들이 설치되어 있어야 합니다:
+
+1. **PowerShell 7+**: [설치 가이드](https://learn.microsoft.com/ko-kr/powershell/scripting/install/installing-powershell-on-windows)
+2. **Node.js**: [공식 사이트](https://nodejs.org/)에서 LTS 버전을 권장합니다.
+3. **Gemini CLI**: 터미널에서 아래 명령어를 실행하여 전역 설치하십시오.
+   ```powershell
+   npm install -g @google/gemini-cli
+   ```
+
+## ⚙️ 초기 설정 (Setup)
+
+### 1. API Key 설정
+Gemini API를 사용하기 위해 API Key 설정이 필요합니다.
+(수동 시작만을 사용할 경우에는 필요 없습니다.)
+
+1. [Google AI Studio](https://aistudio.google.com/app/apikey)에서 API Key를 발급받습니다.
+2. 프로젝트 루트의 `.agent/settings.json.sample` 파일을 동일한 폴더에 `settings.json`으로 복사합니다.
+3. 복사한 `settings.json` 파일을 열고 `"YOUR_GEMINI_API_KEY_HERE"` 부분을 발급받은 실제 키로 교체합니다.
+
+> [!NOTE]
+> `launch_subsession.ps1` 스크립트는 프로젝트 내의 `.agent/settings.json`을 가장 먼저 확인하며, 없을 경우 사용자의 홈 디렉터리(`~/.gemini/settings.json`)를 참조합니다.
+
 ## 📁 디렉토리 구조
 
 ```text

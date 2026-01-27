@@ -14,3 +14,7 @@
 - 20260127 13:32:10: [Antigravity] README.md 세션 시작 가이드 및 수동 핸드오프 방법 추가 완료.
 - 20260127 13:35:12: [Antigravity] 5분 간격 자동 실행 스크립트 작성 및 README.md 업데이트 작업 시작.
 - 20260127 13:38:44: [Antigravity] auto_agent.bat 생성 및 README.md 가이드 보완 완료.
+- 20260127 13:42:15: [Antigravity] API Key 설정 샘플 파일 추가 및 로딩 로직 일반화 완료.
+- 20260127 13:45:30: [Antigravity] 모든 스크립트 내 절대 경로를 상대 경로 및 환경 변수로 변환 완료.
+- 20260127 13:48:12: [Antigravity] README.md 에 설치 요구사항 및 API Key 설정 가이드 추가 작업 시작.
+- 20260127 13:51:30: [Antigravity] README.md 사전 준비 사항 및 API Key 상세 설정 가이드 보완 완료.

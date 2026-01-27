@@ -89,14 +89,21 @@ Write-Host "Launching Gemini CLI for Role: $Role, Task: $(Split-Path $targetPath
 
 $geminiExe = "gemini"
 if (-not (Get-Command $geminiExe -ErrorAction SilentlyContinue)) {
-    $candidatePaths = @("C:\Program Files\nodejs\gemini.cmd", "$env:AppData\npm\gemini.cmd")
+    $candidatePaths = @("$env:ProgramFiles\nodejs\gemini.cmd", "$env:AppData\npm\gemini.cmd")
     foreach ($path in $candidatePaths) { if (Test-Path $path) { $geminiExe = $path; break } }
 }
 
 # Ensure API Key is available in the environment for this session
 if (-not $env:GEMINI_API_KEY) {
-    $settingsPath = "C:\Users\lowys\.gemini\settings.json"
-    if (Test-Path $settingsPath) {
+    # 1. Check project-local .agent/settings.json
+    $localSettingsPath = Join-Path $rootDir ".agent\settings.json"
+    
+    # 2. Check global settings if local not found
+    $globalSettingsPath = Join-Path $HOME ".gemini\settings.json"
+    
+    $settingsPath = if (Test-Path $localSettingsPath) { $localSettingsPath } elseif (Test-Path $globalSettingsPath) { $globalSettingsPath } else { $null }
+
+    if ($settingsPath) {
         $settings = Get-Content $settingsPath -Raw | ConvertFrom-Json
         if ($settings.api_key) { $env:GEMINI_API_KEY = $settings.api_key }
     }
