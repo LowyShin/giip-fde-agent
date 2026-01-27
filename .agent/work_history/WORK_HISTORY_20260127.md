@@ -20,3 +20,7 @@
 - 20260127 13:51:30: [Antigravity] README.md 사전 준비 사항 및 API Key 상세 설정 가이드 보완 완료.
 - 20260127 13:54:12: [Antigravity] .agent/scripts/README.md 작성 및 루트 README.md 링크 작업 시작.
 - 20260127 13:57:45: [Antigravity] 개별 스크립트 상세 가이드 문서 작성 및 루트 README 연결 완료.
+- 20260127 14:21:06: [Antigravity] SEO 및 GEO 최적화를 위한 README.md 및 프로젝트 텍스트 조정 작업 시작.
+- 20260127 14:25:00: [Antigravity] README.md 최적화 완료: SEO 키워드 강화, GitHub 배지 추가, 한국어 지원(GEO) 강조.
+- 20260127 14:28:00: [Antigravity] GIIP 공식 홈페이지 안내 섹션 추가 완료 (전문가 및 AI 협업 모델 강조).
+- 20260127 15:00:00: [Antigravity] SEO 및 GEO 최적화 고도화 완료. H1/H2 헤더 영문 키워드 추가, Core Features 섹션 신설, 한국 개발자 생태계 중심의 문구 개선.
