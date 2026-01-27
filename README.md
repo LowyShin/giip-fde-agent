@@ -19,6 +19,8 @@
 Gemini API를 사용하기 위해 API Key 설정이 필요합니다.
 (수동 시작만을 사용할 경우에는 필요 없습니다.)
 
+우선 antigravity 툴에서 에이전트 스크립트를 분석하여 setting.json 샘플 파일을 만들어달라고 요청하면 파일이 만들어집니다.
+
 1. [Google AI Studio](https://aistudio.google.com/app/apikey)에서 API Key를 발급받습니다.
 2. 프로젝트 루트의 `.agent/settings.json.sample` 파일을 동일한 폴더에 `settings.json`으로 복사합니다.
 3. 복사한 `settings.json` 파일을 열고 `"YOUR_GEMINI_API_KEY_HERE"` 부분을 발급받은 실제 키로 교체합니다.
@@ -90,4 +92,5 @@ graph TD
 1.  **오케스트레이터**가 요청을 분석하고 `dispatch` 디렉토리에 태스크를 생성합니다.
 2.  사용자 또는 시스템이 `launch_subsession.ps1`을 실행합니다.
 3.  **서브 에이전트**(예: Developer, Tester)가 작업을 수행하고 상태를 `Completed`로 업데이트합니다.
+
 4.  **오케스트레이터**가 최종 결과물을 검증합니다.
