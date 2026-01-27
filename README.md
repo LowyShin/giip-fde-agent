@@ -22,6 +22,7 @@
 - **Environment Stability**: Electron 베이스의 PowerShell 환경에서 완벽하게 작동.
 - **Gemini API Native**: 최신 Google Gemini 모델을 활용한 고성능 추론 및 코드 생성.
 - **Korean-First Workflow**: 한국어 기반의 문서화 및 에이전트 상호작용 최적화.
+- **React Best Practices**: Vercel의 React Best Practices Rules 적용으로 최적화된 Frontend 코드 생성.
 
 이 레포지토리는 GIIP AI Agent 시스템의 설정, 역할 정의 및 워크플로우를 관리하기 위한 공간입니다. 
 
@@ -139,6 +140,13 @@ graph TD
 복잡한 관리는 전문가에게 맡기고 비즈니스 본질에 집중하세요.
 
 👉 [GIIP 공식 홈페이지 방문하기](https://giip.littleworld.net/)
+
+## 🙏 Special Thanks
+
+이 프로젝트에 도움을 주신 분들께 감사드립니다:
+
+- [Roy Koo](https://www.linkedin.com/in/roykoo99/)
+- [코드깎는노인](https://www.youtube.com/@%EC%BD%94%EB%93%9C%EA%B9%8E%EB%8A%94%EB%85%B8%EC%9D%B8)
 
 
 
