@@ -7,15 +7,21 @@
 
 **GIIP Agent System**은 복잡한 소프트웨어 개발 및 작업 자동화를 위해 설계된 **자율형 멀티 에이전트 프레임워크(Autonomous Multi-Agent Framework)**입니다. Google Gemini API를 활용하여 오케스트레이터(Orchestrator)와 전문 서브 에이전트들이 협업하는 최첨단 AI 워크플로우를 제공합니다.
 
-이 프레임워크는 한국 개발자 생태계(Korean Developer Ecosystem)에 최적화되어 있으며, 모든 프로세스와 문서화는 **Korean-First** 원칙을 따릅니다.
+이 프레임워크는 **Claude Code의 skill**이나 **OpenCode**와 유사한 **롤 베이스 서브 에이전트(Role-based Sub-Agents)** 개념을 채택하여, 복잡한 태스크를 정교하게 분담하고 해결합니다. 
+
+특히 **Antigravity Tool**에 최적화되어 설계되었으며, 별도의 서드파티 툴 설치 없이 기존의 개발 툴과 PowerShell 환경만으로 즉시 구동됩니다. Electron 베이스의 터미널 환경에서도 뛰어난 안정성과 호환성을 제공합니다.
+
+한국 개발자 생태계(Korean Developer Ecosystem)에 최적화되어 있으며, 모든 프로세스와 문서화는 **Korean-First** 원칙을 따릅니다.
 
 ## ✨ 핵심 기능 (Key Features)
 
-- **Multi-Agent Collaboration**: 오케스트레이터 기반의 에이전트 협업 시스템.
+- **Multi-Agent Collaboration**: Claude Code/OpenCode 스타일의 롤 기반 협업.
 - **Autonomous Development**: 요구사항 분석부터 구현, 검증까지 자율적인 태스크 수행.
+- **Antigravity Optimized**: Antigravity 툴과의 완벽한 싱크 및 최적화된 워크플로우.
+- **Zero-Tool Setup**: 추가적인 툴 설치 없이 기존 PowerShell 환경에서 즉시 사용 가능.
+- **Environment Stability**: Electron 베이스의 PowerShell 환경에서 완벽하게 작동.
 - **Gemini API Native**: 최신 Google Gemini 모델을 활용한 고성능 추론 및 코드 생성.
 - **Korean-First Workflow**: 한국어 기반의 문서화 및 에이전트 상호작용 최적화.
-- **Flexible Extension**: `.agent` 폴더 구조를 통한 기존 프로젝트와의 손쉬운 통합.
 
 이 레포지토리는 GIIP AI Agent 시스템의 설정, 역할 정의 및 워크플로우를 관리하기 위한 공간입니다. 
 
