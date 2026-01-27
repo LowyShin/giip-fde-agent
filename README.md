@@ -49,7 +49,7 @@ Gemini API를 사용하기 위해 API Key 설정이 필요합니다.
 .\.agent\scripts\launch_subsession.ps1
 ```
 
-### 3. 주기적 자동 실행 (배치 파일 사용)
+- 주기적 자동 실행 (배치 파일 사용)
 에이전트를 5분마다 자동으로 확인하여 작업을 수행하도록 설정할 수 있습니다.
 ```cmd
 .\auto_agent.bat
@@ -94,3 +94,4 @@ graph TD
 3.  **서브 에이전트**(예: Developer, Tester)가 작업을 수행하고 상태를 `Completed`로 업데이트합니다.
 
 4.  **오케스트레이터**가 최종 결과물을 검증합니다.
+
