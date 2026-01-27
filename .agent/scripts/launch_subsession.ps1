@@ -105,7 +105,35 @@ if (-not $env:GEMINI_API_KEY) {
 
     if ($settingsPath) {
         $settings = Get-Content $settingsPath -Raw | ConvertFrom-Json
-        if ($settings.api_key) { $env:GEMINI_API_KEY = $settings.api_key }
+        $selectedKey = $null
+
+        if ($settings.api_keys -and $settings.api_keys.Count -gt 0) {
+            if ($settings.api_key_mode -eq "sequential") {
+                $statePath = Join-Path $rootDir ".agent\state.json"
+                $state = if (Test-Path $statePath) { Get-Content $statePath -Raw | ConvertFrom-Json } else { @{ api_key_index = 0 } }
+                
+                # Ensure it's an object if it was corrupted or empty
+                if ($null -eq $state) { $state = @{ api_key_index = 0 } }
+                
+                $index = $state.api_key_index % $settings.api_keys.Count
+                $selectedKey = $settings.api_keys[$index]
+                
+                # Update state
+                $state.api_key_index = ($index + 1)
+                $state | ConvertTo-Json | Set-Content $statePath
+                Write-Host "Selected API Key #$($index + 1) (Sequential mode)" -ForegroundColor Gray
+            }
+            else {
+                # Default to random
+                $selectedKey = Get-Random -InputObject $settings.api_keys
+                Write-Host "Selected API Key (Random mode)" -ForegroundColor Gray
+            }
+        }
+        elseif ($settings.api_key) {
+            $selectedKey = $settings.api_key
+        }
+
+        if ($selectedKey) { $env:GEMINI_API_KEY = $selectedKey }
     }
 }
 

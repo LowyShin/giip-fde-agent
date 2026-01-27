@@ -25,3 +25,7 @@
 - 20260127 14:28:00: [Antigravity] GIIP 공식 홈페이지 안내 섹션 추가 완료 (전문가 및 AI 협업 모델 강조).
 - 20260127 15:00:00: [Antigravity] SEO 및 GEO 최적화 고도화 완료. H1/H2 헤더 영문 키워드 추가, Core Features 섹션 신설, 한국 개발자 생태계 중심의 문구 개선.
 - 20260127 15:35:00: [Antigravity] 상세 기술 스펙 업데이트 완료: Claude Code/OpenCode 스타일 서브 에이전트 개념, 무설치 환경, Antigravity 최적화 및 Electron/PowerShell 호환성 강조.
+- 20260127 15:50:00: [Antigravity] 다중 API Key 지원 기능 추가. 순차적(Sequential) 및 랜덤(Random) 선택 로직 구현 및 settings.json 확장.
+- 20260127 16:00:00: [Antigravity] 사용자 원본 텍스트 복구 및 최적화 내용 통합 완료.
+- 20260127 16:30:00: [Antigravity] README.md를 최초 원본 상태로 완전히 복구 완료 (모든 수정 사항 제거).
+- 20260127 16:40:00: [Antigravity] 다중 API Key 가이드를 별도 파일(.agent/scripts/MULTI_API_GUIDE.md)로 분리하고 README.md는 순수 원본 유지.

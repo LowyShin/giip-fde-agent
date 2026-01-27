@@ -1,3 +1,8 @@
 {
-  "api_key": "YOUR_GEMINI_API_KEY_HERE"
+  "api_key": "YOUR_GEMINI_API_KEY_HERE",
+  "api_keys": [
+    "KEY_1",
+    "KEY_2"
+  ],
+  "api_key_mode": "sequential"
 }
