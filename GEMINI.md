@@ -17,3 +17,11 @@ Agents working on frontend code must follow the Vercel Engineering Best Practice
 - **Rendering**: Optimize re-renders with proper composition and state management.
 
 See [.agent/rules/](../.agent/rules/) for detailed guidelines.
+
+## 🛠️ Workflow & Skills
+Agents MUST use the specialized skills in `.agent/skills/` for complex engineering tasks to ensure quality and reliability.
+
+1.  **Subagent Driven Development**: For implementing complex features, break down tasks and use the `subagent-driven-development` skill. This enforces a "Spec Review -> Code Review" pipeline.
+2.  **Writing Plans**: Before writing code, ALWAYS create an implementation plan using the `writing-plans` skill.
+3.  **Test Driven Development**: Follow the TDD cycle (Red-Green-Refactor) as defined in `test-driven-development` skill.
+4.  **Systematic Debugging**: For tough bugs, use the `systematic-debugging` skill to find the root cause, not just patch symptoms.

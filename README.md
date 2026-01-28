@@ -13,9 +13,12 @@
 
 한국 개발자 생태계(Korean Developer Ecosystem)에 최적화되어 있으며, 모든 프로세스와 문서화는 **Korean-First** 원칙을 따릅니다.
 
+
 ## ✨ 핵심 기능 (Key Features)
 
 - **Multi-Agent Collaboration**: Claude Code/OpenCode 스타일의 롤 기반 협업.
+- **Superpowers Native**: Plan, TDD, Systematic Debugging 등 고급 엔지니어링 스킬 내장.
+- **Multi-Platform Ready**: Cursor, GitHub Copilot, Claude 등 다양한 AI 툴과 즉시 호환.
 - **Autonomous Development**: 요구사항 분석부터 구현, 검증까지 자율적인 태스크 수행.
 - **Antigravity Optimized**: Antigravity 툴과의 완벽한 싱크 및 최적화된 워크플로우.
 - **Zero-Tool Setup**: 추가적인 툴 설치 없이 기존 PowerShell 환경에서 즉시 사용 가능.
@@ -31,10 +34,20 @@
 여러분이 작업하시는 폴더에 이 레포지토리의 파일과 디렉토리를 복사한 뒤에 antigravity를 기동해보세요. 그리고 다음과 같이 채팅을 입력하시면 준비는 끝납니다. 
 
 ```
-넌 오케스트레이터야. 너의 롤을 확인하고 나에게 설명해봐.
+넌 오케스트레이터야. 너의 롤을 확인하고 아래 업무를 분석하여 각 담당자에게 작업을 위임해줘. 
+
+-- 업무 내용 --
+
 ```
 
 이제 여러분은 지금 채팅 화면에서 업무 지시를 할 수 있게 됩니다.
+
+## 🤝 호환성 (Compatibility)
+
+이 프로젝트는 다양한 AI 에이전트 환경을 지원합니다:
+- **Cursor / Windsurf**: `.cursorrules` 자동 인식
+- **GitHub Copilot**: `COPILOT_INSTRUCTIONS.md` 자동 인식
+- **Claude / OpenCode**: `SETUP_AGENTS.md` 가이드를 통한 간편 설정
 
 ## 🛠️ 사전 준비 사항 (Prerequisites)
 
@@ -75,7 +88,7 @@ Gemini API를 사용하기 위해 API Key 설정이 필요합니다.
 
 ## 🚀 주요 사용법 (Basic Usage)
 
-에이전트 세션을 시작하는 두 가지 방법이 있습니다:
+명령을 내린 후에 백그라운드에서 서브에이전트 세션을 시작하는 두 가지 방법이 있습니다. 두 가지중 하나를 실행하여야 각 역할의 서브에이전트가 작업을 시작합니다. 
 
 ### 1. 자동 시작 (gemini-cli 사용 시)
 보류 중인 태스크를 자동으로 감지하고 적절한 역할로 `gemini-cli` 세션을 즉시 시작합니다.
@@ -129,6 +142,15 @@ graph TD
 
 4.  **오케스트레이터**가 최종 결과물을 검증합니다.
  
+## 🦸 Superpowers Integration
+
+이 프레임워크는 [Superpowers](https://github.com/obra/superpowers) 시스템을 내장하여 에이전트가 단순 코딩 머신이 아닌 **책임감 있는 엔지니어**처럼 행동하도록 만듭니다.
+
+- **Subagent Driven Development**: 하나의 복잡한 태스크를 `구현` -> `사양 검토` -> `코드 품질 검토`의 3단계 파이프라인으로 처리합니다.
+- **Writing Plans**: 코드를 건드리기 전 `implementation_plan.md`를 작성하여 설계를 검증합니다.
+- **Test Driven Development (TDD)**: `Red` -> `Green` -> `Refactor` 사이클을 통해 결함 없는 코드를 작성합니다.
+- **Systematic Debugging**: 무작위 수정이 아닌, 가설 검증형 디버깅으로 근본 원인을 해결합니다.
+
 ## 🌐 GIIP Enterprise Managed Service
  
 더욱 강력하고 안정적인 시스템 운영이 필요하신가요? **GIIP**는 인프라 자동 관리 및 보안 위협 탐지를 위해 전문가와 AI의 협업 모델을 제공합니다.
@@ -146,7 +168,9 @@ graph TD
 이 프로젝트에 도움을 주신 분들께 감사드립니다:
 
 - [Roy Koo](https://www.linkedin.com/in/roykoo99/)
+  - multi api key 아이디어
 - [코드깎는노인](https://www.youtube.com/@%EC%BD%94%EB%93%9C%EA%B9%8E%EB%8A%94%EB%85%B8%EC%9D%B8)
-
-
+  - react용 검사 로직
+- [superpowers](https://github.com/obra/superpowers)
+  - 개발 검증 로직 강화
 
