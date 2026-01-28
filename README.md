@@ -46,9 +46,10 @@
 ## 🤝 호환성 (Compatibility)
 
 이 프로젝트는 다양한 AI 에이전트 환경을 지원합니다:
-- **Cursor / Windsurf**: `.cursorrules` 자동 인식
-- **GitHub Copilot**: `COPILOT_INSTRUCTIONS.md` 자동 인식
-- **Claude / OpenCode**: `SETUP_AGENTS.md` 가이드를 통한 간편 설정
+- **Antigravity** : `GEMINI.md` 자동 인식
+- **Cursor / Windsurf** : `.cursorrules` 자동 인식
+- **GitHub Copilot** : `COPILOT_INSTRUCTIONS.md` 자동 인식
+- **Claude / OpenCode** : `SETUP_AGENTS.md` 가이드를 통한 간편 설정
 
 ## 🛠️ 사전 준비 사항 (Prerequisites)
 
@@ -174,6 +175,7 @@ graph TD
   - react용 검사 로직
 - [superpowers](https://github.com/obra/superpowers)
   - 개발 검증 로직 강화
+
 
 
 
