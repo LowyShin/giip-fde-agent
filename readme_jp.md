@@ -2,7 +2,7 @@
 
 [English](readme_en.md) | [한국어](README.md)
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)
 [![Korean Support](https://img.shields.io/badge/Language-Korean-blue.svg)](#-コア原則)
 [![AI Powered](https://img.shields.io/badge/AI-Gemini-orange.svg)](https://aistudio.google.com/app/apikey)
@@ -192,5 +192,5 @@ graph TD
   - react用検査ロジック
 - [superpowers](https://github.com/obra/superpowers)
   - 開発検証ロジックを強化
-- [bkit Vibecoding Kit](https://github.com/popup-studio-ai/bkit-claude-code)
+- [bkit Vibecoding Kit](https://github.com/popup-studio-ai/bkit-claude-code) (Licensed under Apache 2.0)
   - PDCAメソドロジーに基づいた開発の最適化

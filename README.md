@@ -2,7 +2,7 @@
 
 [English](readme_en.md) | [日本語](readme_jp.md)
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)
 [![Korean Support](https://img.shields.io/badge/Language-Korean-blue.svg)](#-핵심-규칙)
 [![AI Powered](https://img.shields.io/badge/AI-Gemini-orange.svg)](https://aistudio.google.com/app/apikey)
@@ -185,17 +185,16 @@ graph TD
 
 ## 🙏 Special Thanks
 
-이 프로젝트에 도움을 주신 분들께 감사드립니다:
+이 프로젝트에 도움을 주신 분들께 감사드립니다. 
 
 - [Roy Koo](https://www.linkedin.com/in/roykoo99/)
   - multi api key 아이디어
 - [코드깎는노인](https://www.youtube.com/@%EC%BD%94%EB%93%9C%EA%B9%8E%EB%8A%94%EB%85%B8%EC%9D%B8)
-  - react용 검사 로직
+  - react용 검사 로직 효율화 방법 통합
 - [superpowers](https://github.com/obra/superpowers)
-  - 개발 검증 로직 강화
-
-- [bkit Vibecoding Kit](https://github.com/popup-studio-ai/bkit-claude-code)
-  - PDCA 방법론 기반 개발 최적화
+  - 개발 검증 로직 강화 방법 통합
+- [bkit Vibecoding Kit](https://github.com/popup-studio-ai/bkit-claude-code) (Licensed under Apache 2.0)
+  - PDCA 방법론 기반 개발 최적화 통합
 
 
 

@@ -2,7 +2,7 @@
 
 [한국어](README.md) | [日本語](readme_jp.md)
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)
 [![English Support](https://img.shields.io/badge/Language-English-blue.svg)](#-core-principles)
 [![AI Powered](https://img.shields.io/badge/AI-Gemini-orange.svg)](https://aistudio.google.com/app/apikey)
@@ -193,5 +193,5 @@ Thanks to those who helped with this project:
 - [superpowers](https://github.com/obra/superpowers)
   - Strengthening development verification logic
 
-- [bkit Vibecoding Kit](https://github.com/popup-studio-ai/bkit-claude-code)
+- [bkit Vibecoding Kit](https://github.com/popup-studio-ai/bkit-claude-code) (Licensed under Apache 2.0)
   - Development optimization based on PDCA methodology
