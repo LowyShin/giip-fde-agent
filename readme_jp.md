@@ -1,10 +1,10 @@
-# GIIP Agent System: Autonomous Multi-Agent Framework 🤖
+# GIIP Agent System: 自律型マルチエージェントフレームワーク 🤖
 
-[한국어](README.md) | [English](readme_en.md)
+[English](readme_en.md) | [한국어](README.md)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)
-[![Japanese Support](https://img.shields.io/badge/Language-Japanese-blue.svg)](#-コア原則)
+[![Korean Support](https://img.shields.io/badge/Language-Korean-blue.svg)](#-コア原則)
 [![AI Powered](https://img.shields.io/badge/AI-Gemini-orange.svg)](https://aistudio.google.com/app/apikey)
 
 **GIIP Agent System**は、複雑なソフトウェア開発およびタスク自動化のために設計された**自律型マルチエージェントフレームワーク (Autonomous Multi-Agent Framework)** のみを独立して抽出して作成されたエージェントです。
@@ -12,13 +12,13 @@
 皆さんのノウハウや用途に応じてロールの内容を修正して使用することで、自分だけのエージェントシステムを構築できます。
 
 基本的には、Google Gemini APIを活用してオーケストレーター (Orchestrator) と専門のサブエージェントが協調する最先端のAIワークフローを提供します。
-Google Gemini APIを使用しない場合は、手動で安価に使用できます。また、他のAPIを使用したい場合は、オーケストレーターに指示するだけで、皆さんの環境に合わせていくらでも変更してくれます。
+Google Gemini APIを使用しない場合は、手動で安価に使用できます。また、他のAPIを使用したい場合は、オーケ스트レーターに指示するだけで、皆さんの環境に合わせていくらでも変更してくれます。
 
 このフレームワークは、**Claude Codeのskills**や**OpenCode**に類似した**ロールベースのサブエージェント (Role-based Sub-Agents)** の概念を採用しており、複雑なタスクを精巧に分担して解決します。
 
 特に **Antigravity Tool**に最適化されて設計されており、別途のサードパーティツールのインストールなしに、既存の開発ツールとPowerShell環境だけで即座に稼働します。Electronベースのターミナル環境でも優れた安定性と互換性を提供します。
 
-韓国の開発者エコシステム (Korean Developer Ecosystem) に最適化されており、すべてのプロセスとドキュメント化は **Korean-First** 原則に従います。
+韓国の開発者エコシステム (Korean Developer Ecosystem) に最適化されており、すべてのプロセスとドキュメント化は **Korean-First** (韓国語優先) 原則に従います。
 
 
 ## ✨ 主な機能 (Key Features)
@@ -33,6 +33,7 @@ Google Gemini APIを使用しない場合は、手動で安価に使用できま
 - **Gemini API Native**: 最新のGoogle Geminiモデルを活用した高性能な推論およびコード生成。
 - **Korean-First Workflow**: 韓国語ベースのドキュメント化およびエージェント相互作用の最適化。
 - **React Best Practices**: VercelのReact Best Practices Rulesを適用し、最適化されたフロントエンドコードを生成。
+- **bkit Vibecoding Kit**: PDCAメソドロジーに基づいた体系的な開発と自動化レポートを提供。
 
 このリポジトリは、GIIP AIエージェントシステムの設定、役割定義、およびワークフローを管理するためのスペースです。
 
@@ -91,7 +92,7 @@ Gemini APIを使用するために、API Keyの設定が必要です。
 ├── roles/          # 各エージェント (Developer, Testerなど) のペルソナと責任の定義
 ├── dispatch/       # タスク定義ファイル (TASK_YYYYMMDD-ID.md)
 ├── scripts/        # [システム運用のためのPowerShellスクリプトツール](./.agent/scripts/README.md)
-├── work_history/   # 作業履歴の記録 (Rule compliance)
+├── work_history/   # 作業履歴の記録 (ルール遵守)
 └── README.md       # システム詳細ガイド (英文)
 ```
 
@@ -110,7 +111,7 @@ Gemini APIを使用するために、API Keyの設定が必要です。
 ```cmd
 .\auto_agent.bat
 ```
-このスクリプトは実行中のウィンドウを維持し、5分 (300秒) 間隔で `launch_subsession.ps1` を繰り返し呼び出します。
+このスクリプトは実行中のウィンドウを維持し、5分 (300秒) 間隔で `launch_subsession.ps1` を繰り返し呼び出しします。
 
 ### 2. 手動開始 (クリップボードハンドオフ)
 `gemini-cli` なしでエージェントマネージャなどの環境で新しいセッションとして作業を貼り付けたい場合に使用します。保留中の作業を探し、該当する役割のコンテキストをクリップボードにコピーします。
@@ -120,7 +121,7 @@ Gemini APIを使用するために、API Keyの設定が必要です。
 実行後、エージェントと対話中のウィンドウに `Ctrl+V` で貼り付けて作業を開始してください (エージェントマネージャで新しい会話 (左側のプラスボタン) を作成して貼り付けるのが最も確実です)。
 
 ## 📊 ステータス確認と監視 (Monitoring & Status)
-すべてのタスクの進行状況と、現在実行中のバックグラウンドプロセスを確認します。
+すべてのタスク의 進行状況と、現在実行中のバックグラウンドプロセスを確認します。
 ```powershell
 .\.agent\scripts\check_status.ps1
 ```
@@ -148,7 +149,17 @@ graph TD
 1.  **オーケストレーター**がリクエストを分析し、`dispatch` ディレクトリにタスクを作成します。
 2.  ユーザーまたはシステムが `launch_subsession.ps1` を実行します。
 3.  **サブエージェント** (例: Developer, Tester) が作業を遂行し、ステータスを `Completed` に更新します。
-4.  **オー케스트レーター**が最終成果物を検証します。
+4.  **オーケストレーター**が最終成果物を検証します。
+
+## 📦 bkit Vibecoding Kit Integration
+
+**bkit**は、PDCA (Plan-Design-Do-Check-Act) メソドロジーをエージェントワークフローに結合し、開発効率と品質を最大化するVibecoding Kitです。
+
+- **PDCA Loop**: `/pdca plan`、`/pdca design`、`/pdca analyze` などのコマンドによる体系的な開発プロセス管理。
+- **Gap Analysis**: 実装内容と設計内容の差分を自動的に分析し、品質を確保。
+- **Automated Reporting**: すべての作業結果に対する標準化されたレポートを提供。
+
+詳細な使用方法は、[.gemini/README.md](.gemini/README.md) または [GEMINI.md](GEMINI.md) を参照してください。
 
 ## 🦸 Superpowers Integration
 
@@ -177,7 +188,9 @@ graph TD
 
 - [Roy Koo](https://www.linkedin.com/in/roykoo99/)
   - multi api key のアイデア
-- [Code-cutting Old Man (코드깎는노인)](https://www.youtube.com/@%EC%BD%94%EB%93%9C%EA%B9%8E%EB%8A%94%EB%85%B8%EC%9D%B8)
+- [코드깎는노인 (コードを削る老人)](https://www.youtube.com/@%EC%BD%94%EB%93%9C%EA%B9%8E%EB%8A%94%EB%85%B8%EC%9D%B8)
   - react用検査ロジック
 - [superpowers](https://github.com/obra/superpowers)
   - 開発検証ロジックを強化
+- [bkit Vibecoding Kit](https://github.com/popup-studio-ai/bkit-claude-code)
+  - PDCAメソドロジーに基づいた開発の最適化

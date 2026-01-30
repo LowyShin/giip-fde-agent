@@ -33,6 +33,7 @@ It is optimized for the Korean Developer Ecosystem, and all processes and docume
 - **Gemini API Native**: High-performance reasoning and code generation utilizing the latest Google Gemini model.
 - **Korean-First Workflow**: Optimized for Korean-based documentation and agent interaction.
 - **React Best Practices**: Optimized Frontend code generation by applying Vercel's React Best Practices Rules.
+- **bkit Vibecoding Kit**: Provides systematic development and automated reporting based on PDCA methodology.
 
 This repository is a space for managing the settings, role definitions, and workflows of the GIIP AI Agent system.
 
@@ -150,6 +151,16 @@ graph TD
 3.  The **Sub-Agent** (e.g., Developer, Tester) performs the work and updates the status to `Completed`.
 4.  The **Orchestrator** verifies the final output.
 
+## 📦 bkit Vibecoding Kit Integration
+
+**bkit** is a Vibecoding Kit that combines the PDCA (Plan-Design-Do-Check-Act) methodology with an agent workflow to maximize development efficiency and quality.
+
+- **PDCA Loop**: Systematic development process management through commands such as `/pdca plan`, `/pdca design`, and `/pdca analyze`.
+- **Gap Analysis**: Automatically analyzes the difference between implementation and design to ensure quality.
+- **Automated Reporting**: Provides standardized reporting on all work results.
+
+See [.gemini/README.md](.gemini/README.md) or [GEMINI.md](GEMINI.md) for detailed usage.
+
 ## 🦸 Superpowers Integration
 
 This framework embeds the [Superpowers](https://github.com/obra/superpowers) system to make the agent act like a **responsible engineer** rather than a simple coding machine.
@@ -181,3 +192,6 @@ Thanks to those who helped with this project:
   - Inspection logic for react
 - [superpowers](https://github.com/obra/superpowers)
   - Strengthening development verification logic
+
+- [bkit Vibecoding Kit](https://github.com/popup-studio-ai/bkit-claude-code)
+  - Development optimization based on PDCA methodology
