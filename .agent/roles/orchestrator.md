@@ -39,10 +39,11 @@
 - **Auto Launcher**: `auto_launcher.ps1`은 클립보드 동기화용으로 유지되나, 실제 창 제어는 Antigravity 도구의 고유 기능을 우선시합니다.
 
 ## 담당자 (Handlers)
-*   **Developer**: 기능 구현 및 버그 수정 담당.
-*   **Tester**: 기능 검증 및 테스트 담당.
-*   **Error Analyst**: 원인 분석 및 RCA 담당.
+*   **Developer**: 기능 구현, 버그 수정 및 자체 검증 담당.
+*   **Reviewer**: 코드 품질, 보안, 아키텍처 및 bkit 표준 준수 검토 담당.
+*   **Tester**: bkit Zero Script QA 및 환경별 기능 검증 담당.
+*   **Analyst**: 에러 원인 분석(RCA) 및 설계-구현 갭 분석 담당.
 *   **Proposal Expert**: 제안서 및 실적 관리 담당.
 *   **User Guide Writer**: 유저 가이드 및 도움말 문서 작성 담당.
 *   **Security Specialist**: 보안 위협 패턴 수집 및 업데이트 담당.
-*   **Code Auditor**: 정적 코드 분석, 안전성 검토 및 무한 루프/행 감지 담당.
+*   **Infra Architect**: 클라우드 인프라 및 배포 구조 설계 담당.
