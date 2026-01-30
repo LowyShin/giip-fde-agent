@@ -1,11 +1,18 @@
 # GIIP Agent System: Autonomous Multi-Agent Framework 🤖
 
+[English](readme_en.md) | [日本語](readme_jp.md)
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)
 [![Korean Support](https://img.shields.io/badge/Language-Korean-blue.svg)](#-핵심-규칙)
 [![AI Powered](https://img.shields.io/badge/AI-Gemini-orange.svg)](https://aistudio.google.com/app/apikey)
 
-**GIIP Agent System**은 복잡한 소프트웨어 개발 및 작업 자동화를 위해 설계된 **자율형 멀티 에이전트 프레임워크(Autonomous Multi-Agent Framework)** 입니다. Google Gemini API를 활용하여 오케스트레이터(Orchestrator)와 전문 서브 에이전트들이 협업하는 최첨단 AI 워크플로우를 제공합니다.
+**GIIP Agent System**은 복잡한 소프트웨어 개발 및 작업 자동화를 위해 설계된 **자율형 멀티 에이전트 프레임워크(Autonomous Multi-Agent Framework)** 만을 독립적으로 추출하여 만든 에이전트 입니다. 
+
+여러분의 노우하우와 용도에 따라 롤의 내용을 수정하여 사용하시면 여러분만의 에이전트 시스템을 구축할 수 있습니다. 
+
+기본적으로 Google Gemini API를 활용하여 오케스트레이터(Orchestrator)와 전문 서브 에이전트들이 협업하는 최첨단 AI 워크플로우를 제공합니다.
+Google Gemini API를 사용하지 않으면 수동으로 저렴하게 사용할 수 있습니다. 그리고 다른 api를 사용하고 싶으시면 오케스트레이터에게 지시만 하면 얼마든지 여러분의 환경에 맞게 바꾸어 줍니다.
 
 이 프레임워크는 **Claude Code의 skills** 나 **OpenCode** 와 유사한 **롤 베이스 서브 에이전트(Role-based Sub-Agents)** 개념을 채택하여, 복잡한 태스크를 정교하게 분담하고 해결합니다. 
 

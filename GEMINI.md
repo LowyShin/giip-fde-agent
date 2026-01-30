@@ -5,7 +5,9 @@ This file defines the global rules and behaviors for the GIIP Agent system. All 
 ## 📜 Core Principles
 1.  **Strict Rule #1**: No raw SQL (`Invoke-Sqlcmd`). Use `mgmt/execSQLFile.ps1`.
 2.  **Evidence First**: Always link technical evidence as markdown files.
-3.  **Script Reuse**: Check `.agent/scripts/` and `giipdb/mgmt/scriptlist.md` before writing new scripts.
+- 20260129 19:10:00: Completed RCA analysis for `pApiGiipIssueListbyAK` and `giip-issues` functionality. Generated RCA report `ANALYSIS_20260129_GIIP_ISSUE_LIST_RCA.md` in `giipdb/docs/50_Analysis/`.
+- 20260130 11:34:00: Started README translation task (English and Japanese versions).
+- 20260130 11:38:00: Completed README translation task. Created `readme_en.md` and `readme_jp.md` with cross-language links.
 
 ## 🏗️ React & Next.js Best Practices
 Agents working on frontend code must follow the Vercel Engineering Best Practices defined in `.agent/rules/`.
