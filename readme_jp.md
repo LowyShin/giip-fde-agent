@@ -33,7 +33,7 @@ Google Gemini APIを使用しない場合は、手動で安価に使用できま
 - **Gemini API Native**: 最新のGoogle Geminiモデルを活用した高性能な推論およびコード生成。
 - **Korean-First Workflow**: 韓国語ベースのドキュメント化およびエージェント相互作用の最適化。
 - **React Best Practices**: VercelのReact Best Practices Rulesを適用し、最適化されたフロントエンドコードを生成。
-- **bkit Vibecoding Kit**: PDCAメソドロジーに基づいた体系的な開発と自動化レポートを提供。
+- **Bkit Vibecoding Kit**: PDCAメソドロジーに基づいた体系的な開発と自動化レポートを提供。
 
 このリポジトリは、GIIP AIエージェントシステムの設定、役割定義、およびワークフローを管理するためのスペースです。
 
@@ -151,13 +151,13 @@ graph TD
 3.  **サブエージェント** (例: Developer, Tester) が作業を遂行し、ステータスを `Completed` に更新します。
 4.  **オーケストレーター**が最終成果物を検証します。
 
-## 📦 bkit Vibecoding Kit Integration
+## 📦 Bkit Vibecoding Kit Integration
 
-**bkit**は、PDCA (Plan-Design-Do-Check-Act) メソドロジーをエージェントワークフローに結合し、開発効率と品質を最大化するVibecoding Kitです。
+**Bkit**は、PDCA (Plan-Design-Do-Check-Act) メソドロジーをエージェントワークフローに結合し、開発効率と品質を最大化するVibecoding Kitです。
 
 - **PDCA Loop**: `/pdca plan`、`/pdca design`、`/pdca analyze` などのコマンドによる体系的な開発プロセス管理。
 - **Gap Analysis**: 実装内容と設計内容の差分を自動的に分析し、品質を確保。
-- **Automated Reporting**: すべての作業結果に対する標準化されたレポートを提供。
+- **自動化されたレポート**: すべての作業結果に対する標準化されたレポートを提供。
 
 詳細な使用方法は、[.gemini/README.md](.gemini/README.md) または [GEMINI.md](GEMINI.md) を参照してください。
 

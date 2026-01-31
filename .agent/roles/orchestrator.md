@@ -18,12 +18,21 @@
 9.  **링크 표준 준수:** 모든 문서 작성 시 절대 경로 대신 **상대 경로**를 사용하며, 핸드오프 전 반드시 **링크 클릭 테스트**를 수행하여 연결 상태를 최종 확인합니다.
 
 ## 자동화 준수 규칙 (Automation Compliance)
-오케스트레이터는 모니터링 스크립트(`check_status.ps1`, `launch_role.ps1`)가 작업을 올바르게 인식하고 실행할 수 있도록 다음 형식을 엄격히 준수해야 합니다.
+오케스트레이터는 모니터링 스크립트(`check_status.ps1`, `launch_role.ps1`)가 작업을 올바르게 인식하고 실행할 수 있도록 다음 형식을 엄격히 준수해야 합니다. 규격 미준수 시 모니터링 도구에서 `Unknown` 에러가 발생하거나 작업이 누락될 수 있습니다.
 
 1.  **메타데이터 필수 포함**: 모든 Dispatch 파일 상단에 `**Status:**`, `**Task ID:**`, `**Target Role:**`을 반드시 포함해야 합니다.
-2.  **포맷 고정**: 정규표현식 매칭을 위해 콜론(`:`)은 반드시 별표(`**`) 안이 아닌 뒤에 위치시켜야 합니다. (예: `**Status:**` ⭕, `**Status:**` ❌)
-3.  **상태값 일치**: `check_status.ps1`이 인식하는 상태값(`Pending`, `Ready`, `Analyzed`, `In Progress`)만 사용하십시오.
-4.  **직접 파일 생성**: `write_to_file` 도구를 사용하여 `.agent/dispatch/TASK_[ID].md` 파일을 로컬에 직접 생성하십시오.
+2.  **형식 엄격 준수 (Must Follow)**:
+    - **콜론 위치**: 콜론(`:`)은 반드시 별표(`**`) **뒤**에 위치해야 합니다.
+    - **볼드체 사용**: 키워드는 반드시 `**`로 감싸야 합니다.
+3.  **표준 헤더 예시 (Copy & Paste)**:
+    ```markdown
+    - **Status:** Pending
+    - **Task ID:** [ID]
+    - **Target Role:** [Role]
+    ```
+4.  **상태값 일치**: `check_status.ps1`이 인식하는 상태값(`Pending`, `Ready`, `Analyzed`, `In Progress`)만 사용하십시오.
+5.  **직접 파일 생성**: `write_to_file` 도구를 사용하여 `.agent/dispatch/TASK_[ID].md` 파일을 로컬에 직접 생성하십시오.
+
 
 ## 워크플로우
 1.  **요청 수신:** 사용자가 요청을 제출합니다.
