@@ -16,22 +16,23 @@ if ($TaskFile -eq "auto") {
         foreach ($file in $files) {
             $content = Get-Content $file.FullName -Raw -Encoding UTF8
             
-            # Support both **Status:** and **Status**: formatting, case-insensitive
-            $status = if ($content -match "\*\*Status\*\*:\s*([^\r\n]*)" -or $content -match "\*\*Status:\*\*\s*([^\r\n]*)") { $matches[1].Trim() } else { "Unknown" }
-            $isPending = ($status -eq "Pending")
+            # Robust Regex implementation
+            $statusText = if ($content -match "(?i)(?:-?\s*\*?\*?Status\*?\*?:?\s*)\*?\*?([^\r\n\*]*)") { $matches[1].Trim() } else { "Unknown" }
+            $isPending = ($statusText -match "Pending") # Flexible match for 'Pending', '**Pending**', etc.
 
             if ($isPending) {
                 if ($Role -eq "auto") {
-                    if ($content -match "\*\*Target Role\*\*:\s*([^\r\n]*)" -or $content -match "\*\*Target Role:\*\*\s*([^\r\n]*)" -or $content -match "\*\*Role\*\*:\s*([^\r\n]*)") {
+                    if ($content -match "(?i)(?:-?\s*\*?\*?(?:Target Role|Role|Agent)\*?\*?:?\s*)\*?\*?([^\r\n\*]*)") {
                         $detectedRole = $matches[1].Trim()
                         $targetPath = $file.FullName
                         break
                     }
                 }
                 else {
-                    # If role is specified, look for task for that role
-                    if ($content -match "\*\*Target Role\*\*:\s*$Role" -or $content -match "\*\*Target Role:\*\*\s*$Role" -or $content -match "\*\*Role\*\*:\s*$Role") {
-                        $detectedRole = $Role
+                    # If role is specified, look for task for that role (case-insensitive)
+                    $currentRole = if ($content -match "(?i)(?:-?\s*\*?\*?(?:Target Role|Role|Agent)\*?\*?:?\s*)\*?\*?([^\r\n\*]*)") { $matches[1].Trim() } else { $null }
+                    if ($currentRole -and $currentRole.ToLower() -eq $Role.ToLower()) {
+                        $detectedRole = $currentRole
                         $targetPath = $file.FullName
                         break
                     }
@@ -43,9 +44,8 @@ if ($TaskFile -eq "auto") {
 else {
     $targetPath = Join-Path $dispatchDir $TaskFile
     if (Test-Path $targetPath) {
-        # Try to detect role from file
-        $content = Get-Content $targetPath -Raw -Encoding UTF8
-        if ($content -match "\*\*Target Role\*\*:\s*([^\r\n]*)" -or $content -match "\*\*Target Role:\*\*\s*([^\r\n]*)" -or $content -match "\*\*Role\*\*:\s*([^\r\n]*)") {
+        # Try to detect role from file with robust regex
+        if ($content -match "(?i)(?:-?\s*\*?\*?(?:Target Role|Role|Agent)\*?\*?:?\s*)\*?\*?([^\r\n\*]*)") {
             $detectedRole = $matches[1].Trim()
         }
     }
@@ -56,15 +56,12 @@ if (-not $targetPath) {
     exit 0
 }
 
-# AUTO-LOCK: Update status to 'In Progress' immediately to prevent race conditions/duplicates
+# AUTO-LOCK: Update status to 'In Progress' with flexible replacement
 $taskContent = Get-Content $targetPath -Raw -Encoding UTF8
-$statusMatch = $taskContent -match "\*\*Status\*\*:\s*Pending" -or $taskContent -match "\*\*Status:\*\*\s*Pending"
-if ($statusMatch) {
-    $taskContent = $taskContent -replace "\*\*Status\*\*:\s*Pending", "**Status:** In Progress"
-    $taskContent = $taskContent -replace "\*\*Status:\*\*\s*Pending", "**Status:** In Progress"
-    Set-Content -Path $targetPath -Value $taskContent -Encoding UTF8
-    Write-Host "Locked Task: Status updated to 'In Progress'" -ForegroundColor Magenta
-}
+# Find ANY instance of Status: Pending (regardless of bolding) and replace it
+$taskContent = $taskContent -replace "(?i)(Status\*?\*?:?\s*\*?\*?)Pending", '$1In Progress'
+Set-Content -Path $targetPath -Value $taskContent -Encoding UTF8
+Write-Host "Locked Task: Status updated to 'In Progress'" -ForegroundColor Magenta
 
 if ($Role -eq "auto") { $Role = $detectedRole }
 

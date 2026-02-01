@@ -1682,13 +1682,13 @@ function autoCreatePdcaTask(featureOrConfig, phase, options = {}) {
  */
 const DEBUG_LOG_PATHS = {
   claude: process.platform === 'win32'
-    ? path.join(process.env.TEMP || 'C:\\Temp', 'bkit-hook-debug.log')
+    ? path.join(process.env.TEMP || require('os').tmpdir(), 'bkit-hook-debug.log')
     : '/tmp/bkit-hook-debug.log',
   gemini: process.platform === 'win32'
-    ? path.join(process.env.TEMP || 'C:\\Temp', 'bkit-hook-debug-gemini.log')
+    ? path.join(process.env.TEMP || require('os').tmpdir(), 'bkit-hook-debug-gemini.log')
     : '/tmp/bkit-hook-debug-gemini.log',
   unknown: process.platform === 'win32'
-    ? path.join(process.env.TEMP || 'C:\\Temp', 'bkit-hook-debug.log')
+    ? path.join(process.env.TEMP || require('os').tmpdir(), 'bkit-hook-debug.log')
     : '/tmp/bkit-hook-debug.log'
 };
 

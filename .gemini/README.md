@@ -10,7 +10,7 @@ The `bkit` Vibecoding Kit (v1.4.7) has been integrated to enhance the developmen
 
 - **Extensions**: Located in `./extensions/bkit/`.
 - **Skills**: Integrated through `GEMINI.md` and `.agent/skills/`.
-- **Hooks**: Enabled in `C:\Users\lowys\.gemini\settings.json`.
+- **Hooks**: Enabled in your local Gemini settings (e.g., `%USERPROFILE%\\.gemini\\settings.json` on Windows).
 
 ### Usage Guide
 

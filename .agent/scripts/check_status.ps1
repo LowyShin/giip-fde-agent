@@ -12,10 +12,12 @@ $files = Get-ChildItem -Path $dispatchDir -Filter "TASK_*.md" | Where-Object { $
 foreach ($file in $files) {
     $content = Get-Content $file.FullName -Raw -Encoding UTF8
     
-    # Support both **Status:** and **Status**: formatting, case-insensitive
-    $status = if ($content -match "\*\*Status\*\*:\s*([^\r\n]*)" -or $content -match "\*\*Status:\*\*\s*([^\r\n]*)") { $matches[1].Trim() } else { "Unknown" }
-    $role = if ($content -match "\*\*Target Role\*\*:\s*([^\r\n]*)" -or $content -match "\*\*Target Role:\*\*\s*([^\r\n]*)" -or $content -match "\*\*Role\*\*:\s*([^\r\n]*)") { $matches[1].Trim() } else { "Unknown" }
-    $id = if ($content -match "\*\*Task ID\*\*:\s*([^\r\n]*)" -or $content -match "\*\*Task ID:\*\*\s*([^\r\n]*)") { $matches[1].Trim() } else { "Unknown" }
+    # Robust Regex implementation
+    # Supports: **Status:**, Status:, **Status**: , - **Status:** etc.
+    $status = if ($content -match "(?i)(?:-?\s*\*?\*?Status\*?\*?:?\s*)\*?\*?([^\r\n\*]*)") { $matches[1].Trim() } else { "Unknown" }
+    $role = if ($content -match "(?i)(?:-?\s*\*?\*?(?:Target Role|Role|Agent)\*?\*?:?\s*)\*?\*?([^\r\n\*]*)") { $matches[1].Trim() } else { "Unknown" }
+    $id = if ($content -match "(?i)(?:-?\s*\*?\*?Task ID\*?\*?:?\s*)\*?\*?([^\r\n\*]*)") { $matches[1].Trim() } else { "Unknown" }
+
     $objective = if ($content -match "(?s)## Objective\s*(.*?)(\r?\n#|$)") { $matches[1].Trim() -replace "\r?\n.*", "" } else { "Unknown" }
 
     # Show anything that is not Completed or Archived
