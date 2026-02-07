@@ -7,6 +7,10 @@
 [![English Support](https://img.shields.io/badge/Language-English-blue.svg)](#-core-principles)
 [![AI Powered](https://img.shields.io/badge/AI-Gemini-orange.svg)](https://aistudio.google.com/app/apikey)
 
+> **🚀 New to AI development tools?**  
+> Check out the [**Quick Start Guide**](QUICK_START_EN.md) for friendly step-by-step instructions!  
+> [AI Tools Download Links](TOOLS_DOWNLOAD.md) | [Antigravity Usage Guide](ANTIGRAVITY_USAGE_GUIDE.md)
+
 **GIIP Agent System** is an agent created by independently extracting only the **Autonomous Multi-Agent Framework** designed for complex software development and task automation.
 
 You can build your own agent system by modifying the contents of the roles according to your know-how and purpose.

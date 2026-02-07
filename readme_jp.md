@@ -7,6 +7,10 @@
 [![Korean Support](https://img.shields.io/badge/Language-Korean-blue.svg)](#-コア原則)
 [![AI Powered](https://img.shields.io/badge/AI-Gemini-orange.svg)](https://aistudio.google.com/app/apikey)
 
+> **🚀 AI開発ツールが初めてですか？**  
+> [**クイックスタートガイド**](QUICK_START.md) (韓国語) で親切なステップバイステップのガイドをご確認ください！  
+> [AIツールダウンロードリンク集](TOOLS_DOWNLOAD.md) | [Antigravity使用ガイド](ANTIGRAVITY_USAGE_GUIDE.md)
+
 **GIIP Agent System**は、複雑なソフトウェア開発およびタスク自動化のために設計された**自律型マルチエージェントフレームワーク (Autonomous Multi-Agent Framework)** のみを独立して抽出して作成されたエージェントです。
 
 皆さんのノウハウや用途に応じてロールの内容を修正して使用することで、自分だけのエージェントシステムを構築できます。
