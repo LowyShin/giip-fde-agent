@@ -330,6 +330,42 @@ write using functional components.
 
 ---
 
+## 🔧 Troubleshooting
+
+### PowerShell Execution Policy Error
+```powershell
+# Error: "Cannot run scripts on this system..."
+# Solution:
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+### API Key Error
+```
+Error: "API Key is not valid"
+Solution:
+1. Verify the API Key is copied correctly
+2. Check for leading/trailing spaces
+3. Confirm the Key is activated in Google AI Studio
+```
+
+### Gemini CLI Installation Error
+```bash
+# If permission errors occur
+npm install -g @google/gemini-cli --force
+
+# Or run with administrator privileges
+```
+
+### Project Not Working After Copying
+```
+Check:
+1. Verify .agent folder is copied properly
+2. Confirm settings.json exists with API Key configured
+3. Ensure AI tool recognizes the project folder correctly
+```
+
+---
+
 **Last Updated**: 2026-02-07  
 **Written by**: GIIP Agent System Team
 

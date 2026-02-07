@@ -330,6 +330,42 @@ A:
 
 ---
 
+## 🔧 문제 해결 (Troubleshooting)
+
+### PowerShell 실행 정책 오류
+```powershell
+# 오류: "이 시스템에서 스크립트를 실행할 수 없으므로..."
+# 해결:
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+### API Key 오류
+```
+오류: "API Key가 유효하지 않습니다"
+해결:
+1. API Key를 올바르게 복사했는지 확인
+2. 앞뒤 공백이 없는지 확인
+3. Google AI Studio에서 Key가 활성화되었는지 확인
+```
+
+### Gemini CLI 설치 오류
+```bash
+# 권한 오류가 발생하면
+npm install -g @google/gemini-cli --force
+
+# 또는 관리자 권한으로 실행
+```
+
+### 프로젝트 복사 후 작동하지 않을 때
+```
+확인사항:
+1. .agent 폴더가 제대로 복사되었는지 확인
+2. settings.json 파일이 존재하고 API Key가 설정되었는지 확인
+3. AI 도구가 프로젝트 폴더를 올바르게 인식했는지 확인
+```
+
+---
+
 **마지막 업데이트**: 2026-02-07  
 **작성**: GIIP Agent System Team
 
