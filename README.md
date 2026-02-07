@@ -7,7 +7,11 @@
 [![Korean Support](https://img.shields.io/badge/Language-Korean-blue.svg)](#-핵심-규칙)
 [![AI Powered](https://img.shields.io/badge/AI-Gemini-orange.svg)](https://aistudio.google.com/app/apikey)
 
-**GIIP Agent System**은 복잡한 소프트웨어 개발 및 작업 자동화를 위해 설계된 **자율형 멀티 에이전트 프레임워크(Autonomous Multi-Agent Framework)** 만을 독립적으로 추출하여 만든 에이전트 입니다. 
+> **🚀 AI 개발 도구가 처음이신가요?**  
+> [**빠른 시작 가이드**](QUICK_START.md)에서 친절한 단계별 안내를 확인하세요!  
+> [AI 도구 다운로드 링크 모음](TOOLS_DOWNLOAD.md) | [Antigravity 사용법](ANTIGRAVITY_USAGE_GUIDE.md)
+
+**GIIP Agent System**은 복잡한 소프트웨어 개발 및 작업 자동화를 위해 설계된 **자율형 멀티 에이전트 프레임워크(Autonomous Multi-Agent Framework)** 만을 독립적으로 추출하여 만든 에이전트 입니다.
 
 여러분의 노우하우와 용도에 따라 롤의 내용을 수정하여 사용하시면 여러분만의 에이전트 시스템을 구축할 수 있습니다. 
 
@@ -39,7 +43,31 @@ Google Gemini API를 사용하지 않으면 수동으로 저렴하게 사용할 
 
 실제로 사용하는 sub agent용 role의 정의나 필요한 기능만을 `.agent` 폴더에 모아놨기 때문에 기존 프로젝트에 이 레포지토리의 내용을 그대로 덮어써도 기존 프로젝트는 영향을 받지 않습니다. 
 
-여러분이 작업하시는 폴더에 이 레포지토리의 파일과 디렉토리를 복사한 뒤에 antigravity를 기동해보세요. 그리고 다음과 같이 채팅을 입력하시면 준비는 끝납니다. 
+## 🎯 기존 프로젝트에 적용하기
+
+여러분의 프로젝트에 GIIP Agent를 추가하려면 다음 파일/폴더를 복사하세요 (**.git 폴더는 제외**):
+
+### Windows (PowerShell):
+```powershell
+# 필수 파일 복사
+Copy-Item -Path "giip-dev-agent\.agent" -Destination "내프로젝트경로" -Recurse -Force
+Copy-Item -Path "giip-dev-agent\GEMINI.md" -Destination "내프로젝트경로" -Force
+Copy-Item -Path "giip-dev-agent\.cursorrules" -Destination "내프로젝트경로" -Force
+Copy-Item -Path "giip-dev-agent\COPILOT_INSTRUCTIONS.md" -Destination "내프로젝트경로" -Force
+```
+
+### Mac/Linux:
+```bash
+# 필수 파일 복사 (.git 제외)
+rsync -av --exclude='.git' giip-dev-agent/.agent 내프로젝트경로/
+cp giip-dev-agent/GEMINI.md 내프로젝트경로/
+cp giip-dev-agent/.cursorrules 내프로젝트경로/
+cp giip-dev-agent/COPILOT_INSTRUCTIONS.md 내프로젝트경로/
+```
+
+> 💡 **상세한 설정 방법**: [빠른 시작 가이드](QUICK_START.md)를 참조하세요.
+
+복사가 완료되면 AI 도구(Antigravity 등)를 실행하고 다음과 같이 채팅을 입력하세요:
 
 ```
 넌 오케스트레이터야. 너의 롤을 확인하고 아래 업무를 분석하여 각 담당자에게 작업을 위임해줘.
@@ -54,21 +82,28 @@ Google Gemini API를 사용하지 않으면 수동으로 저렴하게 사용할 
 ## 🤝 호환성 (Compatibility)
 
 이 프로젝트는 다양한 AI 에이전트 환경을 지원합니다:
-- **Antigravity** : `GEMINI.md` 자동 인식
-- **Cursor / Windsurf** : `.cursorrules` 자동 인식
-- **GitHub Copilot** : `COPILOT_INSTRUCTIONS.md` 자동 인식
-- **Claude / OpenCode** : `SETUP_AGENTS.md` 가이드를 통한 간편 설정
+- **Antigravity** ⭐ (권장): `GEMINI.md` 자동 인식 - [다운로드](https://agm.littleworld.net/)
+- **Cursor / Windsurf**: `.cursorrules` 자동 인식 - [Cursor 다운로드](https://www.cursor.com/) | [Windsurf 다운로드](https://codeium.com/windsurf)
+- **GitHub Copilot**: `COPILOT_INSTRUCTIONS.md` 자동 인식 - [VS Code 확장](https://marketplace.visualstudio.com/items?itemName=GitHub.copilot)
+- **Claude / OpenCode**: `SETUP_AGENTS.md` 가이드를 통한 간편 설정 - [Claude.ai](https://claude.ai/)
+
+> 💡 **어떤 도구를 선택해야 할까요?** [AI 도구 비교 및 다운로드 가이드](TOOLS_DOWNLOAD.md)를 참조하세요.
 
 ## 🛠️ 사전 준비 사항 (Prerequisites)
+
+> **처음 시작하시나요?** [빠른 시작 가이드](QUICK_START.md)에서 단계별 설치 방법을 확인하세요!
 
 이 시스템을 사용하기 위해 다음 도구들이 설치되어 있어야 합니다:
 
 1. **PowerShell 7+**: [설치 가이드](https://learn.microsoft.com/ko-kr/powershell/scripting/install/installing-powershell-on-windows)
 2. **Node.js**: [공식 사이트](https://nodejs.org/)에서 LTS 버전을 권장합니다.
-3. **Gemini CLI**: 터미널에서 아래 명령어를 실행하여 전역 설치하십시오.
+3. **AI 개발 도구**: Antigravity, Cursor, GitHub Copilot 등 - [도구 다운로드 가이드](TOOLS_DOWNLOAD.md)
+4. **Gemini CLI** (선택사항): 자동화 실행을 위해 필요
    ```powershell
    npm install -g @google/gemini-cli
    ```
+
+> 📥 **모든 도구 다운로드 링크**: [AI 도구 다운로드 가이드](TOOLS_DOWNLOAD.md)에서 확인하세요.
 
 ## ⚙️ 초기 설정 (Setup & Configuration)
 
