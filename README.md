@@ -161,6 +161,11 @@ graph TD
 - **자동화된 리포팅**: 모든 작업 결과에 대한 표준화된 리포팅 제공.
 
 상세 사용법은 [.gemini/README.md](.gemini/README.md) 또는 [GEMINI.md](GEMINI.md)를 참조하세요.
+
+## 📚 추가 문서 및 가이드
+
+- **[Antigravity 사용 가이드](ANTIGRAVITY_USAGE_GUIDE.md)**: Antigravity 스킬 및 Bkit 방법론을 효과적으로 활용하는 방법을 상세하게 설명합니다. PDCA 사이클, 시스템적 디버깅, TDD 등 고급 개발 패턴을 다룹니다.
+- **[프롬프트 예시](prompt_example.md)**: 에이전트를 효율적으로 활용하기 위한 다양한 프롬프트 예시를 제공합니다. 개발 단계별, 플랫폼별 스킬 사용법과 복합 프롬프트 작성법을 포함합니다.
  
 ## 🦸 Superpowers Integration
 
