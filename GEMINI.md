@@ -13,6 +13,10 @@ This file defines the global rules and behaviors for the GIIP Agent system. All 
 - 20260131 11:43:00: Started task to find and convert absolute paths to relative paths.
 - 20260131 12:24:00: Completed path normalization. Updated `.gemini\README.md` and `.agent\lib\common.js.backup`.
 - 20260201 16:51:00: Resolved git conflicts in `GEMINI.md` and updated documentation.
+- 20260303 20:41:00: Started task to explain document location rules.
+- 20260303 20:45:00: Completed task to explain document location rules. Documented SoR priority, PDCA document paths, and Korean language rule.
+- 20260303 20:53:15: Completed task to clarify report storage locations for `giipdb` and general reports.
+- 20260303 21:00:00: Started task to standardize documentation folder management guidelines, removing project-specific references.
 
 ## 🏗️ React & Next.js Best Practices
 Agents working on frontend code must follow the Vercel Engineering Best Practices defined in `.agent/rules/`.
@@ -73,9 +77,8 @@ Never guess
 - Stored in `docs/02-design/features/{feature}.design.md`
 
 ### Phase 3: Do (Implementation)
-- Use `/pdca do {feature}` for implementation guide
 - Implement based on design document
-- Apply coding conventions from this file
+- Apply coding/naming conventions defined in `bkit.config.json`
 
 ### Phase 4: Check
 - Use `/pdca analyze {feature}` for gap analysis
@@ -84,6 +87,28 @@ Never guess
 ### Phase 5: Act
 - Use `/pdca iterate {feature}` for auto-fix if < 90%
 - Use `/pdca report {feature}` for completion report
+- Stored in `docs/90-reports/{feature}.report.md`
+
+## 📂 문서 폴더 표준 관리 지침 (Documentation Standards)
+
+모든 서비스는 아래의 표준 폴더 구조를 준수하여 문서를 관리합니다.
+
+| 분류 번호 | 폴더명 | 용도 |
+| :--- | :--- | :--- |
+| **01** | `docs/01-plan/` | 기획서, 요구사항 정의서, 로드맵 |
+| **02** | `docs/02-design/` | 기술 설계서, API 명세서, DB 스키마 설계 |
+| **03** | `docs/03-analysis/` | 갭 분석 결과, 사후 분석(Retrospective) |
+| **50** | `docs/50-technical/` | 기술 노트, 문제 해결 기록, RCA 보고서 |
+| **90** | `docs/90-reports/` | 작업 완료 보고서, 요약 문서 |
+| **-** | `docs/assets/` | 문서에 포함된 이미지, 다이어그램 리소스 |
+
+### 🛠️ 핵심 원칙
+- **SoR (Single Source of Truth) 우선순위**:
+  1. Codebase (실제 작동하는 코드)
+  2. `GEMINI.md` / 컨벤션 설정
+  3. `docs/` 내 설계 및 계획 문서
+- **언어 (Language)**: 모든 아티팩트와 공식 문서는 반드시 **한국어**로 작성합니다.
+- **작업 이력**: 모든 수정/명령 처리 전 반드시 `GEMINI.md`의 작업 기록 섹션에 일시(`YYYYMMDD HH:mm:SS`)와 작업 내용을 기록합니다.
 
 ## 📈 Level System
 
