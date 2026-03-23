@@ -210,6 +210,10 @@ graph TD
 - **Writing Plans**: 코드를 건드리기 전 `implementation_plan.md`를 작성하여 설계를 검증합니다.
 - **Test Driven Development (TDD)**: `Red` -> `Green` -> `Refactor` 사이클을 통해 결함 없는 코드를 작성합니다.
 - **Systematic Debugging**: 무작위 수정이 아닌, 가설 검증형 디버깅으로 근본 원인을 해결합니다.
+- **Brainstorming**: 구현 전 아이디어를 설계와 사양으로 구체화하고 사용자의 승인을 받습니다.
+- **Parallel Dispatching**: 독립적인 여러 작업을 서브 에이전트를 통해 동시에 처리하여 작업 속도를 극대화합니다.
+- **Skill Creator**: 새로운 에이전트 스킬을 생성하고 벤치마킹을 통해 지속적으로 최적화합니다.
+- **Webapp Testing**: Playwright를 사용하여 웹 애플리케이션의 프론트엔드 기능을 자동으로 검증합니다.
 
 ## 🛡️ Gstack Integration
 
