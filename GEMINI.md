@@ -317,3 +317,5 @@ gap-detector (Check) → Check Match Rate
 20260323 10:30:00: Started task to enhance agent skills by researching and adding content from 'agent-ref/skills'.
 20260323 11:38:24: Started task to research and integrate useful agent skills from `agent-ref`.
 20260323 11:45:00: Completed integration of brainstorming, dispatching-parallel-agents, skill-creator, and webapp-testing skills from agent-ref.
+20260323 11:47:20: Started task to add `links.md` and link it from `README.md`.
+

@@ -169,8 +169,10 @@ See [.gemini/README.md](.gemini/README.md) or [GEMINI.md](GEMINI.md) for detaile
 
 - **[Antigravity Usage Guide](ANTIGRAVITY_USAGE_GUIDE.md)**: Detailed explanation of how to effectively utilize Antigravity skills and Bkit methodology. Covers advanced development patterns such as PDCA cycle, systematic debugging, and TDD.
 - **[Prompt Examples](prompt_example.md)**: Provides various prompt examples for efficient agent utilization. Includes development phase-specific and platform-specific skill usage, as well as how to write complex prompts.
+- **[Useful Agent Links](links.md)**: A collection of external resources and tools to help with agent development and operation.
 
 > [!TIP]
+
 > **Easy Translation**: If you prefer to read these documents in your native language, simply ask an AI assistant (like ChatGPT, Claude, or Gemini) to translate the content for you. For example: "Please translate this document to [your language]." This makes it easy to access the content in any language you're comfortable with.
 
 ## 🦸 Superpowers Integration

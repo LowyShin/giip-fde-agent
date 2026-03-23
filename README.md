@@ -201,8 +201,10 @@ graph TD
 
 - **[Antigravity 사용 가이드](ANTIGRAVITY_USAGE_GUIDE.md)**: Antigravity 스킬 및 Bkit 방법론을 효과적으로 활용하는 방법을 상세하게 설명합니다. PDCA 사이클, 시스템적 디버깅, TDD 등 고급 개발 패턴을 다룹니다.
 - **[프롬프트 예시](prompt_example.md)**: 에이전트를 효율적으로 활용하기 위한 다양한 프롬프트 예시를 제공합니다. 개발 단계별, 플랫폼별 스킬 사용법과 복합 프롬프트 작성법을 포함합니다.
- 
+- **[유용한 에이전트 링크](links.md)**: 에이전트 개발 및 운영에 도움이 되는 외부 리소스와 도구들의 모음입니다.
+
 ## 🦸 Superpowers Integration
+
 
 이 프레임워크는 [Superpowers](https://github.com/obra/superpowers) 시스템을 내장하여 에이전트가 단순 코딩 머신이 아닌 **책임감 있는 엔지니어**처럼 행동하도록 만듭니다.
 
