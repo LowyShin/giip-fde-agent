@@ -236,7 +236,7 @@ graph TD
  
 복잡한 관리는 전문가에게 맡기고 비즈니스 본질에 집중하세요.
 
-👉 [GIIP 공식 홈페이지 방문하기](https://giip.littleworld.net/)
+👉 [GIIP 공식 홈페이지 방문하기](https://giip.littleworld.net/) 또는 contact@littleworld.net 으로 문의하세요. (서버/인프라 설정 지원 가능)
 
 ## 🙏 Special Thanks
 

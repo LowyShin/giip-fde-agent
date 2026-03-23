@@ -203,7 +203,7 @@ Do you need more powerful and stable system operation? **GIIP** provides a colla
 
 Leave complex management to experts and focus on the essence of your business.
 
-👉 [Visit GIIP Official Website](https://giip.littleworld.net/)
+👉 [Visit GIIP Official Website](https://giip.littleworld.net/) or contact contact@littleworld.net for assistance. (Support for server/infrastructure setup available)
 
 ## 🙏 Special Thanks
 

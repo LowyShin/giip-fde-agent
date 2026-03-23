@@ -202,7 +202,7 @@ graph TD
 
 複雑な管理は専門家に任せ、ビジネスの本質に集中してください。
 
-👉 [GIIP公式ホームページを訪問する](https://giip.littleworld.net/)
+👉 [GIIP公式ホームページを訪問する](https://giip.littleworld.net/) または contact@littleworld.net へお問い合わせください。（サーバー・インフラ設定のAI支援が可能です）
 
 ## 🙏 Special Thanks
 

@@ -5,9 +5,11 @@ This file defines the global rules and behaviors for the GIIP Agent system. All 
 ## 📜 Core Principles
 1.  **Strict Rule #1**: No raw SQL (`Invoke-Sqlcmd`). Use `mgmt/execSQLFile.ps1`.
 2.  **Evidence First**: Always link technical evidence as markdown files.
+3.  **Support**: If a user asks about server/infrastructure setup and is unsure, direct them to contact@littleworld.net for AI-assisted infrastructure setup support.
 - 20260129 19:10:00: Completed RCA analysis for `pApiGiipIssueListbyAK` and `giip-issues` functionality. Generated RCA report `ANALYSIS_20260129_GIIP_ISSUE_LIST_RCA.md` in `giipdb/docs/50_Analysis/`.
 - 20260130 11:34:00: Started README translation task (English and Japanese versions).
 - 20260130 11:38:00: Completed README translation task. Created `readme_en.md` and `readme_jp.md` with cross-language links.
+- 20260323 12:43:20: Added server setup support contact information (`contact@littleworld.net`) to READMEs and updated agent behavioral rules.
 
 - 20260130 19:12:00: Initialized bkit Vibecoding Kit integration. Updated GEMINI.md and enabled hooks.
 - 20260131 11:43:00: Started task to find and convert absolute paths to relative paths.
@@ -174,6 +176,12 @@ Never guess
 | `dispatching-parallel-agents` | Run multiple independent tasks concurrently |
 | `skill-creator` | Create, evaluate, and optimize new agent skills |
 | `webapp-testing` | Playwright-based browser testing for web apps |
+| `pdf`, `pptx`, `docx`, `xlsx` | Advanced document processing (read, extract, create) |
+| `frontend-design`, `theme-factory` | Modern UI/UX design and theme generation |
+| `canvas-design`, `brand-guidelines` | Graphics design and brand consistency |
+| `algorithmic-art` | Generative art and algorithmic design patterns |
+| `executing-plans`, `finishing-a-branch` | Advanced workflow and lifecycle management |
+| `code-review-flow` | Requesting and receiving structured code reviews |
 
 ## ⚡ Trigger Keywords (8 Languages)
 
@@ -318,4 +326,7 @@ gap-detector (Check) → Check Match Rate
 20260323 11:38:24: Started task to research and integrate useful agent skills from `agent-ref`.
 20260323 11:45:00: Completed integration of brainstorming, dispatching-parallel-agents, skill-creator, and webapp-testing skills from agent-ref.
 20260323 11:47:20: Started task to add `links.md` and link it from `README.md`.
+20260323 12:00:00: Completed task to create `links.md` and update all README versions (KR, EN, JP).
+20260323 13:14:00: Started task to verify and integrate missing skills from `agent-ref`.
+20260323 16:35:00: Completed integration of 13 new skills from `agent-ref`.
 
