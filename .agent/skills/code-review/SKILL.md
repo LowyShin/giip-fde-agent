@@ -64,11 +64,13 @@ task-template: "[Code-Review] {feature}"
 - Sensitive information exposure check
 - Authentication/authorization logic review
 
-### 4. Performance
-- N+1 query pattern detection
-- Unnecessary re-render check
-- Memory leak pattern detection
-- Optimization opportunity identification
+### 4. Performance & Reliability (Staff Engineer Audit)
+- **N+1 query pattern detection**: Find hidden loops that blow up DB load.
+- **Race conditions**: Identify state transitions that lack proper locks/sync.
+- **Trust boundaries**: Check for unvalidated inputs across internal services.
+- **Enum completeness**: Ensure all status/type constants are handled in switch/allowlists.
+- **Stale reads**: Check for potential cache/DB synchronization issues.
+- **Retry logic**: Audit backoff and failure modes for external calls.
 
 ## Review Output Format
 

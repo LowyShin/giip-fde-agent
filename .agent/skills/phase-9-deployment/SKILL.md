@@ -431,12 +431,13 @@ console.log('✅ All required environment variables are set');
 ### Deployment
 - [ ] Build successful
 - [ ] Deployment complete
-- [ ] Health check passed
+- [ ] Health check passed (HTTP 200)
 
-### Verification
-- [ ] Major feature operation check
-- [ ] Error log review
-- [ ] Performance monitoring
+### Verification (Gstack Post-Deploy)
+- [ ] **Canary check**: Watch logs for 5-10 mins for new errors or performance spikes.
+- [ ] **Benchmark**: Compare Core Web Vitals and bundle sizes with the previous version.
+- [ ] **Major feature operation check**: Manual or automated smoke test of core paths.
+- [ ] **Error log review**: Ensure no noise or hidden failures in the new environment.
 
 ## Rollback Plan
 

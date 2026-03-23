@@ -182,6 +182,15 @@ graph TD
 - **Test Driven Development (TDD)**: `Red` -> `Green` -> `Refactor` サイクルを通じて欠陥のないコードを作成します。
 - **Systematic Debugging**: 無造作な修正ではなく、仮説検証型のデバッグで根本原因を解決します。
 
+## 🛡️ Gstack Integration
+
+[Gstack (garrytan/gstack)](https://github.com/garrytan/gstack)の強力な特化スキルが統合され、エージェントの思考能力と安全性が大幅に強化されました。
+
+- **Office Hours & CEO Review**: 実装前に製品の本質を再考し（Founder Mode）、ユーザー体験を最優先する計画レビュー。 (`/office-hours`, `/ceo-review`)
+- **Staff Engineer Audit**: N+1クエリ、レースコンディション、データ信頼境界など、熟練したエンジニアレベルの深層コードレビュー。 (`/code-review` 強化)
+- **Security CSO**: STRIDEおよびOWASPベースの脅威モデリングと独立した脆弱性分析。 (`/cso`)
+- **Safety Guardrails**: 破壊的なコマンド実行前の警告（`/careful`）および作業範囲を特定のフォルダに制限（`/freeze`）することで事故を防止。
+
 ## 🌐 GIIP Enterprise Managed Service
 
 より強力で安定したシステム運用が必要ですか？ **GIIP**は、インフラの自動管理およびセキュリティ脅威の検出のために、専門家とAIのコラボレーションモデルを提供します。
@@ -206,3 +215,5 @@ graph TD
   - 開発検証ロジックを強化
 - [bkit Vibecoding Kit](https://github.com/popup-studio-ai/bkit-claude-code) (Licensed under Apache 2.0)
   - PDCAメソドロジーに基づいた開発の最適化
+- [gstack](https://github.com/garrytan/gstack)
+  - 製品中心の思考、安全ガードレール、セキュリティ監査ロジックの統合

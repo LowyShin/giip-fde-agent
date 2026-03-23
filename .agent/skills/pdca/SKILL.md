@@ -68,15 +68,13 @@ task-template: "[PDCA] {feature}"
 
 ## Action Details
 
-### plan (Plan Phase)
-
-1. Check if `docs/01-plan/features/{feature}.plan.md` exists
-2. If not, create based on `plan.template.md`
-3. If exists, display content and suggest modifications
-4. Create Task: `[Plan] {feature}`
-5. Update .bkit-memory.json: phase = "plan"
-
 **Output Path**: `docs/01-plan/features/{feature}.plan.md`
+
+#### Product thinking checkpoint (Gstack office-hours)
+Before finalizing the plan, the agent must:
+- Challenge the premises of the request.
+- Ask the user at least one "Taste Decision" question.
+- Consider the "10-star version" vs the "shameful MVP".
 
 ### design (Design Phase)
 

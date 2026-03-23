@@ -182,6 +182,15 @@ This framework embeds the [Superpowers](https://github.com/obra/superpowers) sys
 - **Test Driven Development (TDD)**: Writes defect-free code through the `Red` -> `Green` -> `Refactor` cycle.
 - **Systematic Debugging**: Resolves the root cause with hypothesis-verification debugging rather than random modifications.
 
+## 🛡️ Gstack Integration
+
+Powerful specialized skills from [Gstack (garrytan/gstack)](https://github.com/garrytan/gstack) have been integrated to significantly enhance the agent's thinking capabilities and safety.
+
+- **Office Hours & CEO Review**: Rethink the essence of the product before implementation (Founder Mode), and review plans with a focus on user experience. (`/office-hours`, `/ceo-review`)
+- **Staff Engineer Audit**: In-depth code reviews at a senior engineer level, including N+1 queries, race conditions, and data trust boundaries. (Enhanced `/code-review`)
+- **Security CSO**: Threat modeling and independent vulnerability analysis based on STRIDE and OWASP. (`/cso`)
+- **Safety Guardrails**: Warnings before executing destructive commands (`/careful`) and restricting the work scope to specific folders (`/freeze`) to prevent accidents.
+
 ## 🌐 GIIP Enterprise Managed Service
 
 Do you need more powerful and stable system operation? **GIIP** provides a collaboration model between experts and AI for automatic infrastructure management and security threat detection.
@@ -207,3 +216,5 @@ Thanks to those who helped with this project:
 
 - [Bkit Vibecoding Kit](https://github.com/popup-studio-ai/bkit-claude-code) (Licensed under Apache 2.0)
   - Development optimization based on PDCA methodology
+- [gstack](https://github.com/garrytan/gstack)
+  - Integration of product-focused thinking, safety guardrails, and security audit logic
