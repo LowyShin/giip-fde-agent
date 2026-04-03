@@ -193,6 +193,36 @@ Powerful specialized skills from [Gstack (garrytan/gstack)](https://github.com/g
 - **Security CSO**: Threat modeling and independent vulnerability analysis based on STRIDE and OWASP. (`/cso`)
 - **Safety Guardrails**: Warnings before executing destructive commands (`/careful`) and restricting the work scope to specific folders (`/freeze`) to prevent accidents.
 
+## 🛠️ Custom Workflows & Native Optimization
+
+Native agent optimization loop that works directly in the local environment without Linux dependencies.
+
+### **1. Execute with Tracing (`/native-trace`)**
+Automatically records every execution step (tool calls, prompts, reasoning). Collects data for performance improvement.
+- **Usage**: Prefix your task request with `/native-trace`.
+- **Result**: Detailed execution history is saved as JSON in the `.agent/traces/` folder.
+
+### **2. Self-Optimization (`/aioptimize`)**
+Analyzes collected execution history to automatically improve the agent's internal skills and prompts.
+- **Usage**: Run the `/aioptimize` workflow.
+- **Command**: `python giipdb/scripts/prompt_optimization/native_optimizer.py`
+- **Logic**: Analyzes tasks with low reward scores (< 0.8) to find the cause of failure and optimizes the Markdown instructions of the relevant skill.
+
+### **3. Reward System**
+After a traced task is completed, provide a score between 0.0 and 1.0 to guide the agent. Scores below 0.8 are categorized as improvement targets in the `/aioptimize` step.
+
+## ⚡ Microsoft Agent Lightning (Research & Optimize)
+
+Powerful tracing and optimization features from [Microsoft Agent Lightning](https://github.com/microsoft/agent-lightning) have been integrated.
+
+- **Agent Tracing**: Record every execution step, tool usage, and prompt as a timeline for analysis.
+- **Prompt Optimization**: Automatically improve prompt templates based on collected feedback.
+- **Visual Dashboard**: Monitor agent performance changes visually via a dashboard.
+- **Self-Improvement**: A continuous learning loop that makes the agent smarter over time.
+
+> [!IMPORTANT]
+> Agent Lightning works best in a **Linux (WSL2)** environment. Use the `/agl-init` command to initialize the environment and `/agl-trace` to trace your tasks.
+
 ## 🌐 GIIP Enterprise Managed Service
 
 Do you need more powerful and stable system operation? **GIIP** provides a collaboration model between experts and AI for automatic infrastructure management and security threat detection.

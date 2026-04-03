@@ -1,0 +1,16 @@
+{
+  "trace_id": "20260403233435_dummy_test",
+  "skill_used": "example-skill",
+  "task": "Test task for verification",
+  "steps": [
+    {
+      "timestamp": "2026-04-03T23:34:40",
+      "action": "run_command",
+      "input": "echo fail",
+      "output": "fail",
+      "reasoning": "Attempting to execute a command that fails."
+    }
+  ],
+  "reward": 0.5,
+  "feedback": "The task failed to achieve the goal."
+}

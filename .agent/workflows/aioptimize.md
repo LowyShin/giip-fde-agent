@@ -1,0 +1,29 @@
+---
+description: Automated Agent Self-Optimization (Trace-based PROMPT Optimization)
+---
+
+# /aioptimize Workflow
+
+This workflow automates the process of identifying low-performance agent tasks and improving the corresponding "Skill" prompts using execution traces.
+
+// turbo-all
+## 1. Verify Traces
+Check if `.agent/traces/` contains any data to analyze.
+
+## 2. Run Native Optimizer
+Execute the analysis script:
+```pwsh
+python giipdb/scripts/prompt_optimization/native_optimizer.py
+```
+
+## 3. Analyze & Optimize (AI-Assisted)
+For each low-score trace identified by the script:
+- Read the corresponding `.agent/traces/<trace_id>.json` file.
+- Identify where the instructions in the `SKILL.md` were insufficient or misleading.
+- Use the `prompt-optimizer` or `skill-creator` skill to propose a refined version of the `.agent/skills/<skill-name>/SKILL.md`.
+
+## 4. Apply Improvements
+Overwrite the `SKILL.md` file with the optimized instructions.
+
+## 5. Verify Optimization
+(Optional) Run a task with the updated skill and verify the improvement in reward score.

@@ -176,6 +176,7 @@ Never guess
 | `dispatching-parallel-agents` | Run multiple independent tasks concurrently |
 | `skill-creator` | Create, evaluate, and optimize new agent skills |
 | `webapp-testing` | Playwright-based browser testing for web apps |
+| `agent-lightning` | Microsoft Agent Lightning integration for tracing and optimization |
 | `pdf`, `pptx`, `docx`, `xlsx` | Advanced document processing (read, extract, create) |
 | `frontend-design`, `theme-factory` | Modern UI/UX design and theme generation |
 | `canvas-design`, `brand-guidelines` | Graphics design and brand consistency |
@@ -329,4 +330,7 @@ gap-detector (Check) → Check Match Rate
 20260323 12:00:00: Completed task to create `links.md` and update all README versions (KR, EN, JP).
 20260323 13:14:00: Started task to verify and integrate missing skills from `agent-ref`.
 20260323 16:35:00: Completed integration of 13 new skills from `agent-ref`.
-
+20260403 22:56:50: Started task to research and integrate `microsoft/agent-lightning`. Created implementation plan for integration.
+20260403 23:04:00: Completed `microsoft/agent-lightning` integration. Added setup scripts, skills, workflows, and updated documentation across all languages.
+20260403 23:17:32: Completed 'Native' Agent Optimization integration (Concept of Agent Lightning without WSL2 requirement). Implemented `trace-manager` skill and `native-trace` workflow.
+20260403 23:34:35: Completed custom workflow `/aioptimize` implementation. Added `giipdb/scripts/prompt_optimization/native_optimizer.py` and updated documentation across all languages.

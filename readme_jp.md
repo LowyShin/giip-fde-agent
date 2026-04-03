@@ -192,6 +192,38 @@ graph TD
 - **Security CSO**: STRIDEおよびOWASPベースの脅威モデリングと独立した脆弱性分析。 (`/cso`)
 - **Safety Guardrails**: 破壊的なコマンド実行前の警告（`/careful`）および作業範囲を特定のフォルダに制限（`/freeze`）することで事故を防止。
 
+## 🛠️ Custom Workflows & Native Optimization
+
+リナックスの依存関係なしに、ローカル環境で直接動作するネイティブエージェントの最適化ループです。
+
+### **1. 実行トレース (`/native-trace`)**
+エージェントのすべての実行ステップ（ツール呼び出し、プロンプト、推論プロセス）を自動的に記録します。将来のパフォーマンス向上のためのデータを収集します。
+- **使用法**: タスク要求の前に `/native-trace` を付けて実行します。
+- **結果**: 詳細な実行履歴が `.agent/traces/` フォルダにJSONとして保存されます。
+
+### **2. 自己最適化 (`/aioptimize`)**
+収集された実行履歴を分析して、エージェントの内部スキルとプロンプトを自動的に改善します。
+- **使用法**: `/aioptimize` ワークフローを実行します。
+- **コマンド**: `python giipdb/scripts/prompt_optimization/native_optimizer.py`
+- **ロジック**: 報酬スコアが低い（< 0.8）タスクを分析して失敗の原因を特定し、関連するスキルのMarkdown指示を最適化して提案します。
+
+### **3. 報酬システム (Reward System)**
+トレースされたタスクの完了後、0.0から1.0の間のスコアを提供してエージェントをガイドします。0.8未満のスコアは、 `/aioptimize` ステップでの改善対象として分類されます。
+
+## ⚡ Microsoft Agent Lightning (Research & Optimize)
+
+[Microsoft Agent Lightning](https://github.com/microsoft/agent-lightning)の強力なトレーシングおよび最適化機能が統合されました。 (Linux/WSL2専用)
+
+[Microsoft Agent Lightning](https://github.com/microsoft/agent-lightning)の強力なトレーシングおよび最適化機能が統合されました。
+
+- **Agent Tracing**: エージェントのすべての実行ステップ、ツール使用、プロンプトをタイムラインとして記録し、分析可能。
+- **Prompt Optimization**: 収集されたフィードバックに基づいて、プロンプトテンプレートを自動的に改善。
+- **Visual Dashboard**: ダッシュボードを通じてエージェントのパフォーマンス変化を視覚的に監視。
+- **Self-Improvement**: 継続的な学習ループにより、エージェントが時間の経過とともにさらに賢くなります。
+
+> [!IMPORTANT]
+> Agent Lightningは **Linux (WSL2)** 環境で最適に動作します。 `/agl-init` コマンドで環境を初期化し、 `/agl-trace` でタスクを追跡してください。
+
 ## 🌐 GIIP Enterprise Managed Service
 
 より強力で安定したシステム運用が必要ですか？ **GIIP**は、インフラの自動管理およびセキュリティ脅威の検出のために、専門家とAIのコラボレーションモデルを提供します。
