@@ -101,7 +101,7 @@ cd giip-dev-agent
 
 #### 초보자용: Antigravity (무료) ⭐
 - **장점**: 한국어 지원, 사용하기 쉬움, 무료
-- **단점**: Gemini API Key 필요
+- **단점**: 백그라운드 자동화 사용 시 Gemini API Key 필요 (수동 모드는 불필요)
 - **다운로드**: [Antigravity Manager](https://agm.littleworld.net/)
 
 #### 전문가용: Cursor ($20/월)
@@ -120,7 +120,8 @@ cd giip-dev-agent
 
 ## 🎬 Antigravity로 시작하기 (권장)
 
-### 1단계: API Key 발급
+### 1단계: (선택) API Key 발급
+> 💡 **자동화 기능을 사용하지 않으려면 이 단계는 건너뛰어도 됩니다.**
 
 1. [Google AI Studio](https://aistudio.google.com/app/apikey) 접속
 2. Google 계정으로 로그인
@@ -153,7 +154,8 @@ Copy-Item -Path "giip-dev-agent\.cursorrules" -Destination "." -Force
 cd giip-dev-agent
 ```
 
-### 4단계: API Key 설정
+### 4단계: (선택) 자동화를 위한 API Key 설정
+> 💡 **수동 모드(클립보드 핸드오프)만 사용할 경우 이 설정은 하지 않아도 됩니다.**
 
 ```bash
 # 1. settings.json.sample 파일을 복사

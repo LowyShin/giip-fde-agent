@@ -69,25 +69,18 @@ To use this system, the following tools must be installed:
 
 1. **PowerShell 7+**: [Installation Guide](https://learn.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-windows)
 2. **Node.js**: LTS version is recommended from the [official site](https://nodejs.org/).
-3. **Gemini CLI**: Run the following command in the terminal to install globally.
+3. **Gemini CLI** (Optional for automation): Needed to run automated background sessions.
    ```powershell
    npm install -g @google/gemini-cli
    ```
 
 ## ⚙️ Setup & Configuration
 
-### 1. API Key Setting
-Setting an API Key is necessary to use the Gemini API.
-(Not required if using manual start only.)
+### 1. Configuration Guide
+GIIP Agent supports **Manual Mode (Clipboard Handoff)** and **Automated Mode (Gemini CLI)** by default.
 
-First, if you ask the antigravity tool to analyze the agent script and create a setting.json sample file, the file will be created.
-
-1. Get an API Key from [Google AI Studio](https://aistudio.google.com/app/apikey).
-2. Copy the `.agent/settings.json.sample` file in the project root to `settings.json` in the same folder.
-3. Open the copied `settings.json` file and replace the `"YOUR_GEMINI_API_KEY_HERE"` part with the actual key issued.
-
-> [!NOTE]
-> The `launch_subsession.ps1` script first checks `.agent/settings.json` within the project, and if it doesn't exist, it refers to the user's home directory (`~/.gemini/settings.json`).
+- **Manual Mode**: Can be used immediately without any API Key configuration. (See [Manual Start](#2-manual-start-clipboard-handoff))
+- **Automated Mode**: To have the agent automatically perform tasks in the background, Gemini API Key configuration is required. (See [Automation Setup](#-automation-setup-for-gemini-cli---optional))
 
 ## 📁 Directory Structure
 
@@ -234,6 +227,19 @@ Do you need more powerful and stable system operation? **GIIP** provides a colla
 Leave complex management to experts and focus on the essence of your business.
 
 👉 [Visit GIIP Official Website](https://giip.littleworld.net/) or contact contact@littleworld.net for assistance. (Support for server/infrastructure setup available)
+
+## ⚙️ Automation Setup (For Gemini CLI - Optional)
+
+To have the agent automatically detect and perform tasks in the background (when using `launch_subsession.ps1`), an API Key configuration is required.
+
+First, ask the antigravity tool to analyze the agent scripts and create a `settings.json` sample file, or follow the steps below:
+
+1. Get an API Key from [Google AI Studio](https://aistudio.google.com/app/apikey).
+2. Copy the `.agent/settings.json.sample` file in the project root to `settings.json` in the same folder.
+3. Open the copied `settings.json` file and replace the `"YOUR_GEMINI_API_KEY_HERE"` part with the actual key issued.
+
+> [!NOTE]
+> The `launch_subsession.ps1` script first checks `.agent/settings.json` within the project, and if it doesn't exist, it refers to the user's home directory (`~/.gemini/settings.json`).
 
 ## 🙏 Special Thanks
 

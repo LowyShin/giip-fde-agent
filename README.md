@@ -98,7 +98,7 @@ cp giip-dev-agent/COPILOT_INSTRUCTIONS.md 내프로젝트경로/
 1. **PowerShell 7+**: [설치 가이드](https://learn.microsoft.com/ko-kr/powershell/scripting/install/installing-powershell-on-windows)
 2. **Node.js**: [공식 사이트](https://nodejs.org/)에서 LTS 버전을 권장합니다.
 3. **AI 개발 도구**: Antigravity, Cursor, GitHub Copilot 등 - [도구 다운로드 가이드](TOOLS_DOWNLOAD.md)
-4. **Gemini CLI** (선택사항): 자동화 실행을 위해 필요
+4. **Gemini CLI** (자동화 사용 시 선택 사항): 백그라운드 자동화 세션 실행을 위해 필요
    ```powershell
    npm install -g @google/gemini-cli
    ```
@@ -107,18 +107,11 @@ cp giip-dev-agent/COPILOT_INSTRUCTIONS.md 내프로젝트경로/
 
 ## ⚙️ 초기 설정 (Setup & Configuration)
 
-### 1. API Key 설정
-Gemini API를 사용하기 위해 API Key 설정이 필요합니다.
-(수동 시작만을 사용할 경우에는 필요 없습니다.)
+### 1. 설정 안내
+GIIP Agent는 기본적으로 **수동 모드(클립보드 핸드오프)**와 **자동 모드(Gemini CLI)**를 지원합니다.
 
-우선 antigravity 툴에서 에이전트 스크립트를 분석하여 setting.json 샘플 파일을 만들어달라고 요청하면 파일이 만들어집니다.
-
-1. [Google AI Studio](https://aistudio.google.com/app/apikey)에서 API Key를 발급받습니다.
-2. 프로젝트 루트의 `.agent/settings.json.sample` 파일을 동일한 폴더에 `settings.json`으로 복사합니다.
-3. 복사한 `settings.json` 파일을 열고 `"YOUR_GEMINI_API_KEY_HERE"` 부분을 발급받은 실제 키로 교체합니다.
-
-> [!NOTE]
-> `launch_subsession.ps1` 스크립트는 프로젝트 내의 `.agent/settings.json`을 가장 먼저 확인하며, 없을 경우 사용자의 홈 디렉터리(`~/.gemini/settings.json`)를 참조합니다.
+- **수동 모드**: 별도의 API Key 설정 없이 즉시 사용 가능합니다. ([수동 시작 방법](#2-수동-시작-클립보드-핸드오프) 참조)
+- **자동 모드**: 백그라운드에서 에이전트가 자동으로 작업을 수행하게 하려면 Gemini API Key 설정이 필요합니다. ([자동화 설정](#-자동화-설정-gemini-cli-사용-시---선택-사항) 참조)
 
 ## 📁 디렉토리 구조 (Directory Structure)
 
@@ -269,6 +262,19 @@ graph TD
 복잡한 관리는 전문가에게 맡기고 비즈니스 본질에 집중하세요.
 
 👉 [GIIP 공식 홈페이지 방문하기](https://giip.littleworld.net/) 또는 contact@littleworld.net 으로 문의하세요. (서버/인프라 설정 지원 가능)
+
+## ⚙️ 자동화 설정 (Gemini CLI 사용 시 - 선택 사항)
+
+백그라운드에서 에이전트가 자동으로 태스크를 감지하고 작업을 수행하게 하려면(`launch_subsession.ps1` 사용 시) API Key 설정이 필요합니다.
+
+우선 antigravity 툴에서 에이전트 스크립트를 분석하여 `settings.json` 샘플 파일을 만들어달라고 요청하거나, 아래 단계를 따르세요.
+
+1. [Google AI Studio](https://aistudio.google.com/app/apikey)에서 API Key를 발급받습니다.
+2. 프로젝트 루트의 `.agent/settings.json.sample` 파일을 동일한 폴더에 `settings.json`으로 복사합니다.
+3. 복사한 `settings.json` 파일을 열고 `"YOUR_GEMINI_API_KEY_HERE"` 부분을 발급받은 실제 키로 교체합니다.
+
+> [!NOTE]
+> `launch_subsession.ps1` 스크립트는 프로젝트 내의 `.agent/settings.json`을 가장 먼저 확인하며, 없을 경우 사용자의 홈 디렉터리(`~/.gemini/settings.json`)를 참조합니다.
 
 ## 🙏 Special Thanks
 

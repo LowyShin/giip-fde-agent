@@ -38,6 +38,7 @@ Agents MUST use the specialized skills in `.agent/skills/` for complex engineeri
 2.  **Writing Plans**: Before writing code, ALWAYS create an implementation plan using the `writing-plans` skill.
 3.  **Test Driven Development**: Follow the TDD cycle (Red-Green-Refactor) as defined in `test-driven-development` skill.
 4.  **Systematic Debugging**: For tough bugs, use the `systematic-debugging` skill to find the root cause, not just patch symptoms.
+5.  **Trace-First Operating Procedure**: For all complex coding, architectural changes, or new feature implementations, **ALWAYS** initiate the task with the `/native-trace` command to enable execution logging and automated prompt optimization via `/aioptimize`.
 
 ---
 
@@ -334,3 +335,4 @@ gap-detector (Check) → Check Match Rate
 20260403 23:04:00: Completed `microsoft/agent-lightning` integration. Added setup scripts, skills, workflows, and updated documentation across all languages.
 20260403 23:17:32: Completed 'Native' Agent Optimization integration (Concept of Agent Lightning without WSL2 requirement). Implemented `trace-manager` skill and `native-trace` workflow.
 20260403 23:34:35: Completed custom workflow `/aioptimize` implementation. Added `giipdb/scripts/prompt_optimization/native_optimizer.py` and updated documentation across all languages.
+20260404 00:08:00: Started task to reorder API Key setup in README files and clarify its usage for `gemini-cli` only.

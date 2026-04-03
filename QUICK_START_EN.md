@@ -101,7 +101,7 @@ Choose the tool that fits your situation!
 
 #### For Beginners: Antigravity (Free) ⭐
 - **Pros**: Korean support, easy to use, free
-- **Cons**: Requires Gemini API Key
+- **Cons**: Requires Gemini API Key for background automation only
 - **Download**: [Antigravity Manager](https://agm.littleworld.net/)
 
 #### For Professionals: Cursor ($20/month)
@@ -120,7 +120,8 @@ Choose the tool that fits your situation!
 
 ## 🎬 Getting Started with Antigravity (Recommended)
 
-### Step 1: Get API Key
+### Step 1: (Optional) Get API Key
+> 💡 **You can skip this step if you don't plan to use automation features.**
 
 1. Visit [Google AI Studio](https://aistudio.google.com/app/apikey)
 2. Sign in with your Google account
@@ -153,7 +154,8 @@ Copy-Item -Path "giip-dev-agent\.cursorrules" -Destination "." -Force
 cd giip-dev-agent
 ```
 
-### Step 4: API Key Setup
+### Step 4: (Optional) API Key Setup for Automation
+> 💡 **You can skip this step if you only use manual mode (clipboard handoff).**
 
 ```bash
 # 1. Copy settings.json.sample file

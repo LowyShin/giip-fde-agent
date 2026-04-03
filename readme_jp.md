@@ -69,25 +69,18 @@ Google Gemini APIを使用しない場合は、手動で安価に使用できま
 
 1. **PowerShell 7+**: [インストールガイド](https://learn.microsoft.com/ja-jp/powershell/scripting/install/installing-powershell-on-windows)
 2. **Node.js**: [公式サイト](https://nodejs.org/)でLTSバージョンを推奨します。
-3. **Gemini CLI**: ターミナルで以下のコマンドを実行して、グローバルにインストールしてください。
+3. **Gemini CLI** (自動化使用時のオプション): バックグラウンドでの自動化セッション実行に必要です。
    ```powershell
    npm install -g @google/gemini-cli
    ```
 
 ## ⚙️ 初期設定 (Setup & Configuration)
 
-### 1. API Key 設定
-Gemini APIを使用するために、API Keyの設定が必要です。
-（手動開始のみを使用する場合は必要ありません。）
+### 1. 設定ガイド
+GIIP Agentは、標準で**手動モード (クリップボードハンドオフ)**と**自動モード (Gemini CLI)**をサポートしています。
 
-まず、antigravityツールでエージェントスクリプトを分析し、setting.jsonのサンプルファイルを作成するように依頼すると、ファイルが作成されます。
-
-1. [Google AI Studio](https://aistudio.google.com/app/apikey)でAPI Keyを発行します。
-2. プロジェクトルートの `.agent/settings.json.sample` ファイルを同じフォルダに `settings.json` としてコピーします。
-3. コピーした `settings.json` ファイルを開き、`"YOUR_GEMINI_API_KEY_HERE"` の部分を発行された実際のキーに置き換えます。
-
-> [!NOTE]
-> `launch_subsession.ps1` スクリプトは、プロジェクト内の `.agent/settings.json` を最初に確認し、ない場合はユーザーのホームディレクトリ (`~/.gemini/settings.json`) を参照します。
+- **手動モード**: API Keyの設定なしで、すぐに使用を開始できます。 ([手動開始方法](#2-手動開始-クリップボードハンドオフ) を参照)
+- **自動モード**: バックグラウンドでエージェントに自動で作業を行わせるには、Gemini API Keyの設定が必要です。 ([自動化設定](#-自動化設定-gemini-cli使用時---オプション) を参照)
 
 ## 📁 ディレクトリ構造 (Directory Structure)
 
@@ -235,6 +228,19 @@ graph TD
 複雑な管理は専門家に任せ、ビジネスの本質に集中してください。
 
 👉 [GIIP公式ホームページを訪問する](https://giip.littleworld.net/) または contact@littleworld.net へお問い合わせください。（サーバー・インフラ設定のAI支援が可能です）
+
+## ⚙️ 自動化設定 (Gemini CLI使用時 - オプション)
+
+バックグラウンドでエージェントが自動的にタ스크を検知して作業を行うようにするには(`launch_subsession.ps1` 使用時)、API Keyの設定が必要です。
+
+まず、antigravityツールにエージェントスクリプトを分析させて `settings.json` のサンプルファイルを作成させるか、以下の手順に従ってください。
+
+1. [Google AI Studio](https://aistudio.google.com/app/apikey)でAPI Keyを発行します。
+2. プロジェクトルートの `.agent/settings.json.sample` ファイルを同じフォルダに `settings.json` としてコピーします。
+3. コピーした `settings.json` ファイルを開き、`"YOUR_GEMINI_API_KEY_HERE"` の部分を発行された実際のキーに置き換えます。
+
+> [!NOTE]
+> `launch_subsession.ps1` ス크립트는、プロジェクト内の `.agent/settings.json` を最初に確認し、ない場合はユーザーのホームディレクトリ (`~/.gemini/settings.json`) を参照します。
 
 ## 🙏 Special Thanks
 

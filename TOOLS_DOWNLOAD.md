@@ -63,7 +63,7 @@ Google Gemini 기반의 강력한 AI 코딩 도구입니다.
   - PDCA 방법론 기반 개발
   - Bkit Vibecoding Kit 통합
   - 한국어 우선 지원
-- **API Key 필요**: [Google AI Studio](https://aistudio.google.com/app/apikey)에서 무료 발급
+- **API Key (선택 사항)**: 백그라운드 자동화 기능 사용 시에만 필요 ([Google AI Studio](https://aistudio.google.com/app/apikey)에서 무료 발급)
 
 ### 2. Gemini CLI
 명령줄에서 Google Gemini API를 사용할 수 있는 도구입니다.
@@ -72,7 +72,7 @@ Google Gemini 기반의 강력한 AI 코딩 도구입니다.
   ```bash
   npm install -g @google/gemini-cli
   ```
-- **API Key 설정 필요**: [Google AI Studio](https://aistudio.google.com/app/apikey)
+- **API Key 설정 필수**: 백그라운드 자동 세션 실행을 위해 반드시 필요 ([Google AI Studio](https://aistudio.google.com/app/apikey))
 - **공식 문서**: [Gemini CLI GitHub](https://github.com/google/generative-ai-js)
 
 ### 3. Cursor
