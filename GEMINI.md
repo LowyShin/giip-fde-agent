@@ -338,3 +338,5 @@ gap-detector (Check) → Check Match Rate
 20260403 23:51:37: Completed global `/native-trace` integration across all workflows, skills, roles, and templates.
 20260404 00:08:00: Started task to reorder API Key setup in README files and clarify its usage for `gemini-cli` only.
 20260404 00:29:30: Started task to clarify Agent Lightning vs Native Optimization in documentation.
+20260404 00:34:16: Resumed interrupted documentation clarification task.
+20260404 00:42:50: Started task to synchronize English and Japanese README content with the Korean original.

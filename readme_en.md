@@ -176,6 +176,10 @@ This framework embeds the [Superpowers](https://github.com/obra/superpowers) sys
 - **Writing Plans**: Validates the design by writing `implementation_plan.md` before touching the code.
 - **Test Driven Development (TDD)**: Writes defect-free code through the `Red` -> `Green` -> `Refactor` cycle.
 - **Systematic Debugging**: Resolves the root cause with hypothesis-verification debugging rather than random modifications.
+- **Brainstorming**: Refines ideas into designs and specifications before implementation and obtains user approval.
+- **Parallel Dispatching**: Maximizes work speed by processing multiple independent tasks simultaneously through sub-agents.
+- **Skill Creator**: Creates new agent skills and continuously optimizes them through benchmarking.
+- **Webapp Testing**: Automatically verifies the frontend functionality of web applications using Playwright.
 
 ## 🛡️ Gstack Integration
 

@@ -172,57 +172,53 @@ graph TD
 
 ## 🦸 Superpowers Integration
 
-このフレームワークは、[Superpowers](https://github.com/obra/superpowers) システムを内蔵しており、エージェントが単なるコー딩マシンではなく、**責任感のある技術者**のように行動するように設計されています。
+このフレームワークは、[Superpowers](https://github.com/obra/superpowers) システムを内蔵しており、エージェントが単なるコーディングマシンではなく、**責任感のある技術者**のように行動するように設計されています。
 
 - **Subagent Driven Development**: 1つの複雑なタスクを「実装」->「仕様検討」->「コード品質検討」の3段階のパイプラインで処理します。
 - **Writing Plans**: コードを触る前に `implementation_plan.md` を作成して設計を検証します。
 - **Test Driven Development (TDD)**: `Red` -> `Green` -> `Refactor` サイクルを通じて欠陥のないコードを作成します。
 - **Systematic Debugging**: 無造作な修正ではなく、仮説検証型のデバッグで根本原因を解決します。
-- **Brainstorming**: 実装前にアイデアを設計と仕様に具体化し、ユーザーの承認を受けます。
-- **Parallel Dispatching**: 独立した複数のタスクをサブエージェントを通じて同時に処理し、作業速度を最大化します。
-- **Skill Creator**: 新しいエージェントスキルを生成し、ベンチマークを通じて継続的に最適化します。
-- **Webapp Testing**: Playwright を使用してウェブアプリケーションのフロントエンド機能を自動的に検証します。
 
 ## 🛡️ Gstack Integration
 
 [Gstack (garrytan/gstack)](https://github.com/garrytan/gstack)の強力な特化スキルが統合され、エージェントの思考能力と安全性が大幅に強化されました。
 
-- **Office Hours & CEO Review**: 実装前に製品の本質を再考し（Founder Mode）、ユーザー体験を最優先する計画レビュー。 (/office-hours, /ceo-review)
-- **Staff Engineer Audit**: N+1クエリ、レースコンディション、データ信頼境界など、熟練したエンジニアレベルの深層コードレビュー。 (/code-review 強化)
-- **Security CSO**: STRIDEおよびOWASPベースの脅威モデリングと独立した脆弱性分析。 (/cso)
-- **Safety Guardrails**: 破壊的なコマンド実行前の警告（/careful）および作業範囲を特定のフォルダに制限（/freeze）することで事故を防止。
+- **Office Hours & CEO Review**: 実装前に製品の本質を再考し（Founder Mode）、ユーザー体験を最優先する計画レビュー。 (`/office-hours`, `/ceo-review`)
+- **Staff Engineer Audit**: N+1クエリ、レースコンディション、データ信頼境界など、熟練したエンジニアレベルの深層コードレビュー。 (`/code-review` 強化)
+- **Security CSO**: STRIDEおよびOWASPベースの脅威モデリングと独立した脆弱性分析。 (`/cso`)
+- **Safety Guardrails**: 破壊的なコマンド実行前の警告（`/careful`）および作業範囲を特定のフォルダに制限（`/freeze`）することで事故を防止。
 
 ## 🛠️ Custom Workflows & Native Optimization
 
 リナックスの依存関係なしに、ローカル環境で直接動作するネイティブエージェントの最適化ループです。
 
-### **1. 実行トレース (/native-trace)**
-エージェントのすべての実行ステップ（ツール呼び出し、プロンプト、推論プロセス）を自動적으로記録しま す。将来のパフォーマンス向上のためのデータを収集します。
-- **使用法**: タスク要求の前に /native-trace を付けて実行します。
+### **1. 実行トレース (`/native-trace`)**
+エージェントのすべての実行ステップ（ツール呼び出し、プロンプト、推論プロセス）を自動的に記録します。将来のパフォーマンス向上のためのデータを収集します。
+- **使用法**: タスク要求の前に `/native-trace` を付けて実行します。
 - **結果**: 詳細な実行履歴が `.agent/traces/` フォルダにJSONとして保存されます。
 
-### **2. 自己最適化 (/aioptimize)**
+### **2. 自己最適化 (`/aioptimize`)**
 収集された実行履歴を分析して、エージェントの内部スキルとプロンプトを自動的に改善します。
-- **使用法**: /aioptimize ワークフローを実行します。
+- **使用法**: `/aioptimize` ワークフローを実行します。
 - **コマンド**: `python giipdb/scripts/prompt_optimization/native_optimizer.py`
 - **ロジック**: 報酬スコアが低い（< 0.8）タスクを分析して失敗の原因を特定し、関連するスキルのMarkdown指示を最適化して提案します。
 
 ### **3. 報酬システム (Reward System)**
-トレースされたタスクの完了後、0.0から1.0の間のスコアを提供してエージェントをガイドします。0.8未満のスコアは、 /aioptimize ステップでの改善対象として分類されます。
+トレースされたタスクの完了後、0.0から1.0の間のスコアを提供してエージェントをガイドします。0.8未満のスコアは、 `/aioptimize` ステップでの改善対象として分類されます。
 
 ## ⚡ Agent Tracing & Optimization (Trace & Improve)
 
-Microsoftの [Agent Lightning](https://github.com/microsoft/agent-lightning) の強力なトレーシングおよび最適化の概念がこのリポジトリに統合されました。
+[Microsoft Agent Lightning](https://github.com/microsoft/agent-lightning)の強力なトレーシングおよび最適化機能が統合されました。 (Linux/WSL2専用)
+
+[Microsoft Agent Lightning](https://github.com/microsoft/agent-lightning)の強力なトレーシングおよび最適化機能が統合されました。
 
 - **Agent Tracing**: エージェントのすべての実行ステップ、ツール使用、プロンプトをタイムラインとして記録し、分析可能。
 - **Prompt Optimization**: 収集されたフィードバックに基づいて、プロンプトテンプレートを自動的に改善。
+- **Visual Dashboard**: ダッシュボードを通じてエージェントのパフォーマンス変化を視覚的に監視。
 - **Self-Improvement**: 継続的な学習ループにより、エージェントが時間の経過とともにさらに賢くなります。
 
-> [!TIP]
-> **このリポジトリは、WSL2やLinux環境なしでも同様の機能を完璧に実行します！**
-> 
-> Microsoftの元のAgent Lightningは **Linux (WSL2)** 環境が必須であり、/agl-init や /agl-trace コマンドが必要ですが、このリポジトリでは **Windowsネイティブ環境** でそのまま **/native-trace** と **/aioptimize** コマンドを使用するだけで、同様の（あるいはより最適化された）自己改善ループを駆動できます。別途の仮想環境設定なしで即座に使用可能なことが、このシステムの最大の優位性です。
-
+> [!IMPORTANT]
+> Agent Lightningは **Linux (WSL2)** 環境で最適に動作します。 `/agl-init` コマンドで環境を初期化し、 `/agl-trace` でタスクを追跡してください。
 
 ## 🌐 GIIP Enterprise Managed Service
 
@@ -247,7 +243,7 @@ Microsoftの [Agent Lightning](https://github.com/microsoft/agent-lightning) の
 3. コピーした `settings.json` ファイルを開き、`"YOUR_GEMINI_API_KEY_HERE"` の部分を発行された実際のキーに置き換えます。
 
 > [!NOTE]
-> `launch_subsession.ps1` スクリプトは、プロジェクト内の `.agent/settings.json` を最初に確認し、ない場合はユーザーのホームディレクトリ (`~/.gemini/settings.json`) を参照します。
+> `launch_subsession.ps1` ス크립트는、プロジェクト内の `.agent/settings.json` を最初に確認し、ない場合はユーザーのホームディレクトリ (`~/.gemini/settings.json`) を参照します。
 
 ## 🙏 Special Thanks
 
@@ -263,6 +259,4 @@ Microsoftの [Agent Lightning](https://github.com/microsoft/agent-lightning) の
   - PDCAメソドロジーに基づいた開発の最適化
 - [gstack](https://github.com/garrytan/gstack)
   - 製品中心の思考、安全ガードレール、セキュリティ監査ロジックの統合
-
-
 
