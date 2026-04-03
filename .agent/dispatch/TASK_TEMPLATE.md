@@ -5,6 +5,7 @@ This is the standard template for task dispatch files. AI Orchestrators MUST use
 - **Status:** Pending
 - **Task ID:** TASK_ID_HERE
 - **Target Role:** ROLE_NAME_HERE
+- **Tracing Enabled:** Yes (Use `/native-trace`)
 
 ## Objective
 [Describe the high-level objective of this task]

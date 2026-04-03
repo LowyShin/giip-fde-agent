@@ -1,6 +1,10 @@
 ---
 description: Initialize Agent Lightning environment in WSL2
 ---
+
+> [!TIP]
+> This workflow should ideally be executed with tracing enabled (`/native-trace`) for future optimization and performance analysis.
+
 1.  Open your WSL2 terminal.
 2.  Clone the repository or navigate to the project root:
     ```bash

@@ -45,3 +45,8 @@ Every security finding must include:
 | `cso scan` | Run a full security audit on the current scope. |
 | `threat model` | Generate a STRIDE threat model for the current feature design. |
 | `exploit {finding}` | Generate a detailed exploit scenario for a specific finding. |
+
+
+## ⚡ Optimization Integration
+When using this skill for critical tasks, please run it within a /native-trace context to capture performance data for self-improvement via /aioptimize.
+

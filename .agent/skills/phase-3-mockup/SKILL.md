@@ -337,3 +337,8 @@ See `templates/pipeline/phase-3-mockup.template.md`
 ## Next Phase
 
 Phase 4: API Design/Implementation → Mockup is validated, now implement actual backend
+
+
+## ⚡ Optimization Integration
+When using this skill for critical tasks, please run it within a /native-trace context to capture performance data for self-improvement via /aioptimize.
+

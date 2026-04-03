@@ -43,3 +43,8 @@ agl-dashboard
 ## 🏗️ Environment
 > [!IMPORTANT]
 > Agent Lightning requires **Linux (WSL2 on Windows)**. All Python scripts using this skill should be executed in a WSL2 environment with `agentlightning` installed.
+
+
+## ⚡ Optimization Integration
+When using this skill for critical tasks, please run it within a /native-trace context to capture performance data for self-improvement via /aioptimize.
+

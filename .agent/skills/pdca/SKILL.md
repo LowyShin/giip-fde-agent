@@ -290,3 +290,8 @@ Auto-suggest related action when detecting these keywords:
 | "improve", "iterate", "fix" | iterate |
 | "complete", "report", "summary" | report |
 | "archive", "cleanup", "store" | archive |
+
+
+## ⚡ Optimization Integration
+When using this skill for critical tasks, please run it within a /native-trace context to capture performance data for self-improvement via /aioptimize.
+

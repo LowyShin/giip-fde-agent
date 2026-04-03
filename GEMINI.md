@@ -335,4 +335,6 @@ gap-detector (Check) → Check Match Rate
 20260403 23:04:00: Completed `microsoft/agent-lightning` integration. Added setup scripts, skills, workflows, and updated documentation across all languages.
 20260403 23:17:32: Completed 'Native' Agent Optimization integration (Concept of Agent Lightning without WSL2 requirement). Implemented `trace-manager` skill and `native-trace` workflow.
 20260403 23:34:35: Completed custom workflow `/aioptimize` implementation. Added `giipdb/scripts/prompt_optimization/native_optimizer.py` and updated documentation across all languages.
+20260403 23:51:37: Completed global `/native-trace` integration across all workflows, skills, roles, and templates.
 20260404 00:08:00: Started task to reorder API Key setup in README files and clarify its usage for `gemini-cli` only.
+20260404 00:29:30: Started task to clarify Agent Lightning vs Native Optimization in documentation.

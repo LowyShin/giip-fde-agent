@@ -1,6 +1,10 @@
 ---
 description: Trace a task using Agent Lightning
 ---
+
+> [!TIP]
+> This workflow is built for tracing. Always ensure you are in a `/native-trace` or `/agl-trace` session to capture optimization data.
+
 // turbo-all
 1.  Navigate to the repository root in WSL2.
 2.  Activate the virtual environment:

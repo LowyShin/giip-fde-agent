@@ -2,6 +2,9 @@
 description: Execute a task with automatic trace logging for optimized AI performance.
 ---
 
+> [!IMPORTANT]
+> This workflow is the primary entry point for capturing optimization data. Always use `/native-trace` to trigger this process.
+
 # /native-trace Workflow
 
 This workflow executes an AI task while recording every step for later analysis and optimization.

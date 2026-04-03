@@ -204,17 +204,18 @@ Analyzes collected execution history to automatically improve the agent's intern
 ### **3. Reward System**
 After a traced task is completed, provide a score between 0.0 and 1.0 to guide the agent. Scores below 0.8 are categorized as improvement targets in the `/aioptimize` step.
 
-## ⚡ Microsoft Agent Lightning (Research & Optimize)
+## ⚡ Agent Tracing & Optimization (Trace & Improve)
 
-Powerful tracing and optimization features from [Microsoft Agent Lightning](https://github.com/microsoft/agent-lightning) have been integrated.
+The powerful tracing and optimization concepts from Microsoft's [Agent Lightning](https://github.com/microsoft/agent-lightning) have been integrated into this repository.
 
 - **Agent Tracing**: Record every execution step, tool usage, and prompt as a timeline for analysis.
 - **Prompt Optimization**: Automatically improve prompt templates based on collected feedback.
-- **Visual Dashboard**: Monitor agent performance changes visually via a dashboard.
 - **Self-Improvement**: A continuous learning loop that makes the agent smarter over time.
 
-> [!IMPORTANT]
-> Agent Lightning works best in a **Linux (WSL2)** environment. Use the `/agl-init` command to initialize the environment and `/agl-trace` to trace your tasks.
+> [!TIP]
+> **This repository performs the same functions perfectly without the need for WSL2 or a Linux environment!**
+> 
+> While the original Microsoft Agent Lightning works best in a **Linux (WSL2)** environment and requires the `/agl-init` and `/agl-trace` commands, this repository allows you to run the same (or even more optimized) self-improvement loop directly in a **Windows Native environment** using only the **`/native-trace`** and **`/aioptimize`** commands. The greatest superiority of this system is that it is ready to use immediately without any complex virtual environment setup.
 
 ## 🌐 GIIP Enterprise Managed Service
 

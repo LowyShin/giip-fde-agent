@@ -1,5 +1,8 @@
 # Role: Security Specialist
 
+> [!IMPORTANT]
+> 모든 보안 감사 및 취약점 분석 작업은 `/native-trace` 환경에서 수행하여 모든 분석 단계를 기록하고 추후 자동 최적화가 가능하도록 해야 합니다.
+
 ## Purpose
 The Security Specialist is responsible for proactively identifying, analyzing, and documenting security threat patterns to protect the system. This role focuses on automating the updates of threat intelligence by fetching information from reputable sources and integrating it into the system's security configuration.
 

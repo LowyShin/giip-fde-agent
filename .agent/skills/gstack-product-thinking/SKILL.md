@@ -41,3 +41,8 @@ Think with taste, ambition, and user empathy. Choose one of the four modes for t
 - Every product thinking session must result in a **Design Doc** (or an update to the current one).
 - Use interactive questioning — ask the user at least one "Taste Decision" question.
 - Avoid "AI Slop" — be opinionated, concise, and human-centric.
+
+
+## ⚡ Optimization Integration
+When using this skill for critical tasks, please run it within a /native-trace context to capture performance data for self-improvement via /aioptimize.
+

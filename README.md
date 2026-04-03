@@ -237,19 +237,29 @@ graph TD
 ### **3. 보상 시스템 (Reward System)**
 추적된 작업이 끝난 후 0.0 ~ 1.0 사이의 점수를 부여하여 에이전트를 가이드합니다. 0.8 미만의 점수는 `/aioptimize` 단계에서 개선 대상으로 분류됩니다.
 
-## ⚡ Microsoft Agent Lightning (Research & Optimize)
+## 📈 Trace-First Culture
 
-[Microsoft Agent Lightning](https://github.com/microsoft/agent-lightning)의 강력한 트레이싱 및 최적화 기능이 통합되었습니다. (Linux/WSL2 전용)
+이 프로젝트는 모든 중요한 작업에서 실행 과정을 기록하고 분석하는 **Trace-First** 문화를 지향합니다.
 
-[Microsoft Agent Lightning](https://github.com/microsoft/agent-lightning)의 강력한 트레이싱 및 최적화 기능이 통합되었습니다.
+- **지속적 개선**: `/native-trace`로 수집된 데이터는 `/aioptimize` 워크플로우를 통해 에이전트의 프롬프트를 자동으로 진화시킵니다.
+- **투명성**: 모든 도구 호출과 추론 과정이 기록되어 작업 결과를 신뢰할 수 있습니다.
+- **최적화**: 데이터 기반의 피드백 루프를 통해 시간이 지날수록 더욱 정교한 작업 수행이 가능해집니다.
+
+> [!TIP]
+> 새로운 기능 구현이나 복잡한 버그 수정 시 항상 `/native-trace`로 작업을 시작해 보세요.
+
+## ⚡ Agent Tracing & Optimization (Trace & Improve)
+
+Microsoft의 [Agent Lightning](https://github.com/microsoft/agent-lightning)의 강력한 트레이싱 및 최적화 개념이 이 레포지토리에 통합되었습니다.
 
 - **Agent Tracing**: 에이전트의 모든 실행 단계, 툴 사용, 프롬프트를 타임라인으로 기록하여 분석 가능.
 - **Prompt Optimization**: 수집된 피드백을 기반으로 프롬프트 템플릿을 자동으로 개선.
-- **Visual Dashboard**: 대시보드를 통해 에이전트의 성능 변화를 시각적으로 모니터링.
 - **Self-Improvement**: 지속적인 학습 루프를 통해 에이전트가 시간이 지날수록 더욱 똑똑해집니다.
 
-> [!IMPORTANT]
-> Agent Lightning은 **Linux (WSL2)** 환경에서 최상으로 작동합니다. `/agl-init` 명령어로 환경을 초기화하고 `/agl-trace`로 작업을 추적하십시오.
+> [!TIP]
+> **본 레포지토리는 WSL2나 Linux 환경 없이도 동일한 기능을 완벽하게 수행합니다!**
+> 
+> Microsoft의 Agent Lightning 원본은 **Linux (WSL2)** 환경에서만 최상으로 작동하며 `/agl-init`, `/agl-trace` 명령어가 필요합니다. 하지만 이 레포지토리에서는 별도의 WSL2 설치 없이 **Windows 네이티브 환경**에서 즉시 **`/native-trace`**와 **`/aioptimize`** 명령만으로 동일한 자가 최적화 기능을 수행할 수 있습니다. 복잡한 환경 설정 없이 강력한 성능을 발휘하는 것이 이 시스템의 핵심 장점입니다.
 
 ## 🌐 GIIP Enterprise Managed Service
  

@@ -52,3 +52,8 @@ Save the final trace to `.agent/traces/<trace_id>.json`.
 ## When to use this skill
 - Use this when the user triggers the `/native-trace` workflow.
 - Use this when you are working on a critical skill that needs refinement.
+
+
+## ⚡ Optimization Integration
+When using this skill for critical tasks, please run it within a /native-trace context to capture performance data for self-improvement via /aioptimize.
+

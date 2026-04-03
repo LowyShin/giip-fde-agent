@@ -183,3 +183,8 @@ Classify tasks to apply appropriate PDCA level:
 **Minor Change**: improve, refactor, enhance, optimize, update
 **Feature**: add, create, implement, build, new feature
 **Major Feature**: redesign, migrate, architecture, overhaul, rewrite
+
+
+## ⚡ Optimization Integration
+When using this skill for critical tasks, please run it within a /native-trace context to capture performance data for self-improvement via /aioptimize.
+
