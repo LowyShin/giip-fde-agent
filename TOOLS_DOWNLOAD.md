@@ -116,7 +116,7 @@ Anthropic의 AI 어시스턴트입니다.
 
 - **웹 버전**: [Claude.ai](https://claude.ai/)
 - **상세 가이드**: [Claude Code 상세 보기](docs/04-tools/claude-code.md)
-- **공식 문서**: [docs.claude.ai](https://docs.claude.ai/)
+- **공식 문서**: [docs.anthropic.com](https://docs.anthropic.com)
   - 현재 비공개 베타
   - [대기자 명단 등록](https://www.anthropic.com/)
 - **가격**: 

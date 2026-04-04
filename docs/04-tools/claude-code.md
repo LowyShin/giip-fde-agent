@@ -11,7 +11,7 @@
 
 ## 🔗 공식 리소스 및 설치
 - **공식 사이트**: [claude.ai](https://claude.ai/)
-- **공식 문서**: [docs.claude.ai](https://docs.claude.ai/)
+- **공식 문서**: [docs.anthropic.com](https://docs.anthropic.com)
 - **설치 명령어**:
   ```bash
   npm install -g @anthropic-ai/claude-code

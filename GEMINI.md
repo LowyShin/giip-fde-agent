@@ -344,3 +344,5 @@ gap-detector (Check) → Check Match Rate
 20260404 10:30:00: README.md 도구 리스트 추가 및 상세 문서 생성 시작
 20260404 10:38:00: README.md 도구 리스트 및 상세 문서 생성 완료
 20260404 10:45:01: Antigravity 공식 URL 오류 수정 및 전수 조사 완료 (https://antigravity.google)
+20260404 11:51:00: Claude 공식 문서 URL 오류 수정 (https://docs.anthropic.com)
+20260404 11:55:00: 모든 외부 도구 링크 전수 검증 및 오류 수정 완료 (VS Code 404 등)
