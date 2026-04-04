@@ -3,261 +3,132 @@
 [한국어](README.md) | [日本語](readme_jp.md)
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)
-[![English Support](https://img.shields.io/badge/Language-English-blue.svg)](#-core-principles)
+[![Korean Support](https://img.shields.io/badge/Language-Korean-blue.svg)](#-핵심-규칙)
 [![AI Powered](https://img.shields.io/badge/AI-Gemini-orange.svg)](https://aistudio.google.com/app/apikey)
+[![Bkit Integration](https://img.shields.io/badge/Methodology-PDCA-brightgreen.svg)](https://github.com/popup-studio-ai/bkit-claude-code)
 
-> **🚀 New to AI development tools?**  
-> Check out the [**Quick Start Guide**](QUICK_START_EN.md) for friendly step-by-step instructions!  
-> [AI Tools Download Links](TOOLS_DOWNLOAD.md) | [Antigravity Usage Guide](ANTIGRAVITY_USAGE_GUIDE.md)
+**GIIP Agent System** is an **Autonomous Multi-Agent Framework** designed for complex software development and task automation. Beyond simple coding assistants, it brings a "thinking development team" that plans, verifies (Check), and continuously self-optimizes (AI-Optimize) into your project instantly.
 
-**GIIP Agent System** is an agent created by independently extracting only the **Autonomous Multi-Agent Framework** designed for complex software development and task automation.
+---
 
-You can build your own agent system by modifying the contents of the roles according to your know-how and purpose.
+## 🎯 Gateway to Onboarding
 
-Basically, it provides a state-of-the-art AI workflow where the Orchestrator and specialized sub-agents collaborate utilizing the Google Gemini API.
-If you don't use the Google Gemini API, you can use it manually at a low cost. And if you want to use another API, just instruct the orchestrator, and it will change it to suit your environment.
+> **🚀 First time here?**  
+> Check out the [**Quick Start Guide**](QUICK_START.md) to launch your first agent in 5 minutes!  
+> [Tools Download](TOOLS_DOWNLOAD.md) | [Antigravity Usage](ANTIGRAVITY_USAGE_GUIDE.md) | [Useful Links](links.md)
 
-This framework adopts the concept of **Role-based Sub-Agents** similar to **Claude Code's skills** or **OpenCode**, elaborately dividing and solving complex tasks.
+---
 
-Specifically designed and optimized for the **Antigravity Tool**, it runs immediately with existing development tools and PowerShell environments without installing separate third-party tools. It provides excellent stability and compatibility even in Electron-based terminal environments.
+## 👥 Target Audience
 
-It is optimized for the Korean Developer Ecosystem, and all processes and documentation follow the **Korean-First** principle.
+- **AI-Native Developers**: Those who want to move beyond pair programming and manage an entire agent team.
+- **Startups & MVP Teams**: Teams looking to secure high-quality code and systematic documentation with minimal headcount.
+- **Complex Legacy Managers**: Those who want to safely refactor code using Systematic Debugging and TDD.
+- **Automation Enthusiasts**: Those who want to delegate repetitive operational tasks to reliable agents.
 
+---
 
-## ✨ Key Features
+## ✨ Why GIIP Agent System? (Key Strengths)
 
-- **Multi-Agent Collaboration**: Role-based collaboration in the style of Claude Code/OpenCode.
-- **Superpowers Native**: Built-in advanced engineering skills such as Plan, TDD, and Systematic Debugging.
-- **Multi-Platform Ready**: Immediately compatible with various AI tools such as Cursor, GitHub Copilot, and Claude.
-- **Autonomous Development**: Autonomous task performance from requirement analysis to implementation and verification.
-- **Antigravity Optimized**: Perfect sync and optimized workflow with the Antigravity tool.
-- **Zero-Tool Setup**: Immediately usable in the existing PowerShell environment without additional tool installation.
-- **Environment Stability**: Works perfectly in an Electron-based PowerShell environment.
-- **Gemini API Native**: High-performance reasoning and code generation utilizing the latest Google Gemini model.
-- **Korean-First Workflow**: Optimized for Korean-based documentation and agent interaction.
-- **React Best Practices**: Optimized Frontend code generation by applying Vercel's React Best Practices Rules.
-- **Bkit Vibecoding Kit**: Provides systematic development and Bkit feature usage reporting based on PDCA methodology.
+1.  **Zero-Tool Setup**: Works out-of-the-box with PowerShell and existing AI development tools (Cursor, Antigravity, etc.) without extra third-party tool installations.
+2.  **Korean-First Workflow**: Optimized for the Korean development ecosystem, showing peerless performance in Korean documentation and interaction.
+3.  **Advanced Engineering DNA**: Integrates the essence of proven frameworks like Bkit (PDCA), Superpowers (TDD/Debugging), and Gstack (Security/Safety).
+4.  **Native Optimization**: Supports full Execution Tracing and Self-Prompt Optimization (AI-Optimize) natively on Windows without Linux or WSL2.
+5.  **Unobtrusive Transplant**: Simply copy the `.agent` folder to your project to instantly activate the agent system.
 
-This repository is a space for managing the settings, role definitions, and workflows of the GIIP AI Agent system.
+---
 
-Since only the definitions of the roles for sub-agents actually used or necessary functions are collected in the `.agent` folder, overwriting the contents of this repository onto an existing project will not affect the existing project.
+## 🚀 Instant Integration to Existing Projects
 
-After copying the files and directories of this repository to the folder you are working in, start antigravity. Then, the preparation is finished by entering the chat as follows.
+Move to your project folder and run the following command to activate the GIIP Agent system (**Excluding .git folder**).
 
-```
-You are the orchestrator. Check your role, analyze the tasks below, and delegate the work to each person in charge.
-If there is no appropriate role to delegate, create a new role and delegate it to the person in charge.
-
--- Task Details --
-
-```
-
-Now you will be able to give work instructions in the current chat screen.
-
-## 🤝 Compatibility
-
-This project supports various AI agent environments:
-- **Antigravity**: `GEMINI.md` automatic recognition
-- **Cursor / Windsurf**: `.cursorrules` automatic recognition
-- **GitHub Copilot**: `COPILOT_INSTRUCTIONS.md` automatic recognition
-- **Claude / OpenCode**: Easy setup through `SETUP_AGENTS.md` guide
-
-## 🛠️ Prerequisites
-
-To use this system, the following tools must be installed:
-
-1. **PowerShell 7+**: [Installation Guide](https://learn.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-windows)
-2. **Node.js**: LTS version is recommended from the [official site](https://nodejs.org/).
-3. **Gemini CLI** (Optional for automation): Needed to run automated background sessions.
-   ```powershell
-   npm install -g @google/gemini-cli
-   ```
-
-## ⚙️ Setup & Configuration
-
-### 1. Configuration Guide
-GIIP Agent supports **Manual Mode (Clipboard Handoff)** and **Automated Mode (Gemini CLI)** by default.
-
-- **Manual Mode**: Can be used immediately without any API Key configuration. (See [Manual Start](#2-manual-start-clipboard-handoff))
-- **Automated Mode**: To have the agent automatically perform tasks in the background, Gemini API Key configuration is required. (See [Automation Setup](#-automation-setup-for-gemini-cli---optional))
-
-## 📁 Directory Structure
-
-```text
-.agent/
-├── roles/          # Persona and responsibility definitions for each agent (Developer, Tester, etc.)
-├── dispatch/       # Task definition files (TASK_YYYYMMDD-ID.md)
-├── scripts/        # [PowerShell script tools for system operation](./.agent/scripts/README.md)
-├── work_history/   # Record of work history (Rule compliance)
-└── README.md       # System detailed guide
-```
-
-## 🚀 Basic Usage
-
-There are two ways to start a sub-agent session in the background after giving a command. You must execute one of the two for the sub-agents of each role to start work.
-
-### 1. Automatic Start (when using gemini-cli)
-Automatically detects pending tasks and starts a `gemini-cli` session with the appropriate role immediately.
+### Windows (PowerShell)
 ```powershell
-.\.agent\scripts\launch_subsession.ps1
+# Copy essential files (Run inside giip-dev-agent folder or specify relative path)
+Copy-Item -Path ".agent", "GEMINI.md", ".cursorrules", "COPILOT_INSTRUCTIONS.md" -Destination "YOUR_PROJECT_PATH" -Recurse -Force
 ```
 
-- Periodic automatic execution (using batch file)
-You can set the agent to automatically check every 5 minutes and perform tasks.
-```cmd
-.\auto_agent.bat
-```
-This script maintains the running window and repeatedly calls `launch_subsession.ps1` at 5-minute (300-second) intervals.
-
-### 2. Manual Start (Clipboard Handoff)
-Used when you want to paste work into a new session in an environment such as Agent Manager without `gemini-cli`. It finds pending tasks and copies the context of the relevant role to the clipboard.
-```powershell
-.\.agent\scripts\launch_role.ps1
-```
-After execution, start the work by pasting it with `Ctrl+V` in the window chatting with the agent. (Creating a new conversation (plus button on the left) in the agent manager and pasting it is the most certain way.)
-
-## 📊 Monitoring & Status
-Check the progress of all tasks and currently running background processes.
-```powershell
-.\.agent\scripts\check_status.ps1
+### Mac/Linux
+```bash
+# Copy essential files (rsync recommended)
+rsync -av --exclude='.git' .agent GEMINI.md .cursorrules COPILOT_INSTRUCTIONS.md YOUR_PROJECT_PATH/
 ```
 
-### 3. Check Work History
-All work history of the agents is recorded by date in the `work_history` directory.
+> [!TIP]
+> After application, tell your AI tool (Antigravity, Cursor, etc.): **"You are the Orchestrator. Read GEMINI.md and analyze the current task."**
 
-## 🚨 Core Principles
-All agents strictly adhere to the following rules:
-1.  **Evidence First**: Technical basis is always presented by linking as a markdown file.
-2.  **Korean First**: In principle, all outputs and documents are written in Korean. (Note: This README is an English version for global compatibility).
-3.  **Clean Code**: Write code that is highly readable and easy to maintain, and eliminate unnecessary duplication.
+---
 
-## 🔄 Agent Workflow
+## 🧠 Core Concepts & Workflow
+
+GIIP Agent System works with an **Orchestrator** setting the overall strategy and **Sub-Agents** executing tasks in their specialized fields.
 
 ```mermaid
 graph TD
-    A[User Request] --> B[Orchestrator: Task Creation]
-    B --> C[launch_subsession.ps1 execution]
-    C --> D[Specialized Agent: Task Performance]
-    D --> E[Verify Work Results & Completion]
-    E --> F[Orchestrator: Final Report]
+    A[User Request] --> B{Orchestrator}
+    B -- Planning --> C[Create dispatch/*.task.md]
+    C -- Execute Order --> D[launch_subsession.ps1]
+    D -- Role Execution --> E[Specialized Agents/Dev/Test/Sec]
+    E -- Result Reporting --> F[Record Trace & History]
+    F -- Verification --> B
+    B -- Final Completion --> G[User Report]
 ```
 
-1.  The **Orchestrator** analyzes the request and creates a task in the `dispatch` directory.
-2.  The user or system executes `launch_subsession.ps1`.
-3.  The **Sub-Agent** (e.g., Developer, Tester) performs the work and updates the status to `Completed`.
-4.  The **Orchestrator** verifies the final output.
+---
 
-## 📦 Bkit Vibecoding Kit Integration
+## 🛠️ Advanced Ecosystem Integration
 
-**Bkit** is a Vibecoding Kit that combines the PDCA (Plan-Design-Do-Check-Act) methodology with an agent workflow to maximize development efficiency and quality.
+GIIP Agent System is more than just a collection of prompts; it's a consolidation of world-class agent technologies.
 
-- **PDCA Loop**: Systematic development process management through commands such as `/pdca plan`, `/pdca design`, and `/pdca analyze`.
-- **Gap Analysis**: Automatically analyzes the difference between implementation and design to ensure quality.
-- **Automated Reporting**: Provides standardized reporting on all work results.
+### 1. Bkit Vibecoding Kit (PDCA)
+- **Plan-Design-Do-Check-Act**: Ensures a 'thinking before making' process through Design and Analysis phases before implementation.
+- **`/pdca` Commands**: Automates systematic reporting and gap analysis.
 
-See [.gemini/README.md](.gemini/README.md) or [GEMINI.md](GEMINI.md) for detailed usage.
+### 2. Superpowers Engineering
+- **Subagent-Driven**: Decouples a single task into a pipeline of `Design` -> `Implementation` -> `Verification`.
+- **Strong Skills**: Built-in TDD (Test Driven Development), Systematic Debugging, and Brainstorming skills.
 
-## 📚 Additional Documentation & Guides
+### 3. Gstack (Safety & Security)
+- **Founder Mode**: Challenges the essence of the product and UX via `/office-hours` and `/ceo-review`.
+- **Guardrails**: Provides a safe development environment with warnings before destructive commands (`/careful`) and scope locking (`/freeze`).
+- **Security Audit**: Performs STRIDE/OWASP-based security checks with the `/cso` command.
 
-- **[Antigravity Usage Guide](ANTIGRAVITY_USAGE_GUIDE.md)**: Detailed explanation of how to effectively utilize Antigravity skills and Bkit methodology. Covers advanced development patterns such as PDCA cycle, systematic debugging, and TDD.
-- **[Prompt Examples](prompt_example.md)**: Provides various prompt examples for efficient agent utilization. Includes development phase-specific and platform-specific skill usage, as well as how to write complex prompts.
-- **[Useful Agent Links](links.md)**: A collection of external resources and tools to help with agent development and operation.
+### 4. Native Optimization & Tracing
+- **`/native-trace`**: Records all reasoning steps and tool invocation histories of the AI.
+- **`/aioptimize`**: The agent automatically refines its own prompts based on collected data to become smarter.
 
-> [!TIP]
+---
 
-> **Easy Translation**: If you prefer to read these documents in your native language, simply ask an AI assistant (like ChatGPT, Claude, or Gemini) to translate the content for you. For example: "Please translate this document to [your language]." This makes it easy to access the content in any language you're comfortable with.
+## ⚙️ Operations & Usage (Quick Guide)
 
-## 🦸 Superpowers Integration
+| Task | Command (PowerShell) | Description |
+| :--- | :--- | :--- |
+| **Auto Launch** | `.\.agent\scripts\launch_subsession.ps1` | Detects pending tasks and starts background sessions |
+| **Manual Handoff** | `.\.agent\scripts\launch_role.ps1` | Copies task context to clipboard (for other chat windows) |
+| **Check Status** | `.\.agent\scripts\check_status.ps1` | Monitors all ongoing tasks and background processes |
+| **Auto Monitoring**| `.\auto_agent.bat` | Checks pending tasks every 5 mins for auto-execution |
 
-This framework embeds the [Superpowers](https://github.com/obra/superpowers) system to make the agent act like a **responsible engineer** rather than a simple coding machine.
+> [!IMPORTANT]
+> **API Key Setup (Required for automation)**:  
+> Copy `.agent/settings.json.sample` to `settings.json` and enter your issued Gemini API Key.
 
-- **Subagent Driven Development**: Processes one complex task through a 3-step pipeline: `Implementation` -> `Spec Review` -> `Code Quality Review`.
-- **Writing Plans**: Validates the design by writing `implementation_plan.md` before touching the code.
-- **Test Driven Development (TDD)**: Writes defect-free code through the `Red` -> `Green` -> `Refactor` cycle.
-- **Systematic Debugging**: Resolves the root cause with hypothesis-verification debugging rather than random modifications.
-- **Brainstorming**: Refines ideas into designs and specifications before implementation and obtains user approval.
-- **Parallel Dispatching**: Maximizes work speed by processing multiple independent tasks simultaneously through sub-agents.
-- **Skill Creator**: Creates new agent skills and continuously optimizes them through benchmarking.
-- **Webapp Testing**: Automatically verifies the frontend functionality of web applications using Playwright.
+---
 
-## 🛡️ Gstack Integration
+## 🌐 GIIP Enterprise & Support
 
-Powerful specialized skills from [Gstack (garrytan/gstack)](https://github.com/garrytan/gstack) have been integrated to significantly enhance the agent's thinking capabilities and safety.
+Need professional server setup or AI-based infrastructure management?
+- **Official Website**: [giip.littleworld.net](https://giip.littleworld.net/)
+- **Contact Email**: contact@littleworld.net
 
-- **Office Hours & CEO Review**: Rethink the essence of the product before implementation (Founder Mode), and review plans with a focus on user experience. (`/office-hours`, `/ceo-review`)
-- **Staff Engineer Audit**: In-depth code reviews at a senior engineer level, including N+1 queries, race conditions, and data trust boundaries. (Enhanced `/code-review`)
-- **Security CSO**: Threat modeling and independent vulnerability analysis based on STRIDE and OWASP. (`/cso`)
-- **Safety Guardrails**: Warnings before executing destructive commands (`/careful`) and restricting the work scope to specific folders (`/freeze`) to prevent accidents.
-
-## 🛠️ Custom Workflows & Native Optimization
-
-Native agent optimization loop that works directly in the local environment without Linux dependencies.
-
-### **1. Execute with Tracing (`/native-trace`)**
-Automatically records every execution step (tool calls, prompts, reasoning). Collects data for performance improvement.
-- **Usage**: Prefix your task request with `/native-trace`.
-- **Result**: Detailed execution history is saved as JSON in the `.agent/traces/` folder.
-
-### **2. Self-Optimization (`/aioptimize`)**
-Analyzes collected execution history to automatically improve the agent's internal skills and prompts.
-- **Usage**: Run the `/aioptimize` workflow.
-- **Command**: `python giipdb/scripts/prompt_optimization/native_optimizer.py`
-- **Logic**: Analyzes tasks with low reward scores (< 0.8) to find the cause of failure and optimizes the Markdown instructions of the relevant skill.
-
-### **3. Reward System**
-After a traced task is completed, provide a score between 0.0 and 1.0 to guide the agent. Scores below 0.8 are categorized as improvement targets in the `/aioptimize` step.
-
-## ⚡ Agent Tracing & Optimization (Trace & Improve)
-
-The powerful tracing and optimization concepts from Microsoft's [Agent Lightning](https://github.com/microsoft/agent-lightning) have been integrated into this repository.
-
-- **Agent Tracing**: Record every execution step, tool usage, and prompt as a timeline for analysis.
-- **Prompt Optimization**: Automatically improve prompt templates based on collected feedback.
-- **Self-Improvement**: A continuous learning loop that makes the agent smarter over time.
-
-> [!TIP]
-> **This repository performs the same functions perfectly without the need for WSL2 or a Linux environment!**
-> 
-> While the original Microsoft Agent Lightning works best in a **Linux (WSL2)** environment and requires the `/agl-init` and `/agl-trace` commands, this repository allows you to run the same (or even more optimized) self-improvement loop directly in a **Windows Native environment** using only the **`/native-trace`** and **`/aioptimize`** commands. The greatest superiority of this system is that it is ready to use immediately without any complex virtual environment setup.
-
-## 🌐 GIIP Enterprise Managed Service
-
-Do you need more powerful and stable system operation? **GIIP** provides a collaboration model between experts and AI for automatic infrastructure management and security threat detection.
-
-- **Infrastructure Automation**: AI performs repetitive operational tasks instead.
-- **Security Threat Detection**: Detects threats in real-time and responds quickly.
-- **Expert Collaboration**: Combines AI efficiency with expert judgment to ensure the best quality.
-
-Leave complex management to experts and focus on the essence of your business.
-
-👉 [Visit GIIP Official Website](https://giip.littleworld.net/) or contact contact@littleworld.net for assistance. (Support for server/infrastructure setup available)
-
-## ⚙️ Automation Setup (For Gemini CLI - Optional)
-
-To have the agent automatically detect and perform tasks in the background (when using `launch_subsession.ps1`), an API Key configuration is required.
-
-First, ask the antigravity tool to analyze the agent scripts and create a `settings.json` sample file, or follow the steps below:
-
-1. Get an API Key from [Google AI Studio](https://aistudio.google.com/app/apikey).
-2. Copy the `.agent/settings.json.sample` file in the project root to `settings.json` in the same folder.
-3. Open the copied `settings.json` file and replace the `"YOUR_GEMINI_API_KEY_HERE"` part with the actual key issued.
-
-> [!NOTE]
-> The `launch_subsession.ps1` script first checks `.agent/settings.json` within the project, and if it doesn't exist, it refers to the user's home directory (`~/.gemini/settings.json`).
+---
 
 ## 🙏 Special Thanks
 
-Thanks to those who helped with this project:
+This system was built with inspiration from the following projects:
+- **[Superpowers](https://github.com/obra/superpowers)** (Engineering Rigor)
+- **[Bkit](https://github.com/popup-studio-ai/bkit-claude-code)** (PDCA Methodology)
+- **[Gstack](https://github.com/garrytan/gstack)** (Product Thinking & Safety)
+- **[Agent Lightning](https://github.com/microsoft/agent-lightning)** (Tracing & APO)
 
-- [Roy Koo](https://www.linkedin.com/in/roykoo99/)
-  - Idea for multi api key
-- [Old Man Carving Code (코드깎는노인)](https://www.youtube.com/@%EC%BD%94%EB%93%9C%EA%B9%8E%EB%8A%94%EB%85%B8%EC%9D%B8)
-  - Inspection logic for react
-- [superpowers](https://github.com/obra/superpowers)
-  - Strengthening development verification logic
-
-- [Bkit Vibecoding Kit](https://github.com/popup-studio-ai/bkit-claude-code) (Licensed under Apache 2.0)
-  - Development optimization based on PDCA methodology
-- [gstack](https://github.com/garrytan/gstack)
-  - Integration of product-focused thinking, safety guardrails, and security audit logic
+---
+© 2026 GIIP Agent System. Optimized for Antigravity & AI-Native Builders.

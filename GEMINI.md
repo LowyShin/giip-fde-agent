@@ -340,3 +340,4 @@ gap-detector (Check) → Check Match Rate
 20260404 00:29:30: Started task to clarify Agent Lightning vs Native Optimization in documentation.
 20260404 00:34:16: Resumed interrupted documentation clarification task.
 20260404 00:42:50: Started task to synchronize English and Japanese README content with the Korean original.
+20260404 09:35:00: Started task to reorganize and enhance README.md for better impact, clarity, and structure.
