@@ -341,3 +341,6 @@ gap-detector (Check) → Check Match Rate
 20260404 00:34:16: Resumed interrupted documentation clarification task.
 20260404 00:42:50: Started task to synchronize English and Japanese README content with the Korean original.
 20260404 09:35:00: Started task to reorganize and enhance README.md for better impact, clarity, and structure.
+20260404 10:30:00: README.md 도구 리스트 추가 및 상세 문서 생성 시작
+20260404 10:38:00: README.md 도구 리스트 및 상세 문서 생성 완료
+20260404 10:45:01: Antigravity 공식 URL 오류 수정 및 전수 조사 완료 (https://antigravity.google)

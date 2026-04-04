@@ -57,8 +57,8 @@ GIIP Agent System과 호환되는 AI 개발 도구들입니다.
 ### 1. Antigravity ⭐ (권장)
 Google Gemini 기반의 강력한 AI 코딩 도구입니다.
 
-- **다운로드**: [Antigravity Manager 다운로드](https://agm.littleworld.net/)
-- **설치 가이드**: [Antigravity 사용 가이드](ANTIGRAVITY_USAGE_GUIDE.md)
+- **다운로드**: [Antigravity 공식 사이트](https://antigravity.google)
+- **상세 가이드**: [Antigravity 상세 보기](docs/04-tools/antigravity.md) \| [Antigravity 사용 가이드](ANTIGRAVITY_USAGE_GUIDE.md)
 - **특징**: 
   - PDCA 방법론 기반 개발
   - Bkit Vibecoding Kit 통합
@@ -73,12 +73,14 @@ Google Gemini 기반의 강력한 AI 코딩 도구입니다.
   npm install -g @google/gemini-cli
   ```
 - **API Key 설정 필수**: 백그라운드 자동 세션 실행을 위해 반드시 필요 ([Google AI Studio](https://aistudio.google.com/app/apikey))
+- **상세 가이드**: [Gemini CLI 상세 보기](docs/04-tools/gemini-cli.md)
 - **공식 문서**: [Gemini CLI GitHub](https://github.com/google/generative-ai-js)
 
 ### 3. Cursor
 AI 기능이 통합된 차세대 코드 에디터입니다.
 
 - **다운로드**: [Cursor 공식 사이트](https://www.cursor.com/)
+- **상세 가이드**: [Cursor 상세 보기](docs/04-tools/cursor.md)
 - **가격**: 무료 버전 / Pro 버전 (월 $20)
 - **특징**: 
   - GPT-4 및 Claude 모델 지원
@@ -88,7 +90,8 @@ AI 기능이 통합된 차세대 코드 에디터입니다.
 ### 4. Windsurf
 Codeium의 AI 코딩 도구입니다.
 
-- **다운로드**: [Windsurf 공식 사이트](https://codeium.com/windsurf)
+- **다운로드**: [Windsurf 공식 사이트](https://windsurf.ai/)
+- **상세 가이드**: [Windsurf 상세 보기](docs/04-tools/windsurf.md)
 - **가격**: 무료 / Pro 버전
 - **특징**:
   - Flow state 기반 개발
@@ -112,7 +115,8 @@ Microsoft/OpenAI의 AI 코딩 어시스턴트입니다.
 Anthropic의 AI 어시스턴트입니다.
 
 - **웹 버전**: [Claude.ai](https://claude.ai/)
-- **Claude Code**: 
+- **상세 가이드**: [Claude Code 상세 보기](docs/04-tools/claude-code.md)
+- **공식 문서**: [docs.claude.ai](https://docs.claude.ai/)
   - 현재 비공개 베타
   - [대기자 명단 등록](https://www.anthropic.com/)
 - **가격**: 
@@ -131,6 +135,7 @@ Anthropic의 AI 어시스턴트입니다.
 무료 오픈소스 코드 에디터입니다.
 
 - **다운로드**: [VS Code 공식 사이트](https://code.visualstudio.com/)
+- **상세 가이드**: [VS Code & Autopilot 상세 보기](docs/04-tools/vscode.md)
 - **확장 프로그램**:
   - [GitHub Copilot](https://marketplace.visualstudio.com/items?itemName=GitHub.copilot)
   - [PowerShell](https://marketplace.visualstudio.com/items?itemName=ms-vscode.PowerShell)
