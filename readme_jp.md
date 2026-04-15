@@ -97,6 +97,11 @@ GIIP Agent Systemは、単なるプロンプトの集まりではなく、世界
 - **`/native-trace`**: AIの推論過程とツール呼び出し履歴のすべてを自動で記録します。
 - **`/aioptimize`**: 収集されたデータを基に、エージェントが自らプロンプトを修正し、より賢くなります。
 
+### 5. K-Layer Knowledge System (Karpathy Diagram)
+- **Source-linked Knowledge**: エージェントの作業履歴から再利用可能なパターンと教訓を `Claim` 単位で自動抽出し、蓄積します。
+- **自己強化ループ**: すべての知識は元の証拠（Trace/Source）と紐付けられており、次の作業時にエージェントがこれを参照することで、より賢く行動します。
+- [K-Layerの仕組み](.agent/skills/k-layer/SKILL.md) | [ナレッジベース](.agent/knowledge/README.md)
+
 ---
 
 ## ⚙️ 運用と使用法 (Quick Guide)

@@ -72,6 +72,26 @@ task-template: "[Code-Review] {feature}"
 - **Stale reads**: Check for potential cache/DB synchronization issues.
 - **Retry logic**: Audit backoff and failure modes for external calls.
 
+## Language-Specific Review Checklists
+
+### 🟦 TypeScript / JavaScript
+- **Strict Mode**: Ensure `noImplicitAny` is respected; avoid `any` wherever possible.
+- **Discriminated Unions**: Use for exhaustive state/type handling in `switch` blocks.
+- **Module System**: Verify ESM (`import`/`export`) vs CJS (`require`) consistency.
+- **Async/Await**: Check for unhandled promises or missing `await` in loops.
+
+### 🐍 Python
+- **PEP 8**: Naming conventions (snake_case), docstrings, and indentation.
+- **Type Hints**: Ensure function signatures have appropriate type annotations.
+- **Idiomatic Code**: Use list comprehensions, `with` statements, and `pathlib` appropriately.
+- **Virtual Environments**: Check for `requirements.txt` or `pyproject.toml` updates.
+
+### 🗄️ Database (SQL / NoSQL)
+- **N+1 Queries**: Identify nested loops executing multiple database calls.
+- **Indexing**: Check if filtered/joined columns have appropriate indexes.
+- **Injection**: Ensure all inputs are parameterized or properly escaped.
+- **Schema Integrity**: Verify foreign keys, constraints, and migration scripts.
+
 ## Review Output Format
 
 ```

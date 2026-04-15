@@ -97,6 +97,11 @@ GIIP Agent System is more than just a collection of prompts; it's a consolidatio
 - **`/native-trace`**: Records all reasoning steps and tool invocation histories of the AI.
 - **`/aioptimize`**: The agent automatically refines its own prompts based on collected data to become smarter.
 
+### 5. K-Layer Knowledge System (Karpathy Diagram)
+- **Source-linked Knowledge**: Automatically extracts and accumulates reusable patterns and lessons from agent history as `Claim` units.
+- **Self-Reinforcement Loop**: Every piece of knowledge is linked to its original evidence (Trace/Source), allowing agents to act smarter in subsequent tasks by referring to it.
+- [K-Layer Principles](.agent/skills/k-layer/SKILL.md) | [Knowledge Base](.agent/knowledge/README.md)
+
 ---
 
 ## ⚙️ Operations & Usage (Quick Guide)
