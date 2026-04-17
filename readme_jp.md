@@ -102,6 +102,11 @@ GIIP Agent Systemは、単なるプロンプトの集まりではなく、世界
 - **自己強化ループ**: すべての知識は元の証拠（Trace/Source）と紐付けられており、次の作業時にエージェントがこれを参照することで、より賢く行動します。
 - [K-Layerの仕組み](.agent/skills/k-layer/SKILL.md) | [ナレッジベース](.agent/knowledge/README.md)
 
+### 6. マルチソース・デザイン探索 (design-md)
+- **統合デザイン探索**: `designmd.ai`、`designmd.app`、`getdesign.md`、`designmd.me` の4つの主要プラットフォームを統合し、最適なデザインシステムを発掘します。
+- **ブランドの複製と自動生成**: StripeやVercelなどの有名ブランドのスタイルを即座に移植したり、特定のURLからデザイン・マークダウンを自動生成したりできます。
+- [デザイン探索および統合ガイド](docs/DESIGN_DISCOVERY_GUIDE.md)
+
 ---
 
 ## ⚙️ 運用と使用法 (Quick Guide)

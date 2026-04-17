@@ -18,3 +18,17 @@
 
 ### [craigsc/cmux](https://github.com/craigsc/cmux)
 - **설명**: 여러 개의 Claude 에이전트를 병렬로 실행하고 효율적으로 관리할 수 있도록 도와주는 도구입니다.
+
+## 🎨 디자인 및 MD 리소스 (Design & MD Resources)
+
+### [designmd.ai](https://designmd.ai)
+- **설명**: AI 개발을 위한 고품질 DESIGN.md 파일과 CLI 도구를 제공하는 플랫폼입니다.
+
+### [designmd.app](https://designmd.app)
+- **설명**: 400개 이상의 다양한 레퍼런스와 주요 AI 에이전트(Cursor, Claude 등)를 위한 설정 가이드를 제공합니다.
+
+### [getdesign.md](https://getdesign.md)
+- **설명**: Stripe, Vercel, Notion 등 유명 브랜드의 디자인 시스템을 역공학한 컬렉션을 제공합니다.
+
+### [designmd.me](https://designmd.me)
+- **설명**: URL 입력만으로 모든 웹사이트의 요소를 분석하여 디자인 마크다운 파일로 자동 변환해 줍니다.

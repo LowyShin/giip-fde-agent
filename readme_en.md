@@ -102,6 +102,11 @@ GIIP Agent System is more than just a collection of prompts; it's a consolidatio
 - **Self-Reinforcement Loop**: Every piece of knowledge is linked to its original evidence (Trace/Source), allowing agents to act smarter in subsequent tasks by referring to it.
 - [K-Layer Principles](.agent/skills/k-layer/SKILL.md) | [Knowledge Base](.agent/knowledge/README.md)
 
+### 6. Multi-Source Design Discovery (design-md)
+- **Consolidated Scouting**: Integrates 4 major platforms (`designmd.ai`, `designmd.app`, `getdesign.md`, `designmd.me`) to scout the best design systems.
+- **Brand Cloning & Auto-Generation**: Instantly transplant styles from famous brands (Stripe, Vercel) or auto-generate design markdown from any URL.
+- [Design Discovery & Integration Guide](docs/DESIGN_DISCOVERY_GUIDE.md)
+
 ---
 
 ## ⚙️ Operations & Usage (Quick Guide)
