@@ -31,7 +31,7 @@ GIIP Agent System is perfectly compatible with the following state-of-the-art AI
 | **Gemini CLI** | Fastest and lightest terminal AI utility | [Details](docs/04-tools/gemini-cli.md) |
 | **Windsurf** | Flow-centric intelligent agentic IDE | [Details](docs/04-tools/windsurf.md) |
 | **VS Code** | Standard editor supporting Autopilot autonomous mode | [Details](docs/04-tools/vscode.md) |
-| **OpenClaw** | Gateway connecting agents to messengers (Slack, etc.) | [Details](docs/04-tools/openclaw.md) |
+| **OpenClaw** | Gateway connecting agents to messengers (Slack, etc.) | [Details](docs/04-tools/openclaw_en.md) |
 
 ---
 
@@ -126,7 +126,7 @@ GIIP Agent System is more than just a collection of prompts; it's a consolidatio
 ### 7. Messenger Control (OpenClaw)
 - **Remote Messenger Control**: Query repository info and give orders via Slack, Discord, or Telegram anytime, anywhere.
 - **Agent in Your Pocket**: Access the project's knowledge base (K-Layer) from mobile for real-time Q&A.
-- [OpenClaw Messenger Integration Guide](docs/50-technical/openclaw-slack-integration.md)
+- [OpenClaw Messenger Integration Guide](docs/50-technical/openclaw-slack-integration_en.md)
 
 ---
 
