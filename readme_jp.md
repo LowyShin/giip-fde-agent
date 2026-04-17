@@ -19,6 +19,22 @@
 
 ---
 
+## 🛠️ サポートされているツール (Supported Tools)
+
+GIIP Agent Systemは、以下の最新AI開発ツールと完璧に互換性があります。各ツールの詳細ガイドとダウンロード情報はリンクを参照してください。
+
+| ツール | 説明 | 詳細ガイド |
+| :--- | :--- | :--- |
+| **Antigravity** | Google Geminiベースのプロフェッショナル向けエージェントプラットフォーム | [詳細を見る](docs/04-tools/antigravity.md) |
+| **Claude Code** | AnthropicのCLIベース・エージェンティック・コーディングツール | [詳細を見る](docs/04-tools/claude-code.md) |
+| **Cursor** | コードベース全体を理解するAIネイティブエディタ | [詳細を見る](docs/04-tools/cursor.md) |
+| **Gemini CLI** | 最速かつ軽量なターミナル用AIユーティリティ | [詳細を見る](docs/04-tools/gemini-cli.md) |
+| **Windsurf** | フロー (Flow) 中心のインテリジェント・エージェンティックIDE | [詳細を見る](docs/04-tools/windsurf.md) |
+| **VS Code** | Autopilot自律モードをサポートする標準エディタ | [詳細を見る](docs/04-tools/vscode.md) |
+| **OpenClaw** | エージェントをメッセンジャー (Slack等) と接続するゲートウェイ | [詳細を見る](docs/04-tools/openclaw.md) |
+
+---
+
 ## 👥 対象ユーザー (Target Audience)
 
 - **AIネイティブ開発者**: ペアプログラミングを超えて、エージェントチーム全体を管理したい方。
@@ -106,6 +122,11 @@ GIIP Agent Systemは、単なるプロンプトの集まりではなく、世界
 - **統合デザイン探索**: `designmd.ai`、`designmd.app`、`getdesign.md`、`designmd.me` の4つの主要プラットフォームを統合し、最適なデザインシステムを発掘します。
 - **ブランドの複製と自動生成**: StripeやVercelなどの有名ブランドのスタイルを即座に移植したり、特定のURLからデザイン・マークダウンを自動生成したりできます。
 - [デザイン探索および統合ガイド](docs/DESIGN_DISCOVERY_GUIDE.md)
+
+### 7. メッセンジャー制御 (OpenClaw)
+- **メッセンジャーベースの遠隔制御**: Slack、Discord、Telegramを通じて、いつでもどこでもレポジトリの情報を照会し、作業を指示できます。
+- **ポケットの中のエージェント**: モバイルデバイスからプロジェクトのナレッジベース (K-Layer) にアクセスし、リアルタイムでの質疑応答が可能です。
+- [OpenClaw メッセンジャー連動ガイド](docs/50-technical/openclaw-slack-integration.md)
 
 ---
 

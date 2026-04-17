@@ -19,6 +19,22 @@
 
 ---
 
+## 🛠️ Supported Tools
+
+GIIP Agent System is perfectly compatible with the following state-of-the-art AI development tools. Refer to the links for detailed guides and downloads.
+
+| Tool | Description | Detailed Guide |
+| :--- | :--- | :--- |
+| **Antigravity** | Professional agent platform based on Google Gemini | [Details](docs/04-tools/antigravity.md) |
+| **Claude Code** | Anthropic's CLI-based agentic coding tool | [Details](docs/04-tools/claude-code.md) |
+| **Cursor** | AI-native editor with full codebase understanding | [Details](docs/04-tools/cursor.md) |
+| **Gemini CLI** | Fastest and lightest terminal AI utility | [Details](docs/04-tools/gemini-cli.md) |
+| **Windsurf** | Flow-centric intelligent agentic IDE | [Details](docs/04-tools/windsurf.md) |
+| **VS Code** | Standard editor supporting Autopilot autonomous mode | [Details](docs/04-tools/vscode.md) |
+| **OpenClaw** | Gateway connecting agents to messengers (Slack, etc.) | [Details](docs/04-tools/openclaw.md) |
+
+---
+
 ## 👥 Target Audience
 
 - **AI-Native Developers**: Those who want to move beyond pair programming and manage an entire agent team.
@@ -106,6 +122,11 @@ GIIP Agent System is more than just a collection of prompts; it's a consolidatio
 - **Consolidated Scouting**: Integrates 4 major platforms (`designmd.ai`, `designmd.app`, `getdesign.md`, `designmd.me`) to scout the best design systems.
 - **Brand Cloning & Auto-Generation**: Instantly transplant styles from famous brands (Stripe, Vercel) or auto-generate design markdown from any URL.
 - [Design Discovery & Integration Guide](docs/DESIGN_DISCOVERY_GUIDE.md)
+
+### 7. Messenger Control (OpenClaw)
+- **Remote Messenger Control**: Query repository info and give orders via Slack, Discord, or Telegram anytime, anywhere.
+- **Agent in Your Pocket**: Access the project's knowledge base (K-Layer) from mobile for real-time Q&A.
+- [OpenClaw Messenger Integration Guide](docs/50-technical/openclaw-slack-integration.md)
 
 ---
 
