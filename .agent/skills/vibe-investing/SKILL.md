@@ -9,7 +9,7 @@ description: |
   - 특정 레포를 도입할지 비교·검토할 때
   - 백테스트/리스크/거버넌스 체크리스트가 필요할 때
 
-  트리거 키워드: 투자, 트레이딩, invest, trading, quant, backtest, risk, vibe investing
+  트리거 키워드: 투자, 트레이딩, invest, trading, quant, backtest, risk, investment analysis
 ---
 
 # Vibe Investing Integration Skill
