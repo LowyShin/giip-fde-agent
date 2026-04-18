@@ -19,6 +19,9 @@
 ### [craigsc/cmux](https://github.com/craigsc/cmux)
 - **설명**: 여러 개의 Claude 에이전트를 병렬로 실행하고 효율적으로 관리할 수 있도록 도와주는 도구입니다.
 
+### [gameworkerkim/vibe-investing](https://github.com/gameworkerkim/vibe-investing/blob/main/Awesome%20vibe%20invest.MD)
+- **설명**: AI/LLM 기반 투자·트레이딩 레포를 객관 평가(강점/약점/적합 사용자)와 공통 함정 체크리스트 중심으로 정리한 큐레이션입니다.
+
 ## 🎨 디자인 및 MD 리소스 (Design & MD Resources)
 
 ### [designmd.ai](https://designmd.ai)

@@ -128,6 +128,11 @@ GIIP Agent Systemは、単なるプロンプトの集まりではなく、世界
 - **ポケットの中のエージェント**: モバイルデバイスからプロジェクトのナレッジベース (K-Layer) にアクセスし、リアルタイムでの質疑応答が可能です。
 - [OpenClaw メッセンジャー連動ガイド](docs/50-technical/openclaw-slack-integration_ja.md)
 
+### 8. 投資/トレーディング統合 (Vibe Investing)
+- **安全な機能移植**: 外部の投資レポジトリを5軸（活性度・成熟度・学習曲線・市場適合性・ライセンス）で評価し、GIIP の role/rule/skill/workflow へ最小変更で統合します。
+- **リスク優先チェックリスト**: バックテストのバイアス、実行現実性（スリッページ/流動性/手数料）、規制/コストのガードレールを標準で適用します。
+- [投資スキル](.agent/skills/vibe-investing/SKILL.md) | [投資ワークフロー](.agent/workflows/investment-evaluation.md)
+
 ---
 
 ## ⚙️ 運用と使用法 (Quick Guide)

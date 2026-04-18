@@ -128,6 +128,11 @@ GIIP Agent System is more than just a collection of prompts; it's a consolidatio
 - **Agent in Your Pocket**: Access the project's knowledge base (K-Layer) from mobile for real-time Q&A.
 - [OpenClaw Messenger Integration Guide](docs/50-technical/openclaw-slack-integration_en.md)
 
+### 8. Investment/Trading Integration (Vibe Investing)
+- **Safe capability grafting**: Evaluate external investing repositories on 5 axes (activity, maturity, learning curve, market fit, license) and map them into GIIP role/rule/skill/workflow with minimal changes.
+- **Risk-first checklist**: Enforce backtest-bias checks, execution realism (slippage/liquidity/fees), and regulation/cost guardrails by default.
+- [Investment Skill](.agent/skills/vibe-investing/SKILL.md) | [Investment Workflow](.agent/workflows/investment-evaluation.md)
+
 ---
 
 ## ⚙️ Operations & Usage (Quick Guide)
