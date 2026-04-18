@@ -21,11 +21,11 @@ description: Evaluate and integrate investment/trading capabilities into GIIP ag
 - 라이선스
 
 ## 3. 안전성 점검
-- 백테스트 편향(look-ahead/survivorship/data snooping)
-- 환각 지표(hallucinated metrics)
-- 실행 현실성(슬리피지/수수료/유동성)
-- 규제/개인정보/광고 리스크
-- LLM 토큰 비용
+- 백테스트 편향(look-ahead/survivorship/data snooping): 미래정보 유출·표본 편향·과최적화로 성능이 부풀려졌는지 확인
+- 환각 지표(hallucinated metrics): LLM이 실제 데이터 근거 없이 PER·매출·수익률 숫자를 생성했는지 확인
+- 실행 현실성(슬리피지/수수료/유동성): 실거래 체결 조건을 반영했는지 확인
+- 규제/개인정보/광고 리스크: 투자자문·데이터보호·과장표현 위반 가능성 점검
+- LLM 토큰 비용: 멀티 에이전트 라운드 수 증가에 따른 운영비 급증 여부 점검
 
 ## 4. GIIP 구성요소 매핑
 - 역할이 필요하면 `roles/`에 추가
