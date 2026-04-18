@@ -1,5 +1,4 @@
----
-description: Evaluate and integrate investment/trading capabilities into GIIP agent components with safety-first checks.
+description: 투자/트레이딩 기능을 GIIP 에이전트 구성요소에 안전 우선 원칙으로 평가·통합합니다.
 ---
 
 # 투자/트레이딩 기능 평가 워크플로우
