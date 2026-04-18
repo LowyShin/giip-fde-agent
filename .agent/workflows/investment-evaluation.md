@@ -21,7 +21,7 @@ description: Evaluate and integrate investment/trading capabilities into GIIP ag
 - 라이선스
 
 ## 3. 안전성 점검
-- 백테스트 편향(look-ahead/survivorship/data snooping): 미래정보 유출·표본 편향·과최적화로 성능이 부풀려졌는지 확인
+- 백테스트 편향(look-ahead/survivorship/data snooping): 미래정보 유출·표본 편향·과최적화로 성능이 과대평가되었는지 확인
 - 환각 지표(hallucinated metrics): LLM이 실제 데이터 근거 없이 PER·매출·수익률 숫자를 생성했는지 확인
 - 실행 현실성(슬리피지/수수료/유동성): 실거래 체결 조건을 반영했는지 확인
 - 규제/개인정보/광고 리스크: 투자자문·데이터보호·과장표현 위반 가능성 점검

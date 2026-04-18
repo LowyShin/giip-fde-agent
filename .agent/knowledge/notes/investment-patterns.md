@@ -7,7 +7,7 @@
 
 ## 레포 평가 프레임
 
-CLAIM-001: 투자 에이전트 레포 비교 시 "활성도/성숙도/학습곡선/한국시장 적합성/라이선스" 5축 평가를 먼저 적용한다. 이 방식은 도입 판단 속도와 일관성을 높인다
+CLAIM-001: 투자 에이전트 레포 비교 시 "활성도/성숙도/학습곡선/한국시장 적합성/라이선스" 5축 평가를 먼저 적용한다
 - **evidence**: 큐레이션 문서가 동일 5축으로 모든 후보를 비교하고 강점/약점/적합 사용자까지 표준화
 - **source**: `https://github.com/gameworkerkim/vibe-investing/blob/main/Awesome%20vibe%20invest.MD`
 - **observed_at**: 20260418
