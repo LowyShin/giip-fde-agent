@@ -24,5 +24,16 @@
     2. 설치 후 상태 표시줄의 'Auto Accept' 패널을 통해 활성화 상태를 관리할 수 있습니다.
 - **참고**: 원활한 작동을 위해 IDE 실행 시 `--remote-debugging-port=9333` 옵션이 필요할 수 있습니다.
 
+## 🧠 Karpathy 행동 지침
+
+GIIP Agent System은 Antigravity 사용 시 LLM 코딩 실수를 방지하기 위해 [Karpathy 행동 지침](../../.agent/rules/10_karpathy_guidelines.md)을 따릅니다.
+
+1. **Think Before Coding** — 가정을 명시적으로 밝히고, 불확실하면 질문합니다.
+2. **Simplicity First** — 문제를 해결하는 최소한의 코드만 작성합니다.
+3. **Surgical Changes** — 반드시 필요한 것만 수정합니다.
+4. **Goal-Driven Execution** — 시작 전에 검증 가능한 성공 기준을 정의합니다.
+
+> 전체 내용: [`.agent/rules/10_karpathy_guidelines.md`](../../.agent/rules/10_karpathy_guidelines.md) | [원본 레포](https://github.com/forrestchang/andrej-karpathy-skills)
+
 ---
 *GIIP Agent System은 Antigravity 환경에서 최상의 성능과 호환성을 보장합니다.*

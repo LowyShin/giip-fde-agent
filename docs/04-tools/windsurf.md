@@ -13,5 +13,16 @@
 - **공식 사이트**: [windsurf.ai](https://windsurf.ai/)
 - **개발자 블로그**: [codeium.com/blog](https://codeium.com/blog)
 
+## 🧠 Karpathy 행동 지침
+
+GIIP Agent System은 Windsurf 사용 시 LLM 코딩 실수를 방지하기 위해 [Karpathy 행동 지침](../../.agent/rules/10_karpathy_guidelines.md)을 따릅니다. `.cursorrules` 설정이 Windsurf에서도 동일하게 적용됩니다.
+
+1. **Think Before Coding** — 가정을 명시적으로 밝히고, 불확실하면 질문합니다.
+2. **Simplicity First** — 문제를 해결하는 최소한의 코드만 작성합니다.
+3. **Surgical Changes** — 반드시 필요한 것만 수정합니다.
+4. **Goal-Driven Execution** — 시작 전에 검증 가능한 성공 기준을 정의합니다.
+
+> 전체 내용: [`.agent/rules/10_karpathy_guidelines.md`](../../.agent/rules/10_karpathy_guidelines.md) | [원본 레포](https://github.com/forrestchang/andrej-karpathy-skills)
+
 ---
 *Windsurf의 Flow 기능을 통해 에이전트와 긴밀하게 협업할 수 있습니다.*

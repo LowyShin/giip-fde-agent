@@ -4,6 +4,19 @@
 
 ---
 
+## Karpathy Behavioral Guidelines
+
+Follow these guidelines to reduce common LLM coding mistakes. Full details in [`.agent/rules/10_karpathy_guidelines.md`](.agent/rules/10_karpathy_guidelines.md).
+
+1. **Think Before Coding** — State assumptions explicitly. Ask if uncertain. Surface tradeoffs.
+2. **Simplicity First** — Minimum code that solves the problem. Nothing speculative.
+3. **Surgical Changes** — Touch only what you must. Don't improve unrelated code.
+4. **Goal-Driven Execution** — Define success criteria. Loop until verified.
+
+> Reference: [github.com/forrestchang/andrej-karpathy-skills](https://github.com/forrestchang/andrej-karpathy-skills)
+
+---
+
 ## Core Principles
 
 ### 1. Automation First, Commands are Shortcuts

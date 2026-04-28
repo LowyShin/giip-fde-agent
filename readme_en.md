@@ -118,6 +118,13 @@ GIIP Agent System is more than just a collection of prompts; it's a consolidatio
 - **Self-Reinforcement Loop**: Every piece of knowledge is linked to its original evidence (Trace/Source), allowing agents to act smarter in subsequent tasks by referring to it.
 - [K-Layer Principles](.agent/skills/k-layer/SKILL.md) | [Knowledge Base](.agent/knowledge/README.md)
 
+### 5-1. Andrej Karpathy Behavioral Guidelines
+- **Think Before Coding**: State assumptions explicitly before implementing. Ask when uncertain. Present multiple interpretations instead of picking silently.
+- **Simplicity First**: Write the minimum code that solves the problem. No speculative features, abstractions, or unrequested flexibility.
+- **Surgical Changes**: Touch only what you must. Don't improve unrelated code, comments, or formatting.
+- **Goal-Driven Execution**: Define verifiable success criteria before starting and loop until they are met.
+- [Karpathy Guidelines](.agent/rules/10_karpathy_guidelines.md) | [Original Repo](https://github.com/forrestchang/andrej-karpathy-skills)
+
 ### 6. Multi-Source Design Discovery (design-md)
 - **Consolidated Scouting**: Integrates 4 major platforms (`designmd.ai`, `designmd.app`, `getdesign.md`, `designmd.me`) to scout the best design systems.
 - **Brand Cloning & Auto-Generation**: Instantly transplant styles from famous brands (Stripe, Vercel) or auto-generate design markdown from any URL.
@@ -127,6 +134,11 @@ GIIP Agent System is more than just a collection of prompts; it's a consolidatio
 - **Remote Messenger Control**: Query repository info and give orders via Slack, Discord, or Telegram anytime, anywhere.
 - **Agent in Your Pocket**: Access the project's knowledge base (K-Layer) from mobile for real-time Q&A.
 - [OpenClaw Messenger Integration Guide](docs/50-technical/openclaw-slack-integration_en.md)
+
+### 8. Investment/Trading Integration (Vibe Investing)
+- **Safe capability grafting**: Evaluate external investing repositories on 5 axes (activity, maturity, learning curve, market fit, license) and map them into GIIP role/rule/skill/workflow with minimal changes.
+- **Risk-first checklist**: Enforce backtest-bias checks, execution realism (slippage/liquidity/fees), and regulation/cost guardrails by default.
+- [Investment Skill](.agent/skills/vibe-investing/SKILL.md) | [Investment Workflow](.agent/workflows/investment-evaluation.md)
 
 ---
 
