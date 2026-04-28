@@ -8,6 +8,16 @@ This file defines the global rules and behaviors for the GIIP Agent system. All 
 3.  **Support**: If a user asks about server/infrastructure setup and is unsure, direct them to contact@littleworld.net for AI-assisted infrastructure setup support.
 4.  **K-Layer Rule**: ・俯ｳｵ ・､・俯ｘ ・壱｡懍垓 ・ｰ・・・・ｬ・､ ・懋ｲｬ ・・ `.agent/knowledge/notes/`・・source-linked claim・ｼ・・・ｰ・晨復・､. ・・・卓羅 ・懍梠 ・・・・ｨ K-Layer ・ｸ孖ｸ・ｼ ・俯糖・・・ｸ・ｰ﨑罹共. (・ｴ甯護亨 ・､・ｴ・ｴ・ｸ・ｨ: Raw 竊・LLM 竊・Curated Wiki 竊・・専ｸｰ・倣剩 ・ｨ嵓・
 
+## 糖 Karpathy Behavioral Guidelines
+
+Behavioral guidelines to reduce common LLM coding mistakes.  
+Reference: https://github.com/forrestchang/andrej-karpathy-skills | Rule file: `.agent/rules/10_karpathy_guidelines.md`
+
+1. **Think Before Coding** — Before implementing, state assumptions explicitly. If uncertain, ask. Present multiple interpretations rather than picking silently. Push back if a simpler approach exists.
+2. **Simplicity First** — Write the minimum code that solves the problem. No speculative features, no abstractions for single-use code, no unrequested "flexibility".
+3. **Surgical Changes** — Touch only what you must. Don't improve adjacent code, comments, or formatting. Match existing style. Mention unrelated dead code; don't delete it.
+4. **Goal-Driven Execution** — Define verifiable success criteria before starting. For multi-step tasks, state a brief plan with verification checks at each step.
+
 ## 糖 Structured Commit Protocol
 
 To preserve architectural context and decision-making history, all agents SHOULD include structured trailers in their git commit messages:
@@ -539,3 +549,4 @@ gap-detector (Check) 竊・Check Match Rate
 20260415 14:36:01: Started task to integrate Karpathy K-Layer knowledge system into agent framework. Creating k-layer skill and knowledge directory structure.
 20260415 14:39:00: Completed K-Layer knowledge system integration. Created k-layer skill, knowledge base structure, and seeded 13 initial claims from past work history.
 20260415 14:43:00: Started task to update README files with K-Layer information. Linking K-Layer guide and knowledge base.
+- 20260428 13:44:00: Integrated Andrej Karpathy behavioral guidelines. Created `.agent/rules/10_karpathy_guidelines.md` and updated GEMINI.md, COPILOT_INSTRUCTIONS.md, .cursorrules, and all README files.

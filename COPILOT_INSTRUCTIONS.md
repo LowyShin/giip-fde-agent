@@ -15,6 +15,13 @@ When asked to implement a feature:
 2. **Execute**: Use TDD (Red-Green-Refactor) (see `.agent/skills/test-driven-development`).
 3. **Verify**: Run tests and record evidence.
 
+## 🧠 KARPATHY BEHAVIORAL GUIDELINES
+Follow the guidelines in `.agent/rules/10_karpathy_guidelines.md`:
+1. **Think Before Coding** — State assumptions explicitly. Ask if uncertain. Surface tradeoffs.
+2. **Simplicity First** — Minimum code that solves the problem. Nothing speculative.
+3. **Surgical Changes** — Touch only what you must. Don't improve unrelated code.
+4. **Goal-Driven Execution** — Define success criteria. Loop until verified.
+
 ## ❌ RESTRICTIONS
 - Do not run raw SQL. Use `mgmt/execSQLFile.ps1`.
 - Do not commit without user permission.

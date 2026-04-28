@@ -118,6 +118,13 @@ GIIP Agent Systemは、単なるプロンプトの集まりではなく、世界
 - **自己強化ループ**: すべての知識は元の証拠（Trace/Source）と紐付けられており、次の作業時にエージェントがこれを参照することで、より賢く行動します。
 - [K-Layerの仕組み](.agent/skills/k-layer/SKILL.md) | [ナレッジベース](.agent/knowledge/README.md)
 
+### 5-1. Andrej Karpathy 行動ガイドライン
+- **Think Before Coding**: 実装前に仮定を明示し、不確かな場合は質問し、複数の解釈がある場合は提示します。
+- **Simplicity First**: 問題を解決する最小限のコードのみを書きます。未要求の機能・抽象化・柔軟性は追加しません。
+- **Surgical Changes**: 必要なものだけを修正します。無関係なコード・コメント・フォーマットには触れません。
+- **Goal-Driven Execution**: 検証可能な成功基準を最初に定義し、達成されるまで反復します。
+- [Karpathy ガイドライン](.agent/rules/10_karpathy_guidelines.md) | [原典リポジトリ](https://github.com/forrestchang/andrej-karpathy-skills)
+
 ### 6. マルチソース・デザイン探索 (design-md)
 - **統合デザイン探索**: `designmd.ai`、`designmd.app`、`getdesign.md`、`designmd.me` の4つの主要プラットフォームを統合し、最適なデザインシステムを発掘します。
 - **ブランドの複製と自動生成**: StripeやVercelなどの有名ブランドのスタイルを即座に移植したり、特定のURLからデザイン・マークダウンを自動生成したりできます。
