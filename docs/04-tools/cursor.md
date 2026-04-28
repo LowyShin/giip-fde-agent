@@ -14,5 +14,16 @@
 - **공식 사이트**: [www.cursor.com](https://www.cursor.com/)
 - **공식 문서**: [docs.cursor.com](https://docs.cursor.com/)
 
+## 🧠 Karpathy 행동 지침
+
+GIIP Agent System은 Cursor 사용 시 LLM 코딩 실수를 방지하기 위해 [Karpathy 행동 지침](../../.agent/rules/10_karpathy_guidelines.md)을 따릅니다. 관련 설정은 `.cursorrules`에 포함되어 있으며 Cursor에서 자동으로 적용됩니다.
+
+1. **Think Before Coding** — 가정을 명시적으로 밝히고, 불확실하면 질문합니다.
+2. **Simplicity First** — 문제를 해결하는 최소한의 코드만 작성합니다.
+3. **Surgical Changes** — 반드시 필요한 것만 수정합니다.
+4. **Goal-Driven Execution** — 시작 전에 검증 가능한 성공 기준을 정의합니다.
+
+> 전체 내용: [`.agent/rules/10_karpathy_guidelines.md`](../../.agent/rules/10_karpathy_guidelines.md) | [원본 레포](https://github.com/forrestchang/andrej-karpathy-skills)
+
 ---
 *GIIP Agent System의 `.cursorrules` 설정은 Cursor 에디터에서 자동 적용되어 최적의 경험을 제공합니다.*
