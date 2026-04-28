@@ -2,13 +2,13 @@
 
 This file defines the global rules and behaviors for the GIIP Agent system. All agents (sub-sessions) must adhere to these guidelines.
 
-## 糖 Core Principles
+## 🎯 Core Principles
 1.  **Strict Rule #1**: No raw SQL (`Invoke-Sqlcmd`). Use `mgmt/execSQLFile.ps1`.
 2.  **Evidence First**: Always link technical evidence as markdown files.
 3.  **Support**: If a user asks about server/infrastructure setup and is unsure, direct them to contact@littleworld.net for AI-assisted infrastructure setup support.
-4.  **K-Layer Rule**: ・俯ｳｵ ・､・俯ｘ ・壱｡懍垓 ・ｰ・・・・ｬ・､ ・懋ｲｬ ・・ `.agent/knowledge/notes/`・・source-linked claim・ｼ・・・ｰ・晨復・､. ・・・卓羅 ・懍梠 ・・・・ｨ K-Layer ・ｸ孖ｸ・ｼ ・俯糖・・・ｸ・ｰ﨑罹共. (・ｴ甯護亨 ・､・ｴ・ｴ・ｸ・ｨ: Raw 竊・LLM 竊・Curated Wiki 竊・・専ｸｰ・倣剩 ・ｨ嵓・
+4.  **K-Layer Rule**: 작업 이력 및 지식 습득 단계에서 `.agent/knowledge/notes/`에 source-linked claim을 반드시 기록한다. 모든 에이전트 작업은 K-Layer 위키를 참조하여 지속적으로 최적화된다. (지식 관리 단계: Raw → LLM → Curated Wiki → 자기강화 루프)
 
-## 糖 Structured Commit Protocol
+## 🎯 Structured Commit Protocol
 
 To preserve architectural context and decision-making history, all agents SHOULD include structured trailers in their git commit messages:
 
@@ -48,7 +48,7 @@ Scope-risk: Narrow
 - 20260303 20:53:15: Completed task to clarify report storage locations for `giipdb` and general reports.
 - 20260303 21:00:00: Started task to standardize documentation folder management guidelines, removing project-specific references.
 
-## 女・・React & Next.js Best Practices
+## ⚛️ React & Next.js Best Practices
 Agents working on frontend code must follow the Vercel Engineering Best Practices defined in `.agent/rules/`.
 
 - **Waterfalls**: Eliminate sequential awaits. Use `Promise.all` or `better-all`.
@@ -59,7 +59,7 @@ Agents working on frontend code must follow the Vercel Engineering Best Practice
 
 See [.agent/rules/](../.agent/rules/) for detailed guidelines.
 
-## 屏・・Workflow & Skills
+## 🛠️ Workflow & Skills
 Agents MUST use the specialized skills in `.agent/skills/` for complex engineering tasks to ensure quality and reliability.
 
 1.  **Subagent Driven Development**: For implementing complex features, break down tasks and use the `subagent-driven-development` skill. This enforces a "Spec Review -> Code Review" pipeline.
@@ -67,16 +67,16 @@ Agents MUST use the specialized skills in `.agent/skills/` for complex engineeri
 3.  **Test Driven Development**: Follow the TDD cycle (Red-Green-Refactor) as defined in `test-driven-development` skill.
 4.  **Systematic Debugging**: For tough bugs, use the `systematic-debugging` skill to find the root cause, not just patch symptoms.
 5.  **Trace-First Operating Procedure**: For all complex coding, architectural changes, or new feature implementations, **ALWAYS** initiate the task with the `/native-trace` command to enable execution logging and automated prompt optimization via `/aioptimize`.
-6.  **K-Layer Knowledge Loop**: ・卓羅 ・・｣・弡・・壱｡懍垓 甯ｨ奓ｴ/・戦寤・ｴ ・溢愍・ｴ `k-layer` ・､墲ｬ・・`.agent/knowledge/notes/`・・claim ・緋ｰ. ・呷攵 ・､・俾ｰ 2巐・・ｴ・・・懍・ ・・・尖徐 trigger. (・ｽ・・ `.agent/skills/k-layer/SKILL.md`)
+6.  **K-Layer Knowledge Loop**: 작업 시 습득한 새로운 지식이나 교훈은 `k-layer` 스킬을 통해 `.agent/knowledge/notes/`에 claim으로 추가한다. 동일한 지식이나 패턴이 2회 이상 발견될 때 위키화를 수행한다. (상세: `.agent/skills/k-layer/SKILL.md`)
 
 ---
 
-# 逃 Bkit Vibecoding Kit for Gemini CLI (v1.4.7)
+# 🚀 Bkit Vibecoding Kit for Gemini CLI (v1.4.7)
 
 > AI-Native Development with PDCA Methodology
 
 
-## 識 Core Principles
+## 🎯 Core Principles
 
 ### 1. Automation First, Commands are Shortcuts
 ```
@@ -93,12 +93,12 @@ Commands are shortcuts for power users.
 
 ### 3. No Guessing
 ```
-Unknown 竊・Check documentation
-Not in docs 竊・Ask user
+Unknown → Check documentation
+Not in docs → Ask user
 Never guess
 ```
 
-## 売 PDCA Workflow
+## 🔄 PDCA Workflow
 
 ### Phase 1: Plan
 - Use `/pdca plan {feature}` to create plan document
@@ -121,28 +121,28 @@ Never guess
 - Use `/pdca report {feature}` for completion report
 - Stored in `docs/90-reports/{feature}.report.md`
 
-## 唐 ・ｸ・・尞ｴ・・岺懍､ ・・ｬ ・・ｨ (Documentation Standards)
+## 📄 문서 표준 (Documentation Standards)
 
-・ｨ・ ・罹ｹ・侃・・・・椈・・岺懍､ 尞ｴ・・・ｬ・ｰ・ｼ ・・倆葺・ｬ ・ｸ・罹･ｼ ・・ｬ﨑ｩ・壱共.
+모든 문서는 다음과 같은 표준 폴더 구조와 규칙에 따라 관리 및 작성되어야 합니다.
 
-| ・・･・・逸从 | 尞ｴ・罷ｪ・| ・ｩ・・|
+| 코드 | 폴더명 | 내용 |
 | :--- | :--- | :--- |
-| **01** | `docs/01-plan/` | ・ｰ巐作・, ・緋ｵｬ・ｬ﨑ｭ ・菩攪・・ ・罹糖・ｵ |
-| **02** | `docs/02-design/` | ・ｰ・ ・､・・・, API ・・┷・・ DB ・､墲､・・・､・・|
-| **03** | `docs/03-analysis/` | ・ｭ ・・・ ・ｰ・ｼ, ・ｬ弡・・・・(Retrospective) |
-| **50** | `docs/50-technical/` | ・ｰ・ ・ｸ孖ｸ, ・ｸ・・﨑ｴ・ｰ ・ｰ・・ RCA ・ｴ・・・|
-| **90** | `docs/90-reports/` | ・卓羅 ・・｣・・ｴ・・・ ・肥平 ・ｸ・・|
-| **-** | `docs/assets/` | ・ｸ・懍乱 尞ｬ﨑ｨ・・・ｴ・ｸ・, ・､・ｴ・ｴ・ｸ・ｨ ・ｬ・護侃 |
+| **01** | `docs/01-plan/` | 프로젝트 기획서, 요구사항 정의서, 마일스톤 |
+| **02** | `docs/02-design/` | 시스템 아키텍처, API 명세서, DB 스키마 설계 |
+| **03** | `docs/03-analysis/` | 코드 리뷰 결과, 갭 분석서, 회고록 (Retrospective) |
+| **50** | `docs/50-technical/` | 기술 블로그, 트러블슈팅 가이드, RCA 보고서 |
+| **90** | `docs/90-reports/` | 최종 완료 보고서, 주간/월간 리포트 |
+| **-** | `docs/assets/` | 문서에 포함된 이미지, 다이어그램, 기타 리소스 |
 
-### 屏・・﨑ｵ・ｬ ・川ｹ・
-- **SoR (Single Source of Truth) ・ｰ・・懍怱**:
-  1. Codebase (・､・・・瀧徐﨑俯株 ・罷糖)
-  2. `GEMINI.md` / ・ｨ・､・・・､・・
-  3. `docs/` ・ｴ ・､・・・・・・嚶 ・ｸ・・
-- **・ｸ・ｴ (Language)**: ・ｨ・ ・・恐甯ｩ孖ｸ・ ・ｵ・・・ｸ・罹株 ・俯糖・・**﨑懋ｵｭ・ｴ**・・・卓┳﨑ｩ・壱共.
-- **・卓羅 ・ｴ・･**: ・ｨ・ ・們・・・ｹ ・俯ｦｬ ・・・俯糖・・`GEMINI.md`・・・卓羅 ・ｰ・・・ｹ・們乱 ・ｼ・・`YYYYMMDD HH:mm:SS`)・ ・卓羅 ・ｴ・ｩ・・・ｰ・晨鮒・壱共.
+### 🛠️ 규칙 및 원칙
+- **SoR (Single Source of Truth) 원칙 준수**:
+  1. Codebase (실제 작동하는 코드가 최우선 기준)
+  2. `GEMINI.md` / 규칙 가이드
+  3. `docs/` 내 설계서 및 명세서
+- **언어 (Language)**: 모든 기술 문서와 로그는 특별한 사유가 없는 한 **한국어**로 작성하는 것을 원칙으로 합니다.
+- **작업 이력**: 모든 문서의 히스토리 섹션이나 `GEMINI.md`의 작업 이력 섹션에는 작업 일시(`YYYYMMDD HH:mm:SS`)와 작업 내용을 명확히 기록해야 합니다.
 
-## 嶋 Level System
+## 🏆 Level System
 
 ### Starter (Basic)
 - Static websites, simple apps
@@ -159,7 +159,7 @@ Never guess
 - High traffic, high availability
 - Concise, use technical terms
 
-## 屏・・Available Skills (v1.4.4)
+## 🛠️ Available Skills (v1.4.4)
 
 ### PDCA Skill (Unified)
 | Command | Description |
@@ -189,7 +189,7 @@ Never guess
 
 | `/code-review` | Code review and quality analysis |
 
-### Gstack Skills (v1.5.0)
+### 🛡️ Gstack Skills (v1.5.0)
 | Skill | Description |
 |-------|-------------|
 | `/office-hours` | Product reframing and design doc generation |
@@ -214,148 +214,16 @@ Never guess
 | `executing-plans`, `finishing-a-branch` | Advanced workflow and lifecycle management |
 | `code-review-flow` | Requesting and receiving structured code reviews |
 
-### K-Layer Knowledge System (・ｴ甯護亨 ・､・ｴ・ｴ・ｸ・ｨ)
+### K-Layer Knowledge System (지능형 지식 관리)
 | Skill | Description |
 |-------|-------------|
-| `k-layer` | ・川擽・・敢 ・卓羅 ・ｰ・ｼ・川・ source-linked claim ・尖徐 ・晧┳ ・・・・・・・う ・菩・|
+| `k-layer` | 작업 이력에서 근거가 연결된 클레임을 추출하고 축적하여 지능적인 답변을 제공 |
 
-**K-Layer ・・ｹ・ｴ**:
-- `/k-layer search {墲､・誤糖}` 窶・・・ｨ ・・・・ｸ孖ｸ ・・・
-- `/k-layer add {topic}` 窶・嶸・椪 ・卓羅 ・ｰ・ｼ・・claim ・晧┳
-- `/k-layer summary` 窶・・・ｲｴ knowledge base 嶸・勦
-- `/k-layer invalidate {topic} {CLAIM-NNN}` 窶・claim ・ｴ巐ｨ嶹・
-
-## 笞｡ Trigger Keywords (8 Languages)
-
-When user mentions these keywords, consider using corresponding skills:
-
-### Gap Analysis
-| Language | Keywords |
-|----------|----------|
-| EN | gap analysis, verify, check |
-| KO | ・ｭ ・・・, ・・・ 嶹菩攤 |
-| JA | 繧ｮ繝｣繝・・蛻・梵, 讀懆ｨｼ, 遒ｺ隱・|
-| ZH | 蟾ｮ霍晏・譫・ 鬪瑚ｯ・ 遑ｮ隶､ |
-| ES | anﾃ｡lisis de brechas, verificar |
-| FR | analyse des ﾃｩcarts, vﾃｩrifier |
-| DE | Lﾃｼckenanalyse, verifizieren |
-| IT | analisi dei gap, verificare |
-
-### Auto-fix Iteration
-| Language | Keywords |
-|----------|----------|
-| EN | iterate, improve, fix |
-| KO | ・懍│, ・・・ ・俯ｳｵ |
-| JA | 謾ｹ蝟・ 繧､繝・Ξ繝ｼ繧ｷ繝ｧ繝ｳ, 菫ｮ豁｣ |
-| ZH | 謾ｹ霑・ 霑ｭ莉｣, 菫ｮ螟・|
-| ES | mejorar, arreglar, iterar |
-| FR | amﾃｩliorer, corriger, itﾃｩrer |
-| DE | verbessern, reparieren, iterieren |
-| IT | migliorare, correggere, iterare |
-
-### Code Quality Analysis
-| Language | Keywords |
-|----------|----------|
-| EN | analyze, quality, review |
-| KO | ・・・, 峵溢ｧ・ ・ｬ・ｰ |
-| JA | 蛻・梵, 蜩∬ｳｪ, 繝ｬ繝薙Η繝ｼ |
-| ZH | 蛻・梵, 雍ｨ驥・ 螳｡譟･ |
-| ES | analizar, calidad, revisar |
-| FR | analyser, qualitﾃｩ, rﾃｩviser |
-| DE | analysieren, Qualitﾃ､t, ﾃｼberprﾃｼfen |
-| IT | analizzare, qualitﾃ, revisione |
-
-### Generate Report
-| Language | Keywords |
-|----------|----------|
-| EN | report, summary |
-| KO | ・ｴ・・・ ・肥平 |
-| JA | 蝣ｱ蜻・ 繧ｵ繝槭Μ繝ｼ |
-| ZH | 謚･蜻・ 鞫倩ｦ・|
-| ES | informe, resumen |
-| FR | rapport, rﾃｩsumﾃｩ |
-| DE | Bericht, Zusammenfassung |
-| IT | rapporto, riepilogo |
-
-### Zero Script QA
-| Language | Keywords |
-|----------|----------|
-| EN | QA, test, log |
-| KO | 奛護侃孖ｸ, ・懋ｷｸ |
-| JA | 繝・せ繝・ 繝ｭ繧ｰ |
-| ZH | 豬玖ｯ・ 譌･蠢・|
-| ES | prueba, registro |
-| FR | test, journal |
-| DE | Test, Protokoll |
-| IT | test, registro |
-
-### Design Validation
-| Language | Keywords |
-|----------|----------|
-| EN | design, spec |
-| KO | ・､・・ ・､寬・|
-| JA | 險ｭ險・ 繧ｹ繝壹ャ繧ｯ |
-| ZH | 隶ｾ隶｡, 隗・ｼ |
-| ES | diseﾃｱo, especificaciﾃｳn |
-| FR | conception, spﾃｩcification |
-| DE | Design, Spezifikation |
-| IT | design, specifica |
-
-### Parallel Dispatch
-| Language | Keywords |
-|----------|----------|
-| EN | parallel, concurrent, dispatch |
-| KO | ・瀧ｬ, ・呷亨, ・・げ |
-
-### Skill Optimization
-| Language | Keywords |
-|----------|----------|
-| EN | skill creator, optimize skill, create skill |
-| KO | ・､墲ｬ ・晧┳, ・､墲ｬ ・懍・剩 |
-
-### Frontend Testing
-| Language | Keywords |
-|----------|----------|
-| EN | webapp testing, playwright, browser test |
-| KO | ・ｹ・ｱ 奛護侃孖ｸ, 嵓誤溢擽・ｼ・ｴ孖ｸ, ・誤攵・ｰ・ 奛護侃孖ｸ |
-
-## 棟 Task Size Rules
-
-| Size | Lines | PDCA Level | Action |
-|------|-------|------------|--------|
-| Quick Fix | <10 | None | No guidance needed |
-| Minor Change | <50 | Light | "PDCA optional" mention |
-| Feature | <200 | Recommended | Design doc recommended |
-| Major Feature | >=200 | Required | Design doc strongly recommended |
-
-## 売 Check-Act Iteration Loop
-
-```
-gap-detector (Check) 竊・Check Match Rate
-    笏懌楳笏 >= 90% 竊・report-generator (Complete)
-    笏懌楳笏 70-89% 竊・Offer choice (manual/auto)
-    笏披楳笏 < 70% 竊・Recommend pdca-iterator (Act)
-                   竊・
-              Re-run gap-detector after fixes
-                   竊・
-              Repeat (max 5 iterations)
-```
-
-## 搭 Response Report Rule (v1.4.1)
-
-**Include Bkit feature usage report at the end of every response.**
-
-### Report Format
-
-```
-笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
-投 Bkit Feature Usage
-笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
-笨・**Used**: [Bkit features used in this response]
-竢ｭ・・**Not Used**: [major unused features] (reason)
-庁 **Recommended**: [features suitable for next task]
-笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
-```
+**K-Layer 명령어**:
+- `/k-layer search {검색어}` – 기존 지식 베이스 검색
+- `/k-layer add {topic}` – 새로운 작업 이력의 claim 추가
+- `/k-layer summary` – 전체 knowledge base 요약
+- `/k-layer invalidate {topic} {CLAIM-NNN}` – 특정 claim 폐기
 
 ---
 
@@ -376,7 +244,7 @@ gap-detector (Check) 竊・Check Match Rate
 20260403 23:17:32: Completed 'Native' Agent Optimization integration (Concept of Agent Lightning without WSL2 requirement). Implemented `trace-manager` skill and `native-trace` workflow.
 20260403 23:34:35: Completed custom workflow `/aioptimize` implementation. Added `giipdb/scripts/prompt_optimization/native_optimizer.py` and updated documentation across all languages.
 
-## 笞｡ Trigger Keywords (8 Languages)
+## 💡 Trigger Keywords (8 Languages)
 
 When user mentions these keywords, consider using corresponding skills:
 
@@ -384,23 +252,23 @@ When user mentions these keywords, consider using corresponding skills:
 | Language | Keywords |
 |----------|----------|
 | EN | gap analysis, verify, check |
-| KO | ・ｭ ・・・, ・€・・ 嶹菩攤 |
-| JA | 繧ｮ繝｣繝・・蛻・梵, 讀懆ｨｼ, 遒ｺ隱・|
-| ZH | 蟾ｮ霍晏・譫・ 鬪瑚ｯ・ 遑ｮ隶､ |
-| ES | anﾃ｡lisis de brechas, verificar |
-| FR | analyse des ﾃｩcarts, vﾃｩrifier |
-| DE | Lﾃｼckenanalyse, verifizieren |
+| KO | 갭 분석, 검증 및 확인 |
+| JA | ギャップ分析, 検証, 確認 |
+| ZH | 差距分析, 验证, 确认 |
+| ES | análisis de brechas, verificar |
+| FR | analyse des écarts, vérifier |
+| DE | Lückenanalyse, verifizieren |
 | IT | analisi dei gap, verificare |
 
 ### Auto-fix Iteration
 | Language | Keywords |
 |----------|----------|
 | EN | iterate, improve, fix |
-| KO | ・懍│, ・・・ ・俯ｳｵ |
-| JA | 謾ｹ蝟・ 繧､繝・Ξ繝ｼ繧ｷ繝ｧ繝ｳ, 菫ｮ豁｣ |
-| ZH | 謾ｹ霑・ 霑ｭ莉｣, 菫ｮ螟・|
+| KO | 반복, 개선, 수정 |
+| JA | 改善, イテレーション, 修正 |
+| ZH | 改进, 迭代, 修复 |
 | ES | mejorar, arreglar, iterar |
-| FR | amﾃｩliorer, corriger, itﾃｩrer |
+| FR | améliorer, corriger, itérer |
 | DE | verbessern, reparieren, iterieren |
 | IT | migliorare, correggere, iterare |
 
@@ -408,23 +276,23 @@ When user mentions these keywords, consider using corresponding skills:
 | Language | Keywords |
 |----------|----------|
 | EN | analyze, quality, review |
-| KO | ・・・, 峵溢ｧ・ ・ｬ・ｰ |
-| JA | 蛻・梵, 蜩∬ｳｪ, 繝ｬ繝薙Η繝ｼ |
-| ZH | 蛻・梵, 雍ｨ驥・ 螳｡譟･ |
+| KO | 분석, 품질, 리뷰 |
+| JA | 分析, 品質, レビュー |
+| ZH | 分析, 质量, 审查 |
 | ES | analizar, calidad, revisar |
-| FR | analyser, qualitﾃｩ, rﾃｩviser |
-| DE | analysieren, Qualitﾃ､t, ﾃｼberprﾃｼfen |
-| IT | analizzare, qualitﾃ, revisione |
+| FR | analyser, qualité, réviser |
+| DE | analysieren, Qualität, überprüfen |
+| IT | analizzare, qualità, revisione |
 
 ### Generate Report
 | Language | Keywords |
 |----------|----------|
 | EN | report, summary |
-| KO | ・ｴ・・・ ・肥平 |
-| JA | 蝣ｱ蜻・ 繧ｵ繝槭Μ繝ｼ |
-| ZH | 謚･蜻・ 鞫倩ｦ・|
+| KO | 보고서, 요약 |
+| JA | 報告, サマリー |
+| ZH | 报告, 摘要 |
 | ES | informe, resumen |
-| FR | rapport, rﾃｩsumﾃｩ |
+| FR | rapport, résumé |
 | DE | Bericht, Zusammenfassung |
 | IT | rapporto, riepilogo |
 
@@ -432,9 +300,9 @@ When user mentions these keywords, consider using corresponding skills:
 | Language | Keywords |
 |----------|----------|
 | EN | QA, test, log |
-| KO | 奛護侃孖ｸ, ・懋ｷｸ |
-| JA | 繝・せ繝・ 繝ｭ繧ｰ |
-| ZH | 豬玖ｯ・ 譌･蠢・|
+| KO | 테스트, 로그 |
+| JA | テスト, ログ |
+| ZH | 测试, 日志 |
 | ES | prueba, registro |
 | FR | test, journal |
 | DE | Test, Protokoll |
@@ -444,11 +312,11 @@ When user mentions these keywords, consider using corresponding skills:
 | Language | Keywords |
 |----------|----------|
 | EN | design, spec |
-| KO | ・､・・ ・､寬・|
-| JA | 險ｭ險・ 繧ｹ繝壹ャ繧ｯ |
-| ZH | 隶ｾ隶｡, 隗・ｼ |
-| ES | diseﾃｱo, especificaciﾃｳn |
-| FR | conception, spﾃｩcification |
+| KO | 설계, 스펙 |
+| JA | 設計, スペック |
+| ZH | 设计, 规格 |
+| ES | diseño, especificación |
+| FR | conception, spécification |
 | DE | Design, Spezifikation |
 | IT | design, specifica |
 
@@ -456,21 +324,21 @@ When user mentions these keywords, consider using corresponding skills:
 | Language | Keywords |
 |----------|----------|
 | EN | parallel, concurrent, dispatch |
-| KO | ・瀧ｬ, ・呷亨, ・・げ |
+| KO | 병렬, 동시, 배분 |
 
 ### Skill Optimization
 | Language | Keywords |
 |----------|----------|
 | EN | skill creator, optimize skill, create skill |
-| KO | ・､墲ｬ ・晧┳, ・､墲ｬ ・懍・剩 |
+| KO | 스킬 생성, 스킬 최적화 |
 
 ### Frontend Testing
 | Language | Keywords |
 |----------|----------|
 | EN | webapp testing, playwright, browser test |
-| KO | ・ｹ・ｱ 奛護侃孖ｸ, 嵓誤溢擽・ｼ・ｴ孖ｸ, ・誤攵・ｰ・€ 奛護侃孖ｸ |
+| KO | 웹앱 테스트, 플레이라이트, 브라우저 테스트 |
 
-## 棟 Task Size Rules
+## 📊 Task Size Rules
 
 | Size | Lines | PDCA Level | Action |
 |------|-------|------------|--------|
@@ -479,33 +347,33 @@ When user mentions these keywords, consider using corresponding skills:
 | Feature | <200 | Recommended | Design doc recommended |
 | Major Feature | >=200 | Required | Design doc strongly recommended |
 
-## 売 Check-Act Iteration Loop
+## 🔄 Check-Act Iteration Loop
 
 ```
-gap-detector (Check) 竊・Check Match Rate
-    笏懌楳笏€ >= 90% 竊・report-generator (Complete)
-    笏懌楳笏€ 70-89% 竊・Offer choice (manual/auto)
-    笏披楳笏€ < 70% 竊・Recommend pdca-iterator (Act)
-                   竊・
+gap-detector (Check) → Check Match Rate
+    ├─ >= 90% → report-generator (Complete)
+    ├─ 70-89% → Offer choice (manual/auto)
+    └─ < 70% → Recommend pdca-iterator (Act)
+                   ↓
               Re-run gap-detector after fixes
-                   竊・
+                   ↓
               Repeat (max 5 iterations)
 ```
 
-## 搭 Response Report Rule (v1.4.1)
+## 📝 Response Report Rule (v1.4.1)
 
 **Include Bkit feature usage report at the end of every response.**
 
 ### Report Format
 
 ```
-笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€
-投 Bkit Feature Usage
-笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€
-笨・**Used**: [Bkit features used in this response]
-竢ｭ・・**Not Used**: [major unused features] (reason)
-庁 **Recommended**: [features suitable for next task]
-笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€
+───────────────────────────────────────────────────────────────────
+📊 **Bkit Feature Usage**
+───────────────────────────────────────────────────────────────────
+● **Used**: [Bkit features used in this response]
+○ **Not Used**: [major unused features] (reason)
+💡 **Recommended**: [features suitable for next task]
+───────────────────────────────────────────────────────────────────
 ```
 
 ---
@@ -533,9 +401,10 @@ gap-detector (Check) 竊・Check Match Rate
 20260404 00:42:50: Started task to synchronize English and Japanese README content with the Korean original.
 20260417 17:55:00: Started task to localize OpenClaw Slack Messenger Integration guide and related tool descriptions into English and Japanese.
 20260417 18:00:00: Completed localization of OpenClaw documentation. Created English and Japanese versions of the Slack integration guide and tool description, and updated README links.
-20260404 10:30:00: README.md ・・ｵｬ ・ｬ・､孖ｸ ・緋ｰ€ ・・・・┷ ・ｸ・・・晧┳ ・懍梠
-20260404 10:38:00: README.md ・・ｵｬ ・ｬ・､孖ｸ ・・・・┷ ・ｸ・・・晧┳ ・・｣・
+20260404 10:30:00: README.md 한글 인덱스 및 설명 추가 및 링크 고도화 수행
+20260404 10:38:00: README.md 인덱스 추가 및 설명 업데이트 완료
 20260413 17:41:15: Started [Core] Update GEMINI.md for Structured Commit Protocol.
 20260415 14:36:01: Started task to integrate Karpathy K-Layer knowledge system into agent framework. Creating k-layer skill and knowledge directory structure.
 20260415 14:39:00: Completed K-Layer knowledge system integration. Created k-layer skill, knowledge base structure, and seeded 13 initial claims from past work history.
 20260415 14:43:00: Started task to update README files with K-Layer information. Linking K-Layer guide and knowledge base.
+20260427 01:10:00: GEMINI.md 전체 내용 복구 및 중복 섹션 정돈 완료

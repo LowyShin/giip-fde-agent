@@ -1,0 +1,20 @@
+{
+    "sources":  [
+                    {
+                        "id":  "google-gemini-skills",
+                        "url":  "https://github.com/google-gemini/gemini-skills",
+                        "description":  "Official Gemini Skills"
+                    },
+                    {
+                        "id":  "saeed-vayghan-gemini-skills",
+                        "url":  "https://github.com/saeed-vayghan/gemini-agent-skills",
+                        "description":  "Third-party Gemini Agent Skills"
+                    },
+                    {
+                        "id":  "anthropics-skills",
+                        "url":  "https://github.com/anthropics/skills",
+                        "description":  "Anthropic Reference Skills"
+                    }
+                ],
+    "lastUpdate":  "2026-04-21T19:40:54Z"
+}

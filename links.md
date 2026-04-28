@@ -4,6 +4,12 @@
 
 ## 🔗 에이전트 리소스 목록
 
+### 📋 [외부 AI 도구 및 레포지토리 목록](file:///c:/Users/lowys/Downloads/projects/giip-dev-agent/docs/50-technical/ai-repositories-index.md) ([EN](file:///c:/Users/lowys/Downloads/projects/giip-dev-agent/docs/50-technical/ai-repositories-index_en.md) | [JP](file:///c:/Users/lowys/Downloads/projects/giip-dev-agent/docs/50-technical/ai-repositories-index_ja.md))
+- **설명**: 프로젝트와 연동 가능한 외부 유용한 AI 도구 및 레포지토리를 한눈에 볼 수 있는 통합 리스트입니다.
+
+### [openclaw/clawsweeper](https://github.com/openclaw/clawsweeper) ([상세 소개](file:///c:/Users/lowys/Downloads/projects/giip-dev-agent/docs/50-technical/clawsweeper-intro.md) | [EN](file:///c:/Users/lowys/Downloads/projects/giip-dev-agent/docs/50-technical/clawsweeper-intro_en.md) | [JP](file:///c:/Users/lowys/Downloads/projects/giip-dev-agent/docs/50-technical/clawsweeper-intro_ja.md))
+- **설명**: AI를 이용해 대규모 GitHub 레포지토리의 이슈와 PR을 자동으로 분석하고 정리하는 유지관리 봇입니다.
+
 ### [kyrolabs/awesome-agents](https://github.com/kyrolabs/awesome-agents)
 - **설명**: AI 에이전트 프레임워크, 도구 및 관련 연구 리소스를 엄격하게 선별한 큐레이션 목록(Awesome list)입니다.
 
