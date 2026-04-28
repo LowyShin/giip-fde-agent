@@ -31,7 +31,20 @@ Antigravity는 프로젝트 수준을 감지하여 응답 스타일을 조정합
 
 ---
 
-## 3. 전문 유틸리티 스킬
+## 3. 🧠 Karpathy 행동 지침 (Karpathy Behavioral Guidelines)
+
+LLM 코딩 실수를 줄이기 위한 행동 지침입니다. 전체 내용은 [`.agent/rules/10_karpathy_guidelines.md`](.agent/rules/10_karpathy_guidelines.md)를 참고하세요.
+
+1. **코딩 전에 생각하기 (Think Before Coding)** — 가정을 명시적으로 밝힙니다. 불확실할 때는 질문합니다. 트레이드오프를 표면화합니다.
+2. **단순함 우선 (Simplicity First)** — 문제를 해결하는 최소한의 코드만 작성합니다. 추측성 기능은 추가하지 않습니다.
+3. **외과적 변경 (Surgical Changes)** — 반드시 필요한 것만 수정합니다. 관련 없는 코드는 개선하지 않습니다.
+4. **목표 기반 실행 (Goal-Driven Execution)** — 시작 전에 검증 가능한 성공 기준을 정의합니다. 기준을 달성할 때까지 반복합니다.
+
+> 참고: [github.com/forrestchang/andrej-karpathy-skills](https://github.com/forrestchang/andrej-karpathy-skills)
+
+---
+
+## 4. 전문 유틸리티 스킬
 
 특정 문제에 직면했을 때 다음 전문 스킬을 사용합니다:
 
@@ -53,7 +66,7 @@ Antigravity는 프로젝트 수준을 감지하여 응답 스타일을 조정합
 
 ---
 
-## 4. 사용자(당신)를 위한 모범 사례
+## 5. 사용자(당신)를 위한 모범 사례
 
 저(Antigravity)를 최대한 활용하려면:
 
@@ -65,7 +78,7 @@ Antigravity는 프로젝트 수준을 감지하여 응답 스타일을 조정합
 
 ---
 
-## 5. 작업 경계 및 이력 기록
+## 6. 작업 경계 및 이력 기록
 
 전역 규칙에 따라 저는 항상:
 1.  **이력 기록**: `YYYYMMDD HH:mm:SS: [작업 요약]` 형식으로 `GEMINI.md` 또는 `task.md`에 기록합니다.

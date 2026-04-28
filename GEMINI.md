@@ -550,3 +550,4 @@ gap-detector (Check) 竊・Check Match Rate
 20260415 14:39:00: Completed K-Layer knowledge system integration. Created k-layer skill, knowledge base structure, and seeded 13 initial claims from past work history.
 20260415 14:43:00: Started task to update README files with K-Layer information. Linking K-Layer guide and knowledge base.
 - 20260428 13:44:00: Integrated Andrej Karpathy behavioral guidelines. Created `.agent/rules/10_karpathy_guidelines.md` and updated GEMINI.md, COPILOT_INSTRUCTIONS.md, .cursorrules, and all README files.
+- 20260428 14:00:00: Added Karpathy Behavioral Guidelines to all tool docs and guides: ANTIGRAVITY_USAGE_GUIDE.md, docs/04-tools/claude-code.md, docs/04-tools/antigravity.md, docs/04-tools/vscode.md, docs/04-tools/cursor.md, docs/04-tools/windsurf.md, docs/04-tools/gemini-cli.md, .agent/templates/CLAUDE.template.md.
