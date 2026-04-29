@@ -1,0 +1,50 @@
+# Work History
+
+This file tracks the history of tasks and changes performed by the GIIP Agent system.
+
+- 20260129 19:10:00: Completed RCA analysis for `pApiGiipIssueListbyAK` and `giip-issues` functionality. Generated RCA report `ANALYSIS_20260129_GIIP_ISSUE_LIST_RCA.md` in `giipdb/docs/50_Analysis/`.
+- 20260130 11:34:00: Started README translation task (English and Japanese versions).
+- 20260130 11:38:00: Completed README translation task. Created `readme_en.md` and `readme_jp.md` with cross-language links.
+- 20260130 19:12:00: Initialized bkit Vibecoding Kit integration. Updated GEMINI.md and enabled hooks.
+- 20260131 11:43:00: Started task to find and convert absolute paths to relative paths.
+- 20260131 12:24:00: Completed path normalization. Updated `.gemini\README.md` and `.agent\lib\common.js.backup`.
+- 20260201 16:51:00: Resolved git conflicts in `GEMINI.md` and updated documentation.
+- 20260303 20:41:00: Started task to explain document location rules.
+- 20260303 20:45:00: Completed task to explain document location rules. Documented SoR priority, PDCA document paths, and Korean language rule.
+- 20260303 20:53:15: Completed task to clarify report storage locations for `giipdb` and general reports.
+- 20260303 21:00:00: Started task to standardize documentation folder management guidelines, removing project-specific references.
+- 20260323 09:54:10: Started task to integrate gstack features into giip-dev-agent.
+- 20260323 10:25:00: Started task to research and add useful skills from `https://github.com/anthropics/skills`.
+- 20260323 10:30:00: Started task to enhance agent skills by researching and adding content from 'agent-ref/skills'.
+- 20260323 11:38:24: Started task to research and integrate useful agent skills from `agent-ref`.
+- 20260323 11:45:00: Completed integration of brainstorming, dispatching-parallel-agents, skill-creator, and webapp-testing skills from agent-ref.
+- 20260323 11:47:20: Started task to add `links.md` and link it from `README.md`.
+- 20260323 12:00:00: Completed task to create `links.md` and update all README versions (KR, EN, JP).
+- 20260323 12:43:20: Added server setup support contact information (`contact@littleworld.net`) to READMEs and updated agent behavioral rules.
+- 20260323 13:14:00: Started task to verify and integrate missing skills from `agent-ref`.
+- 20260323 16:35:00: Completed integration of 13 new skills from `agent-ref`.
+- 20260403 22:56:50: Started task to research and integrate `microsoft/agent-lightning`. Created implementation plan for integration.
+- 20260403 23:04:00: Completed `microsoft/agent-lightning` integration. Added setup scripts, skills, workflows, and updated documentation across all languages.
+- 20260403 23:17:32: Completed 'Native' Agent Optimization integration (Concept of Agent Lightning without WSL2 requirement). Implemented `trace-manager` skill and `native-trace` workflow.
+- 20260403 23:34:35: Completed custom workflow `/aioptimize` implementation. Added `giipdb/scripts/prompt_optimization/native_optimizer.py` and updated documentation across all languages.
+- 20260403 23:51:37: Completed global `/native-trace` integration across all workflows, skills, roles, and templates.
+- 20260404 00:08:00: Started task to reorder API Key setup in README files and clarify its usage for `gemini-cli` only.
+- 20260404 00:29:30: Started task to clarify Agent Lightning vs Native Optimization in documentation.
+- 20260404 00:34:16: Resumed interrupted documentation clarification task.
+- 20260404 00:42:50: Started task to synchronize English and Japanese README content with the Korean original.
+- 20260404 10:30:00: README.md 한글 인덱스 및 설명 추가 및 링크 고도화 수행
+- 20260404 10:38:00: README.md 인덱스 추가 및 설명 업데이트 완료
+- 20260413 17:41:15: Started [Core] Update GEMINI.md for Structured Commit Protocol.
+- 20260415 14:36:01: Started task to integrate Karpathy K-Layer knowledge system into agent framework. Creating k-layer skill and knowledge directory structure.
+- 20260415 14:39:00: Completed K-Layer knowledge system integration. Created k-layer skill, knowledge base structure, and seeded 13 initial claims from past work history.
+- 20260415 14:43:00: Started task to update README files with K-Layer information. Linking K-Layer guide and knowledge base.
+- 20260417 17:55:00: Started task to localize OpenClaw Slack Messenger Integration guide and related tool descriptions into English and Japanese.
+- 20260417 18:00:00: Completed localization of OpenClaw documentation. Created English and Japanese versions of the Slack integration guide and tool description, and updated README links.
+- 20260427 01:10:00: GEMINI.md 전체 내용 복구 및 중복 섹션 정돈 완료
+- 20260428 13:44:00: Integrated Andrej Karpathy behavioral guidelines. Created `.agent/rules/10_karpathy_guidelines.md` and updated GEMINI.md, COPILOT_INSTRUCTIONS.md, .cursorrules, and all README files.
+- 20260428 14:00:00: Added Karpathy Behavioral Guidelines to all tool docs and guides: ANTIGRAVITY_USAGE_GUIDE.md, docs/04-tools/claude-code.md, docs/04-tools/antigravity.md, docs/04-tools/vscode.md, docs/04-tools/cursor.md, docs/04-tools/windsurf.md, docs/04-tools/gemini-cli.md, .agent/templates/CLAUDE.template.md.
+- 20260429 01:26:58: Started task to resolve git push conflicts and integrate latest data.
+- 20260429 01:28:40: Completed git conflict resolution and integration of latest data. Resolved conflicts in GEMINI.md and successfully pushed to remote.
+- 20260429 01:29:52: Started task to fix character corruption in GEMINI.md. Resolved by removing corrupted duplicate block and restoring clean content from the second part of the file.
+- 20260429 01:33:45: Completed GEMINI.md character corruption fix. Verified each section and ensured UTF-8 encoding integrity.
+- 20260429 10:05:36: Started task to refactor GEMINI.md into modular rules, workflows, and history files.
