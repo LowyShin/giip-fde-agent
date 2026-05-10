@@ -28,6 +28,9 @@
 ### [gameworkerkim/vibe-investing](https://github.com/gameworkerkim/vibe-investing/blob/main/Awesome%20vibe%20invest.MD)
 - **설명**: AI/LLM 기반 투자·트레이딩 레포를 객관 평가(강점/약점/적합 사용자)와 공통 함정 체크리스트 중심으로 정리한 큐레이션입니다.
 
+### [garrytan/gstack](https://github.com/garrytan/gstack) ([분석 리포트](file:///c:/Users/lowys/Downloads/projects/giip-dev-agent/docs/50-technical/gstack-analysis.md))
+- **설명**: Garry Tan의 23가지 전문 에이전트 도구 모음(CEO, Designer, CSO 등)으로 에이전트의 생산성을 극대화합니다.
+
 ## 🎨 디자인 및 MD 리소스 (Design & MD Resources)
 
 ### [designmd.ai](https://designmd.ai)

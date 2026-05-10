@@ -2,6 +2,7 @@
 
 > 작성일: 2026-04-15
 > 출처: Lowy Opinion
+> 원본: [LLM Wiki (Karpathy Gist)](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)
 
 ## [카파시 다이어그램이 제안하는 흐름]
 

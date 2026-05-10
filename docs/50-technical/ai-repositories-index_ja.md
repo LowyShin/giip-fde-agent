@@ -19,6 +19,12 @@ AIエージェントシステムと連携したり、活用したりできる便
 ### [cmux](https://github.com/craigsc/cmux)
 - **一言紹介**: 複数のClaudeエージェントを効率的に並列実行・管理するためのツールです。
 
+### [gstack](https://github.com/garrytan/gstack) ([分析レポート](file:///c:/Users/lowys/Downloads/projects/giip-dev-agent/docs/50-technical/gstack-analysis.md))
+- **一言紹介**: Garry Tanによる23の専門的なエージェントツールセットで、CEO、デザイナー、セキュリティ担当者など、多様な役割の遂行を支援します。
+
+### [LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) ([分析レポート](file:///c:/Users/lowys/Downloads/projects/giip-dev-agent/docs/70-LowyOpinion/capacydiagram.md))
+- **一言紹介**: Andrej Karpathyが提唱した、AIエージェントによる継続的な知識蓄積とウィキ管理のパターン（K-Layerの原型）です。
+
 ## 🎨 デザイン・ドキュメントツール
 
 ### [designmd.ai](https://designmd.ai)

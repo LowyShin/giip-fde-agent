@@ -19,6 +19,12 @@ A collection of useful external repositories and tools that can be integrated wi
 ### [cmux](https://github.com/craigsc/cmux)
 - **One-line Intro**: A tool to help run and manage multiple Claude agents in parallel efficiently.
 
+### [gstack](https://github.com/garrytan/gstack) ([Analysis Report](file:///c:/Users/lowys/Downloads/projects/giip-dev-agent/docs/50-technical/gstack-analysis.md))
+- **One-line Intro**: Garry Tan's collection of 23 professional agent tools, helping perform various roles like CEO, Designer, and CSO.
+
+### [LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) ([Analysis Report](file:///c:/Users/lowys/Downloads/projects/giip-dev-agent/docs/70-LowyOpinion/capacydiagram.md))
+- **One-line Intro**: The AI agent-based persistent knowledge accumulation and wiki management pattern proposed by Andrej Karpathy (the prototype of K-Layer).
+
 ## 🎨 Design & Documentation Tools
 
 ### [designmd.ai](https://designmd.ai)
