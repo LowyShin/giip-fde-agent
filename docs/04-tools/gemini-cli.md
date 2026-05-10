@@ -17,6 +17,37 @@
   ```
 - **API 키 발급**: [Google AI Studio](https://aistudio.google.com/app/apikey)
 
+## 🚀 GIIP Agent System 적용 및 사용법
+
+### 1. 프로젝트 이식 (Transplantation)
+명령줄 환경에서 GIIP의 자동화 기능을 활성화하려면 아래 폴더를 복사하세요.
+
+- **복사할 항목**:
+    - `.agent/`: 모든 실행 스크립트와 규칙이 포함된 핵심 폴더
+
+### 2. 사용 방법 (Usage)
+PowerShell 터미널에서 GIIP 전용 스크립트를 실행하여 작업을 관리합니다.
+
+- **명령 예시**:
+    ```powershell
+    # 대기 중인 태스크를 감지하고 자동으로 작업을 수행하는 백그라운드 세션 시작
+    .\.agent\scripts\launch_subsession.ps1
+    
+    # 현재 모든 태스크의 상태와 프로세스 모니터링
+    .\.agent\scripts\check_status.ps1
+    ```
+
+### 3. 정상 작동 확인 (Validation)
+스크립트가 정상적으로 실행되는지 확인하려면 다음을 입력하세요.
+- **입력**: `.\.agent\scripts\check_status.ps1`
+- **기대 결과**: 현재 대기 중(Pending), 진행 중(In Progress)인 태스크 목록이 테이블 형태로 출력되어야 합니다.
+
+### 4. 최신 버전 업데이트 (Update)
+GIIP의 실행 스크립트와 핵심 규칙을 최신 상태로 유지하려면 다음 명령을 실행하세요.
+
+> **업데이트 프롬프트**:
+> `https://github.com/LowyShin/giip-dev-agent 저장소의 최신 .agent 폴더 내용을 확인하고, 현재 프로젝트의 .agent 폴더 내 스크립트와 규칙들을 최신 버전으로 갱신해줘.`
+
 ## 🧠 Karpathy 행동 지침
 
 GIIP Agent System은 Gemini CLI 사용 시 LLM 코딩 실수를 방지하기 위해 [Karpathy 행동 지침](../../.agent/rules/10_karpathy_guidelines.md)을 따릅니다. 관련 설정은 `GEMINI.md`에 포함되어 있습니다.

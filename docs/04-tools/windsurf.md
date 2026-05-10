@@ -13,6 +13,36 @@
 - **공식 사이트**: [windsurf.ai](https://windsurf.ai/)
 - **개발자 블로그**: [codeium.com/blog](https://codeium.com/blog)
 
+## 🚀 GIIP Agent System 적용 및 사용법
+
+### 1. 프로젝트 이식 (Transplantation)
+Windsurf에서 GIIP의 Flow를 경험하려면 아래 파일들을 프로젝트 루트로 복사하세요.
+
+- **복사할 항목**:
+    - `.agent/`: 핵심 엔진 (규칙, 스킬, 워크플로우)
+    - `GEMINI.md`: 에이전트 페르소나 및 시스템 지침
+    - `.windsurfrules`: Windsurf 전용 규칙 파일 (없을 경우 `.cursorrules`를 복사하여 이름을 변경해도 좋습니다)
+
+### 2. 사용 방법 (Usage)
+Windsurf를 실행한 후 Cascade(오른쪽 사이드바의 AI 채팅)에서 작업을 지시합니다.
+
+- **명령 예시**:
+    ```text
+    giip status (전체 프로젝트 상태 확인)
+    GEMINI.md의 지침에 따라 다음 기능을 설계하고 구현해줘.
+    ```
+
+### 3. 정상 작동 확인 (Validation)
+Windsurf 에이전트가 GIIP 시스템을 제대로 로드했는지 확인하려면 다음을 입력하세요.
+- **입력**: `giip status`
+- **기대 결과**: 에이전트가 "GIIP Orchestrator"로서 응답하며, `.agent/rules/`의 내용에 따라 현재 프로젝트의 태스크 현황과 할 일 목록을 상세히 브리핑해야 합니다.
+
+### 4. 최신 버전 업데이트 (Update)
+GIIP의 최신 기능을 Windsurf 프로젝트에 반영하려면 에이전트에게 다음과 같이 요청하세요.
+
+> **업데이트 프롬프트**:
+> `https://github.com/LowyShin/giip-dev-agent 저장소의 최신 .agent 폴더와 .windsurfrules 파일의 내용을 확인하고, 내 프로젝트의 에이전트 시스템에 최신 변경 사항을 적용해줘.`
+
 ## 🧠 Karpathy 행동 지침
 
 GIIP Agent System은 Windsurf 사용 시 LLM 코딩 실수를 방지하기 위해 [Karpathy 행동 지침](../../.agent/rules/10_karpathy_guidelines.md)을 따릅니다. `.cursorrules` 설정이 Windsurf에서도 동일하게 적용됩니다.

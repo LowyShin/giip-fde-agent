@@ -17,6 +17,35 @@
   npm install -g @anthropic-ai/claude-code
   ```
 
+## 🚀 GIIP Agent System 적용 및 사용법
+
+### 1. 프로젝트 이식 (Transplantation)
+Claude Code가 GIIP의 지능을 갖게 하려면 아래 파일들을 프로젝트 루트로 복사하세요.
+
+- **복사할 항목**:
+    - `.agent/`: 핵심 엔진 (규칙, 스킬, 워크플로우)
+    - `GEMINI.md`: Claude에게 부여할 페르소나와 시스템 지침
+
+### 2. 사용 방법 (Usage)
+터미널에서 `claude` 명령어로 세션을 시작한 후, GIIP 명령어를 사용합니다.
+
+- **명령 예시**:
+    ```bash
+    claude "giip status" (현재 작업 현황 요약)
+    claude "새로운 API 설계를 위해 /pdca 시작해줘" (PDCA 기반 설계 시작)
+    ```
+
+### 3. 정상 작동 확인 (Validation)
+Claude가 GIIP의 규칙을 인식하고 있는지 확인하려면 다음을 실행하세요.
+- **실행**: `claude "당신의 역할과 현재 태스크 목록을 알려주세요"`
+- **기대 결과**: "GIIP Orchestrator"로서의 정체성을 밝히고, `task.md` 기반의 할 일 목록을 제시해야 합니다.
+
+### 4. 최신 버전 업데이트 (Update)
+GIIP의 최신 스킬과 규칙을 반영하려면 Claude에게 다음과 같이 요청하세요.
+
+> **업데이트 프롬프트**:
+> `https://github.com/LowyShin/giip-dev-agent 저장소의 최신 .agent 폴더와 GEMINI.md 파일을 참조하여, 현재 프로젝트의 에이전트 시스템을 최신 상태로 갱신해줘.`
+
 ## 🧠 Karpathy 행동 지침
 
 GIIP Agent System은 Claude Code 사용 시 LLM 코딩 실수를 방지하기 위해 [Karpathy 행동 지침](../../.agent/rules/10_karpathy_guidelines.md)을 따릅니다.
