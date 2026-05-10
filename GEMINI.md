@@ -1,6 +1,6 @@
 # GEMINI Agent Rules
 
-This file defines the global rules and behaviors for the GIIP Agent system. To improve maintainability and ensure modular instruction loading, rules and history have been distributed into dedicated files.
+This file defines the global rules and behaviors for the Agentic system. To improve maintainability and ensure modular instruction loading, rules and history have been distributed into dedicated files.
 
 ## 🎯 Modular Rules & Guidelines
 

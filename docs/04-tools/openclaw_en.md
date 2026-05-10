@@ -20,4 +20,4 @@
 3. **Launch**: `openclaw start`
 
 ---
-*GIIP Agent System expands project knowledge to messengers through OpenClaw, completing a true 'development team in your pocket'.*
+*This Agentic Rule System expands project knowledge to messengers through OpenClaw, completing a true 'development team in your pocket'.*
