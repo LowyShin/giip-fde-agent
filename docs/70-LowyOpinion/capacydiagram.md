@@ -69,4 +69,4 @@ source-linked claims입니다.
 
 ## [GIIP 도입 적용 → 별도 문서 참조]
 
-→ [DESIGN_20260415_KARPATHY_K_LAYER.md](../30_Designs/DESIGN_20260415_KARPATHY_K_LAYER.md)
+→ [DESIGN_20260415_KARPATHY_K_LAYER.md](../02-design/DESIGN_20260415_KARPATHY_K_LAYER.md)

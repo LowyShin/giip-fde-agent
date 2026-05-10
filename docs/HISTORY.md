@@ -50,3 +50,4 @@ This file tracks the history of tasks and changes performed by the GIIP Agent sy
 - 20260429 10:05:36: Started task to refactor GEMINI.md into modular rules, workflows, and history files.
 - 20260503 23:18:10: Analyzing gstack repository (https://github.com/garrytan/gstack)
 - 20260503 23:20:00: Completed gstack analysis and integration task. Created docs/50-technical/gstack-analysis.md, introduced .agent/skills/retro, and updated ai-repositories-index.md/links.md.
+- 20260510 12:35:00: Fixed broken link in `docs/70-LowyOpinion/capacydiagram.md` and restored the missing `docs/02-design/DESIGN_20260415_KARPATHY_K_LAYER.md` document.
