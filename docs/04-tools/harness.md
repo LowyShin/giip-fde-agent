@@ -48,9 +48,23 @@ cp settings.json.sample settings.json
 
 `settings.json` 의 `api_key` 또는 `api_keys` 값을 실제 키로 설정합니다.
 
+> [!CAUTION]
+> API Key는 민감정보입니다. 실제 키가 들어간 `settings.json` 파일은 원격 저장소에 커밋하지 마세요.  
+> 가능하면 셸 환경변수(`GEMINI_API_KEY`)를 우선 사용하고, 파일 기반 설정은 로컬 개발 환경에서만 관리하세요.
+
 ### 4-3. 작업 지시서(Dispatch) 준비
 
 `.agent/dispatch/` 에 `TASK_*.md` 형태의 파일을 두고, `Status` 를 `Pending` 으로 설정합니다.  
+기본 포맷은 `.agent/dispatch/TASK_TEMPLATE.md` 를 그대로 복사해 사용하면 됩니다.
+
+예시:
+
+```markdown
+- **Status:** Pending
+- **Task ID:** TASK_001
+- **Target Role:** Developer
+```
+
 `launch_subsession.ps1` 는 Pending 상태의 작업을 찾아 실행합니다.
 
 ### 4-4. 하네스 실행
