@@ -15,7 +15,7 @@
 
 > **🚀 처음이신가요?**  
 > [**빠른 시작 가이드**](QUICK_START.md)에서 5분 만에 첫 에이전트를 가동해 보세요!  
-> [도구 다운로드](TOOLS_DOWNLOAD.md) | [Antigravity 사용법](ANTIGRAVITY_USAGE_GUIDE.md) | [유용한 링크](links.md)
+> [도구 다운로드](TOOLS_DOWNLOAD.md) | [Antigravity 사용법](ANTIGRAVITY_USAGE_GUIDE.md) | [하네스 가이드](docs/04-tools/harness.md) | [유용한 링크](links.md)
 
 ---
 
