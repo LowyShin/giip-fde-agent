@@ -88,7 +88,7 @@ PowerShell에서 프로젝트 루트 기준:
 
 ## 5) 빠른 체크리스트
 
-- [ ] `GEMINI.md`/역할 문서를 읽는 도구 환경이 준비되었는가?
+- [ ] 도구 환경이 `GEMINI.md` 및 역할 문서를 읽을 수 있도록 준비되었는가?
 - [ ] `.agent/dispatch` 에 `Pending` 작업이 있는가?
 - [ ] `launch_subsession.ps1` 로 실행이 시작되는가?
 - [ ] `check_status.ps1` 로 상태 추적이 가능한가?
