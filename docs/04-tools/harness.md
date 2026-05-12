@@ -65,7 +65,8 @@ cp settings.json.sample settings.json
 - **Target Role:** Developer
 ```
 
-`launch_subsession.ps1` 는 Pending 상태의 작업을 찾아 실행합니다.
+`launch_subsession.ps1` 는 Pending 상태의 작업을 찾아 실행합니다.  
+Pending 작업이 없으면 스크립트는 `No Pending tasks found. Exit.` 메시지를 출력하고 종료됩니다.
 
 ### 4-4. 하네스 실행
 
