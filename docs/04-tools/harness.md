@@ -2,7 +2,7 @@
 
 ## 1) 하네스란?
 
-소프트웨어에서 **하네스(Harness)** 는 특정 작업을 안정적으로 반복 실행할 수 있도록 묶어 둔 **실행/검증 환경**입니다.  
+소프트웨어에서 **하네스(Harness)**는 특정 작업을 안정적으로 반복 실행할 수 있도록 묶어 둔 **실행/검증 환경**입니다.  
 쉽게 말해, "사람이 매번 수동으로 하던 절차를 표준화해서 같은 방식으로 재현하게 만드는 장치"입니다.
 
 예시:
@@ -17,7 +17,7 @@
 
 ## 3) 이 레포지토리에서의 하네스 개념
 
-`LowyShin/giip-dev-agent` 에서 하네스는 다음 요소들의 조합으로 동작합니다.
+`LowyShin/giip-dev-agent`에서 하네스는 다음 요소들의 조합으로 동작합니다.
 
 - `GEMINI.md`: 전체 작업 원칙(오케스트레이션, 검증, 보고)
 - `.agent/dispatch/*.md`: 작업 지시서(Task Dispatch)
@@ -46,7 +46,7 @@ cd .agent
 cp settings.json.sample settings.json
 ```
 
-`settings.json` 의 `api_key` 또는 `api_keys` 값을 실제 키로 설정합니다.
+`settings.json`의 `api_key` 또는 `api_keys` 값을 실제 키로 설정합니다.
 
 > [!CAUTION]
 > API Key는 민감정보입니다. 실제 키가 들어간 `settings.json` 파일은 원격 저장소에 커밋하지 마세요.  
@@ -54,8 +54,8 @@ cp settings.json.sample settings.json
 
 ### 4-3. 작업 지시서(Dispatch) 준비
 
-`.agent/dispatch/` 에 `TASK_*.md` 형태의 파일을 두고, `Status` 를 `Pending` 으로 설정합니다.  
-기본 포맷은 `.agent/dispatch/TASK_TEMPLATE.md` 를 그대로 복사해 사용하면 됩니다.
+`.agent/dispatch/`에 `TASK_*.md` 형태의 파일을 두고, `Status`를 `Pending`으로 설정합니다.  
+기본 포맷은 `.agent/dispatch/TASK_TEMPLATE.md`를 그대로 복사해 사용하면 됩니다.
 
 예시:
 
@@ -65,7 +65,7 @@ cp settings.json.sample settings.json
 - **Target Role:** Developer
 ```
 
-`launch_subsession.ps1` 는 Pending 상태의 작업을 찾아 실행합니다.  
+`launch_subsession.ps1`는 Pending 상태의 작업을 찾아 실행합니다.  
 Pending 작업이 없으면 스크립트는 `No Pending tasks found. Exit.` 메시지를 출력하고 종료됩니다.
 
 ### 4-4. 하네스 실행
@@ -89,8 +89,8 @@ PowerShell에서 프로젝트 루트 기준:
 ## 5) 빠른 체크리스트
 
 - [ ] 도구 환경이 `GEMINI.md` 및 역할 문서를 읽을 수 있도록 준비되었는가?
-- [ ] `.agent/dispatch` 에 `Pending` 작업이 있는가?
-- [ ] `launch_subsession.ps1` 로 실행이 시작되는가?
-- [ ] `check_status.ps1` 로 상태 추적이 가능한가?
+- [ ] `.agent/dispatch`에 `Pending` 작업이 있는가?
+- [ ] `launch_subsession.ps1`로 실행이 시작되는가?
+- [ ] `check_status.ps1`로 상태 추적이 가능한가?
 
 위 항목이 모두 충족되면 이 레포지토리의 기본 하네스 설정은 완료입니다.
