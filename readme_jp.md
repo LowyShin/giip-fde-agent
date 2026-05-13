@@ -2,6 +2,10 @@
 
 [한국어](README.md) | [English](readme_en.md)
 
+> [!TIP]
+> このリポジトリをダウンロードした後、ご自身の言語のファイルがなく韓国語のファイルのみが存在する場合は、AIエージェント（Antigravity、Cursorなど）に翻訳を依頼してください。
+
+
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Korean Support](https://img.shields.io/badge/Language-Korean-blue.svg)](#-핵심-규칙)
 [![AI Powered](https://img.shields.io/badge/AI-Gemini-orange.svg)](https://aistudio.google.com/app/apikey)

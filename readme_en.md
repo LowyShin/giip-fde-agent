@@ -2,6 +2,10 @@
 
 [한국어](README.md) | [日本語](readme_jp.md)
 
+> [!TIP]
+> If you have downloaded this repository and find that documentation in your language is missing (only Korean is available), please ask your AI assistant (Antigravity, Cursor, etc.) to translate it for you.
+
+
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Korean Support](https://img.shields.io/badge/Language-Korean-blue.svg)](#-핵심-규칙)
 [![AI Powered](https://img.shields.io/badge/AI-Gemini-orange.svg)](https://aistudio.google.com/app/apikey)
