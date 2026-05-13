@@ -92,6 +92,18 @@ graph TD
 
 ---
 
+## 📂 에이전트 시스템 구성요소 (System Architecture)
+
+본 프레임워크를 구성하는 네 가지 핵심 요소에 대한 상세 가이드입니다.
+
+- [**전체 구성 요소 개요**](docs/02-design/agent-components/overview.md)
+- [**역할 (Roles)**](docs/02-design/agent-components/role.md): 에이전트의 페르소나와 책임 정의
+- [**규칙 (Rules)**](docs/02-design/agent-components/rule.md): 강제 지침 및 품질 관리 원칙
+- [**스킬 (Skills)**](docs/02-design/agent-components/skill.md): 도구 사용법 및 전문 지식 패키지
+- [**워크플로우 (Workflows)**](docs/02-design/agent-components/workflow.md): 복잡한 작업 절차 및 커스텀 명령어 생성
+
+---
+
 ## 🛠️ 강력한 에코시스템 통합 (Advanced Capabilities)
 
 본 시스템은 단순한 프롬프트 모음이 아닌, 고도화된 에이전트 기술들의 집약체입니다.

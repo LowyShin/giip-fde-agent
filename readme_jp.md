@@ -92,6 +92,18 @@ graph TD
 
 ---
 
+## 📂 エージェントシステムの構成要素 (System Architecture)
+
+GIIP エージェントフレームワークを構成する4つの主要要素に関する詳細ガイドです。
+
+- [**構成要素の概要**](docs/02-design/agent-components/overview.md)
+- [**ロール (Roles)**](docs/02-design/agent-components/role.md): エージェントのペルソナと責任の定義
+- [**ルール (Rules)**](docs/02-design/agent-components/rule.md): 強制指針および品質管理の原則
+- [**スキル (Skills)**](docs/02-design/agent-components/skill.md): ツール使用法および専門知識パッケージ
+- [**ワークフロー (Workflows)**](docs/02-design/agent-components/workflow.md): 複雑な作業手順とカスタムコマンドの作成
+
+---
+
 ## 🛠️ 強力なエコシステム統合 (Advanced Capabilities)
 
 GIIP Agent Systemは、単なるプロンプトの集まりではなく、世界クラスのエージェントテクノロジーの集大成です。

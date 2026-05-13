@@ -92,6 +92,18 @@ graph TD
 
 ---
 
+## 📂 Agent System Components (System Architecture)
+
+Detailed guides for the four core components that make up the GIIP Agent framework.
+
+- [**Components Overview**](docs/02-design/agent-components/overview.md)
+- [**Roles**](docs/02-design/agent-components/role.md): Define persona and scope of responsibility
+- [**Rules**](docs/02-design/agent-components/rule.md): Enforced guidelines and quality control
+- [**Skills**](docs/02-design/agent-components/skill.md): Specialized knowledge and tool packages
+- [**Workflows**](docs/02-design/agent-components/workflow.md): Complex procedures and custom commands
+
+---
+
 ## 🛠️ Advanced Ecosystem Integration
 
 GIIP Agent System is more than just a collection of prompts; it's a consolidation of world-class agent technologies.
