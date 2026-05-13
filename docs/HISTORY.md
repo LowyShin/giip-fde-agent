@@ -51,3 +51,4 @@ This file tracks the history of tasks and changes performed by the GIIP Agent sy
 - 20260503 23:18:10: Analyzing gstack repository (https://github.com/garrytan/gstack)
 - 20260503 23:20:00: Completed gstack analysis and integration task. Created docs/50-technical/gstack-analysis.md, introduced .agent/skills/retro, and updated ai-repositories-index.md/links.md.
 - 20260510 12:35:00: Fixed broken link in `docs/70-LowyOpinion/capacydiagram.md` and restored the missing `docs/02-design/DESIGN_20260415_KARPATHY_K_LAYER.md` document.
+- 20260513 13:52:00: Moved `51-features/wiki-sync` to `docs/51-features/wiki-sync` to align with the project's documentation numbering convention.
