@@ -10,3 +10,6 @@ Agents MUST use the specialized skills in `.agent/skills/` for complex engineeri
 4.  **Systematic Debugging**: For tough bugs, use the `systematic-debugging` skill to find the root cause, not just patch symptoms.
 5.  **Trace-First Operating Procedure**: For all complex coding, architectural changes, or new feature implementations, **ALWAYS** initiate the task with the `/native-trace` command to enable execution logging and automated prompt optimization via `/aioptimize`.
 6.  **K-Layer Knowledge Loop**: 작업 시 습득한 새로운 지식이나 교훈은 `k-layer` 스킬을 통해 `.agent/knowledge/notes/`에 claim으로 추가한다. 동일한 지식이나 패턴이 2회 이상 발견될 때 위키화를 수행한다. (상세: `.agent/skills/k-layer/SKILL.md`)
+7.  **Workflow Mapping**: Before implementing complex logic, use the `workflow-mapping` skill to map all paths (happy paths, branches, recovery). "A workflow that exists in code but not in a spec is a liability."
+8.  **Premium Craftsmanship**: When building user-facing components, use the `premium-ui-craft` skill to ensure high-quality aesthetics, smooth animations, and interactive excellence.
+9.  **Knowledge-Based Updates**: When running `/gaupdate`, agents MUST first analyze the K-Layer knowledge base to ensure external roles, rules, or skills are relevant to the current project's context and technical needs.

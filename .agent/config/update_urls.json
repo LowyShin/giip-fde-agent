@@ -19,6 +19,11 @@
                         "id":  "jh941213-codex-lattice",
                         "url":  "https://github.com/jh941213/codex-lattice",
                         "description":  "Codex Lattice Agent Skills & Workflows"
+                    },
+                    {
+                        "id":  "msitarzewski-agency-agents",
+                        "url":  "https://github.com/msitarzewski/agency-agents",
+                        "description":  "A complete AI agency - specialized experts with personality and processes"
                     }
                 ],
     "lastUpdate":  "2026-05-16T15:30:00Z"

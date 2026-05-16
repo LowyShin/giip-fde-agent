@@ -156,6 +156,11 @@ GIIP Agent Systemは、単なるプロンプトの集まりではなく、世界
 - **リスク優先チェックリスト**: バックテストのバイアス、実行現実性（スリッページ/流動性/手数料）、規制/コストのガードレールを標準で適用します。
 - [投資スキル](.agent/skills/vibe-investing/SKILL.md) | [投資ワークフロー](.agent/workflows/investment-evaluation.md)
 
+### 9. AI Agency 専門家チーム統合 (Agency-Agents)
+- **高度なロールシステム**: `Workflow Architect` (システムパス設計)、`Korean Business Navigator` (韓国ビジネス特化) など、検証済みの専門家ペルソナを内蔵.
+- **プレミアム UI/UX**: `premium-ui-craft` スキルを通じて、単なる機能を超えた高度な美的な完成度 (Glassmorphism、60fpsアニメーションなど) を追求.
+- **徹底した例外パス設計**: `workflow-mapping` を通じて「コードはある가仕様がないワークフロー」を防止し、すべての失敗回復パスを事前に定義.
+
 ---
 
 ## ⚙️ 運用と使用法 (Quick Guide)
