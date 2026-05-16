@@ -2,6 +2,10 @@
 
 [한국어](README.md) | [日本語](readme_jp.md)
 
+> [!TIP]
+> If you have downloaded this repository and find that documentation in your language is missing (only Korean is available), please ask your AI assistant (Antigravity, Cursor, etc.) to translate it for you.
+
+
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Korean Support](https://img.shields.io/badge/Language-Korean-blue.svg)](#-핵심-규칙)
 [![AI Powered](https://img.shields.io/badge/AI-Gemini-orange.svg)](https://aistudio.google.com/app/apikey)
@@ -89,6 +93,18 @@ graph TD
     F -- Verification --> B
     B -- Final Completion --> G[User Report]
 ```
+
+---
+
+## 📂 Agent System Components (System Architecture)
+
+Detailed guides for the four core components that make up the GIIP Agent framework.
+
+- [**Components Overview**](docs/02-design/agent-components/overview.md)
+- [**Roles**](docs/02-design/agent-components/role.md): Define persona and scope of responsibility
+- [**Rules**](docs/02-design/agent-components/rule.md): Enforced guidelines and quality control
+- [**Skills**](docs/02-design/agent-components/skill.md): Specialized knowledge and tool packages
+- [**Workflows**](docs/02-design/agent-components/workflow.md): Complex procedures and custom commands
 
 ---
 

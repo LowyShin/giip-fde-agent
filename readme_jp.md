@@ -2,6 +2,10 @@
 
 [한국어](README.md) | [English](readme_en.md)
 
+> [!TIP]
+> このリポジトリをダウンロードした後、ご自身の言語のファイルがなく韓国語のファイルのみが存在する場合は、AIエージェント（Antigravity、Cursorなど）に翻訳を依頼してください。
+
+
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Korean Support](https://img.shields.io/badge/Language-Korean-blue.svg)](#-핵심-규칙)
 [![AI Powered](https://img.shields.io/badge/AI-Gemini-orange.svg)](https://aistudio.google.com/app/apikey)
@@ -89,6 +93,18 @@ graph TD
     F -- 検証 --> B
     B -- 最終完了 --> G[ユーザー報告]
 ```
+
+---
+
+## 📂 エージェントシステムの構成要素 (System Architecture)
+
+GIIP エージェントフレームワークを構成する4つの主要要素に関する詳細ガイドです。
+
+- [**構成要素の概要**](docs/02-design/agent-components/overview.md)
+- [**ロール (Roles)**](docs/02-design/agent-components/role.md): エージェントのペルソナと責任の定義
+- [**ルール (Rules)**](docs/02-design/agent-components/rule.md): 強制指針および品質管理の原則
+- [**スキル (Skills)**](docs/02-design/agent-components/skill.md): ツール使用法および専門知識パッケージ
+- [**ワークフロー (Workflows)**](docs/02-design/agent-components/workflow.md): 複雑な作業手順とカスタムコマンドの作成
 
 ---
 

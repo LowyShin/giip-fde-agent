@@ -15,7 +15,7 @@
 
 > **🚀 처음이신가요?**  
 > [**빠른 시작 가이드**](QUICK_START.md)에서 5분 만에 첫 에이전트를 가동해 보세요!  
-> [도구 다운로드](TOOLS_DOWNLOAD.md) | [Antigravity 사용법](ANTIGRAVITY_USAGE_GUIDE.md) | [유용한 링크](links.md)
+> [도구 다운로드](TOOLS_DOWNLOAD.md) | [Antigravity 사용법](ANTIGRAVITY_USAGE_GUIDE.md) | [하네스 가이드](docs/04-tools/harness.md) | [유용한 링크](links.md)
 
 ---
 
@@ -89,6 +89,18 @@ graph TD
     F -- 검증 --> B
     B -- 최종 완료 --> G[사용자 보고]
 ```
+
+---
+
+## 📂 에이전트 시스템 구성요소 (System Architecture)
+
+본 프레임워크를 구성하는 네 가지 핵심 요소에 대한 상세 가이드입니다.
+
+- [**전체 구성 요소 개요**](docs/02-design/agent-components/overview.md)
+- [**역할 (Roles)**](docs/02-design/agent-components/role.md): 에이전트의 페르소나와 책임 정의
+- [**규칙 (Rules)**](docs/02-design/agent-components/rule.md): 강제 지침 및 품질 관리 원칙
+- [**스킬 (Skills)**](docs/02-design/agent-components/skill.md): 도구 사용법 및 전문 지식 패키지
+- [**워크플로우 (Workflows)**](docs/02-design/agent-components/workflow.md): 복잡한 작업 절차 및 커스텀 명령어 생성
 
 ---
 
