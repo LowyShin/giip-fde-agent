@@ -156,6 +156,11 @@ GIIP Agent System is more than just a collection of prompts; it's a consolidatio
 - **Risk-first checklist**: Enforce backtest-bias checks, execution realism (slippage/liquidity/fees), and regulation/cost guardrails by default.
 - [Investment Skill](.agent/skills/vibe-investing/SKILL.md) | [Investment Workflow](.agent/workflows/investment-evaluation.md)
 
+### 9. AI Agency Expert Team Integration (Agency-Agents)
+- **Advanced Role System**: Built-in specialized expert personas like `Workflow Architect` (system path design) and `Korean Business Navigator` (specialized in Korean business).
+- **Premium UI/UX**: Pursue high aesthetic quality (Glassmorphism, 60fps animations, etc.) through the `premium-ui-craft` skill.
+- **Exhaustive Exception Design**: Prevent "workflows that exist in code but not in specs" via `workflow-mapping` and define all failure recovery paths in advance.
+
 ---
 
 ## ⚙️ Operations & Usage (Quick Guide)
