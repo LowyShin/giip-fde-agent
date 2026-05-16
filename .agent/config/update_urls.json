@@ -14,7 +14,12 @@
                         "id":  "anthropics-skills",
                         "url":  "https://github.com/anthropics/skills",
                         "description":  "Anthropic Reference Skills"
+                    },
+                    {
+                        "id":  "jh941213-codex-lattice",
+                        "url":  "https://github.com/jh941213/codex-lattice",
+                        "description":  "Codex Lattice Agent Skills & Workflows"
                     }
                 ],
-    "lastUpdate":  "2026-04-21T19:40:54Z"
+    "lastUpdate":  "2026-05-16T15:30:00Z"
 }

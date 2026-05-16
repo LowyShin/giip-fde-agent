@@ -1,3 +1,7 @@
+---
+description: Update Gemini skills from specified repositories
+---
+
 # Custom Workflow: /gaupdate
 
 This workflow monitors specified repositories for new or updated Gemini skills and integrates them into the agent.
