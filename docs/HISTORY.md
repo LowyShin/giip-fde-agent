@@ -51,3 +51,4 @@ This file tracks the history of tasks and changes performed by the GIIP Agent sy
 - 20260503 23:18:10: Analyzing gstack repository (https://github.com/garrytan/gstack)
 - 20260503 23:20:00: Completed gstack analysis and integration task. Created docs/50-technical/gstack-analysis.md, introduced .agent/skills/retro, and updated ai-repositories-index.md/links.md.
 - 20260510 12:35:00: Fixed broken link in `docs/70-LowyOpinion/capacydiagram.md` and restored the missing `docs/02-design/DESIGN_20260415_KARPATHY_K_LAYER.md` document.
+- 20260516 13:58:00: Integrated `msitarzewski/agency-agents` repository. Added new roles (Workflow Architect, Korean Business Navigator) and skills (workflow-mapping, premium-ui-craft). Updated `update_urls.json` and workflow guidelines.

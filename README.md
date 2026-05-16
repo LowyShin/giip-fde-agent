@@ -140,6 +140,11 @@ graph TD
 - **리스크 우선 체크리스트**: 백테스트 편향, 실행 현실성(슬리피지/유동성/수수료), 규제/비용 항목을 기본 검증으로 강제합니다.
 - [투자 스킬](.agent/skills/vibe-investing/SKILL.md) | [투자 워크플로우](.agent/workflows/investment-evaluation.md)
 
+### 9. AI Agency 전문가 팀 통합 (Agency-Agents)
+- **고도화된 역할 시스템**: `Workflow Architect`(시스템 경로 설계), `Korean Business Navigator`(한국 비즈니스 특화) 등 검증된 전문가 페르소나를 내장.
+- **프리미엄 UI/UX**: `premium-ui-craft` 스킬을 통해 단순 기능을 넘어선 고도의 미적 완성도(Glassmorphism, 60fps 애니메이션 등)를 추구.
+- **철저한 예외 경로 설계**: `workflow-mapping`을 통해 "코드는 있지만 명세가 없는 워크플로우"를 방지하고 모든 실패 복구 경로를 사전에 정의.
+
 ---
 
 ## ⚙️ 운영 및 사용법 (Quick Guide)
