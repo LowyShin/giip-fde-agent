@@ -1,0 +1,42 @@
+[
+  {
+    "id": "MSG_202605220001",
+    "sender": "client@example.com",
+    "recipient": "sales@giip.net",
+    "subject": "견적 문의 및 계약 조건 관련",
+    "body": "안녕하세요. 지난 미팅에서 말씀드린 시스템 연동 견적서 송부 요청드립니다. 추가로 데이터 동기화 보안 수준도 알고 싶습니다.",
+    "date": "2026-05-22T14:30:00Z",
+    "category": "Sales Inquiry",
+    "replied": true
+  },
+  {
+    "id": "MSG_202605220002",
+    "sender": "hiring@othercorp.com",
+    "recipient": "hr@giip.net",
+    "subject": "이지원 수석연구원 재직 확인 문의",
+    "body": "안녕하세요. 귀사의 이지원 님이 당사 이직에 지원하여 재직 여부 확인이 필요합니다.",
+    "date": "2026-05-22T15:20:00Z",
+    "category": "HR Support",
+    "replied": true
+  },
+  {
+    "id": "MSG_202605210003",
+    "sender": "spammer@spam.com",
+    "recipient": "info@giip.net",
+    "subject": "초특가 세일 광고!!",
+    "body": "지금 사면 90% 할인 혜택을 놓치지 마세요!",
+    "date": "2026-05-21T09:00:00Z",
+    "category": "Spam",
+    "replied": false
+  },
+  {
+    "id": "MSG_1779498616358",
+    "sender": "partner@globaltech.com",
+    "recipient": "office@giip.net",
+    "subject": "글로벌 테크 협력 제안서 보강 자료",
+    "body": "지난번 전달해주신 내용 검토했으며, 당사 보완 자료 송부합니다. 확인 부탁드립니다.",
+    "date": "2026-05-23T01:10:16.358Z",
+    "category": "Business Collaboration",
+    "replied": false
+  }
+]

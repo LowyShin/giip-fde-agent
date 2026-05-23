@@ -1,0 +1,20 @@
+[
+  {
+    "id": "EMP_20240001",
+    "name": "이지원",
+    "department": "개발팀",
+    "position": "수석연구원",
+    "joinDate": "2024-03-01",
+    "birthDate": "1990-05-15",
+    "address": "경기도 성남시 분당구 판교역로 10"
+  },
+  {
+    "id": "EMP_20250002",
+    "name": "박영희",
+    "department": "인사총무팀",
+    "position": "과장",
+    "joinDate": "2025-01-15",
+    "birthDate": "1988-11-20",
+    "address": "서울특별시 서초구 서초대로 45"
+  }
+]

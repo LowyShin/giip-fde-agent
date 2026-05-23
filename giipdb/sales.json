@@ -1,0 +1,29 @@
+[
+  {
+    "id": "TX_202605230001",
+    "amount": 550000,
+    "sender": "김철수",
+    "paymentMethod": "Account Transfer (신한은행)",
+    "status": "COMPLETED",
+    "date": "2026-05-23T09:15:00Z",
+    "taxInvoiceIssued": false
+  },
+  {
+    "id": "TX_202605220002",
+    "amount": 1200000,
+    "sender": "주식회사 에이디",
+    "paymentMethod": "Credit Card",
+    "status": "COMPLETED",
+    "date": "2026-05-22T17:40:00Z",
+    "taxInvoiceIssued": true
+  },
+  {
+    "id": "TX_1779498613422",
+    "amount": 770000,
+    "sender": "한결코퍼레이션",
+    "paymentMethod": "Virtual Account (국민은행)",
+    "status": "COMPLETED",
+    "date": "2026-05-23T01:10:13.422Z",
+    "taxInvoiceIssued": true
+  }
+]

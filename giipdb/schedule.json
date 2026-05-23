@@ -1,0 +1,37 @@
+[
+  {
+    "id": "SCH_202605230001",
+    "title": "오전 개발팀 스크럼 및 업무 브리핑",
+    "time": "09:30",
+    "assignee": "개발팀",
+    "status": "COMPLETED"
+  },
+  {
+    "id": "SCH_202605230002",
+    "title": "바이브 인베스팅 백테스트 코드 검토",
+    "time": "14:00",
+    "assignee": "Lowy",
+    "status": "PENDING"
+  },
+  {
+    "id": "SCH_202605230003",
+    "title": "신규 파트너십 계약 조건 논의 미팅",
+    "time": "16:30",
+    "assignee": "홍길동 대표",
+    "status": "PENDING"
+  },
+  {
+    "id": "SCH_1779498605260_319",
+    "title": "[자동 생성] 회의록 분석 솔루션 API 인터페이스 설계",
+    "time": "10:00",
+    "assignee": "이지원 수석연구원",
+    "status": "PENDING"
+  },
+  {
+    "id": "SCH_1779498605260_507",
+    "title": "[자동 생성] Zapier / Plaud Webhook 리시버 엔드포인트 구현",
+    "time": "14:00",
+    "assignee": "개발팀",
+    "status": "PENDING"
+  }
+]

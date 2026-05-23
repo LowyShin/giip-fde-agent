@@ -1,0 +1,20 @@
+[
+  {
+    "name": "홍길동",
+    "company": "길동테크",
+    "jobTitle": "대표이사",
+    "phone": "010-1234-5678",
+    "email": "kildong@gildongtech.com",
+    "address": "서울특별시 강남구 테헤란로 123",
+    "registeredAt": "2026-05-20T10:00:00Z"
+  },
+  {
+    "name": "김민준",
+    "company": "넥스트이노베이션",
+    "jobTitle": "팀장",
+    "phone": "010-9876-5432",
+    "email": "mj.kim@nextinn.com",
+    "address": "서울특별시 마포구 백범로 31",
+    "registeredAt": "2026-05-23T01:10:10.095Z"
+  }
+]
