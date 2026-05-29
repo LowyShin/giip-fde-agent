@@ -25,10 +25,10 @@
 
 현재 우리 에이전트 시스템에는 `gstack`의 핵심 철학과 기능 중 일부가 이미 **도입 및 최적화**되어 있습니다:
 
-1.  **[gstack-product-thinking](file:///c:/Users/lowys/Downloads/projects/giip-dev-agent/.agent/skills/gstack-product-thinking/SKILL.md)**: `/office-hours`, `/ceo-review` 기능 구현 완료.
-2.  **[gstack-safety](file:///c:/Users/lowys/Downloads/projects/giip-dev-agent/.agent/skills/gstack-safety/SKILL.md)**: `/careful`, `/freeze`, `/guard` 기능 구현 완료.
-3.  **[gstack-security](file:///c:/Users/lowys/Downloads/projects/giip-dev-agent/.agent/skills/gstack-security/SKILL.md)**: `/cso` 보안 감사 기능 구현 완료.
-4.  **[phase-8-review](file:///c:/Users/lowys/Downloads/projects/giip-dev-agent/.agent/skills/phase-8-review/SKILL.md)**: `/review` 기능과 연동된 고도화된 리뷰 시스템.
+1.  **[gstack-product-thinking](../../.agent/skills/gstack-product-thinking/SKILL.md)**: `/office-hours`, `/ceo-review` 기능 구현 완료.
+2.  **[gstack-safety](../../.agent/skills/gstack-safety/SKILL.md)**: `/careful`, `/freeze`, `/guard` 기능 구현 완료.
+3.  **[gstack-security](../../.agent/skills/gstack-security/SKILL.md)**: `/cso` 보안 감사 기능 구현 완료.
+4.  **[phase-8-review](../../.agent/skills/phase-8-review/SKILL.md)**: `/review` 기능과 연동된 고도화된 리뷰 시스템.
 
 ## 4. 향후 도입 제안 (Future Proposals)
 - **`/retro` 및 `/investigate`**: 작업 완료 후의 회고와 복잡한 버그 추적 기능을 별도 스킬로 분리하여 강화할 필요가 있습니다.

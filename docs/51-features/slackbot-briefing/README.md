@@ -36,7 +36,7 @@ node docs/51-features/slackbot-briefing/slackbot_briefing.js --evening
 이 브리핑을 매일 자동으로 수행하고 슬랙봇 대화를 활성화하려면 **OpenClaw**와 **스케줄러**를 연동해야 합니다.
 
 ### A. OpenClaw 슬랙봇 연동 방법
-1. 기존 연동 가이드인 [OpenClaw Slack 메신저 연동 가이드](file:///c:/Users/lowys/Downloads/Projects/giip-dev-agent/docs/50-technical/openclaw-slack-integration.md)에 따라 슬랙 앱 생성 및 토큰 발급을 완료합니다.
+1. 기존 연동 가이드인 [OpenClaw Slack 메신저 연동 가이드](../../../docs/50-technical/openclaw-slack-integration.md)에 따라 슬랙 앱 생성 및 토큰 발급을 완료합니다.
 2. `openclaw onboard` 명령어로 연동 설정을 저장하고 `openclaw start`를 실행해 에이전트를 대기 상태로 활성화합니다.
 3. 슬랙 대화창에서 에이전트를 소환(`@GIIP Agent`)하여 업무를 할당할 수 있습니다:
    - *슬랙 명령 예시*: `@GIIP Agent 5월 23일 오후 2시에 "바이브 인베스팅 백테스트 코드 검토" 일정을 이지원 담당으로 등록해줘.`

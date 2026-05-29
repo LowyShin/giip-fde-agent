@@ -4,10 +4,10 @@
 
 ## 🔗 에이전트 리소스 목록
 
-### 📋 [외부 AI 도구 및 레포지토리 목록](file:///c:/Users/lowys/Downloads/projects/giip-dev-agent/docs/50-technical/ai-repositories-index.md) ([EN](file:///c:/Users/lowys/Downloads/projects/giip-dev-agent/docs/50-technical/ai-repositories-index_en.md) | [JP](file:///c:/Users/lowys/Downloads/projects/giip-dev-agent/docs/50-technical/ai-repositories-index_ja.md))
+### 📋 [외부 AI 도구 및 레포지토리 목록](./docs/50-technical/ai-repositories-index.md) ([EN](./docs/50-technical/ai-repositories-index_en.md) | [JP](./docs/50-technical/ai-repositories-index_ja.md))
 - **설명**: 프로젝트와 연동 가능한 외부 유용한 AI 도구 및 레포지토리를 한눈에 볼 수 있는 통합 리스트입니다.
 
-### [openclaw/clawsweeper](https://github.com/openclaw/clawsweeper) ([상세 소개](file:///c:/Users/lowys/Downloads/projects/giip-dev-agent/docs/50-technical/clawsweeper-intro.md) | [EN](file:///c:/Users/lowys/Downloads/projects/giip-dev-agent/docs/50-technical/clawsweeper-intro_en.md) | [JP](file:///c:/Users/lowys/Downloads/projects/giip-dev-agent/docs/50-technical/clawsweeper-intro_ja.md))
+### [openclaw/clawsweeper](https://github.com/openclaw/clawsweeper) ([상세 소개](./docs/50-technical/clawsweeper-intro.md) | [EN](./docs/50-technical/clawsweeper-intro_en.md) | [JP](./docs/50-technical/clawsweeper-intro_ja.md))
 - **설명**: AI를 이용해 대규모 GitHub 레포지토리의 이슈와 PR을 자동으로 분석하고 정리하는 유지관리 봇입니다.
 
 ### [kyrolabs/awesome-agents](https://github.com/kyrolabs/awesome-agents)
@@ -28,7 +28,11 @@
 ### [gameworkerkim/vibe-investing](https://github.com/gameworkerkim/vibe-investing/blob/main/Awesome%20vibe%20invest.MD)
 - **설명**: AI/LLM 기반 투자·트레이딩 레포를 객관 평가(강점/약점/적합 사용자)와 공통 함정 체크리스트 중심으로 정리한 큐레이션입니다.
 
-### [garrytan/gstack](https://github.com/garrytan/gstack) ([분석 리포트](file:///c:/Users/lowys/Downloads/projects/giip-dev-agent/docs/50-technical/gstack-analysis.md))
+### [microsoft/SkillOpt](https://github.com/microsoft/SkillOpt)
+- **설명**: 에이전트의 가중치를 미세조정하지 않고, 자연어 지침 파일(SKILL.md) 자체를 '학습 가능한 매개변수'로 취급하여 에포크, 배치 크기, 텍스트 편집 예산 및 검증 게이트를 통해 최적화하는 텍스트 공간 에이전트 스킬 최적화 프레임워크입니다.
+
+
+### [garrytan/gstack](https://github.com/garrytan/gstack) ([분석 리포트](./docs/50-technical/gstack-analysis.md))
 - **설명**: Garry Tan의 23가지 전문 에이전트 도구 모음(CEO, Designer, CSO 등)으로 에이전트의 생산성을 극대화합니다.
 
 ## 🎨 디자인 및 MD 리소스 (Design & MD Resources)

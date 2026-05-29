@@ -10,13 +10,13 @@
 
 | 분류 | 폴더명 & 링크 | 핵심 실행 파일 | 상세 역할 |
 | :--- | :--- | :--- | :--- |
-| **01** | [회의/프로젝트 관리](file:///c:/Users/lowys/Downloads/Projects/giip-dev-agent/docs/51-features/meeting-management/README.md) | `meeting_manager.js` | 녹음 텍스트 분석, 견적서 및 할 일 자동 생성 |
-| **02** | [명함/연락처 자동화](file:///c:/Users/lowys/Downloads/Projects/giip-dev-agent/docs/51-features/contact-automation/README.md) | `contact_sync.js` | 명함 이미지 정보 추출, 구글 주소록 및 사내 CRM 연동 |
-| **03** | [매출/세금계산서](file:///c:/Users/lowys/Downloads/Projects/giip-dev-agent/docs/51-features/sales-invoicing/README.md) | `sales_tracker.js` | 결제/입금 내역 자동 연동, 청구서 발행, 홈택스 연계 |
-| **04** | [파일/이메일 통합](file:///c:/Users/lowys/Downloads/Projects/giip-dev-agent/docs/51-features/file-email-integration/README.md) | `file_email_sync.js` | 구글 드라이브 업로드, 임직원 업무 메일 통합 검색 |
-| **05** | [사내 행정 자동화](file:///c:/Users/lowys/Downloads/Projects/giip-dev-agent/docs/51-features/admin-automation/README.md) | `admin_cert_generator.js` | 인사 DB 연동 재직증명서 원클릭 자동 생성 |
-| **06** | [AI 기획 & 컨설팅](file:///c:/Users/lowys/Downloads/Projects/giip-dev-agent/docs/51-features/ai-consultant/README.md) | `ai_consultant.js` | 수신 이메일 자동 분류/답장, 계약 불발 회의록 원인 분석 |
-| **07** | [슬랙봇 & 브리핑](file:///c:/Users/lowys/Downloads/Projects/giip-dev-agent/docs/51-features/slackbot-briefing/README.md) | `slackbot_briefing.js` | 아침 스케줄 브리핑 및 저녁 6시 개발 현황 보고 요약 발송 |
+| **01** | [회의/프로젝트 관리](../../docs/51-features/meeting-management/README.md) | `meeting_manager.js` | 녹음 텍스트 분석, 견적서 및 할 일 자동 생성 |
+| **02** | [명함/연락처 자동화](../../docs/51-features/contact-automation/README.md) | `contact_sync.js` | 명함 이미지 정보 추출, 구글 주소록 및 사내 CRM 연동 |
+| **03** | [매출/세금계산서](../../docs/51-features/sales-invoicing/README.md) | `sales_tracker.js` | 결제/입금 내역 자동 연동, 청구서 발행, 홈택스 연계 |
+| **04** | [파일/이메일 통합](../../docs/51-features/file-email-integration/README.md) | `file_email_sync.js` | 구글 드라이브 업로드, 임직원 업무 메일 통합 검색 |
+| **05** | [사내 행정 자동화](../../docs/51-features/admin-automation/README.md) | `admin_cert_generator.js` | 인사 DB 연동 재직증명서 원클릭 자동 생성 |
+| **06** | [AI 기획 & 컨설팅](../../docs/51-features/ai-consultant/README.md) | `ai_consultant.js` | 수신 이메일 자동 분류/답장, 계약 불발 회의록 원인 분석 |
+| **07** | [슬랙봇 & 브리핑](../../docs/51-features/slackbot-briefing/README.md) | `slackbot_briefing.js` | 아침 스케줄 브리핑 및 저녁 6시 개발 현황 보고 요약 발송 |
 
 ---
 
@@ -72,7 +72,7 @@ node docs/51-features/slackbot-briefing/slackbot_briefing.js --test
    - 목적: 구글 드라이브 API를 통한 문서 영구 백업 관리
 4. **OpenClaw 슬랙 연동**:
    - 위치: `~/.openclaw/config.json` 또는 프로젝트 루트 `openclaw.json`
-   - 목적: 슬랙 메신저 Socket Mode 연결을 통해 에이전트 소환 및 대화형 일정/할 일 추가 기능 구현 (가이드: [OpenClaw Slack 연동 가이드](file:///c:/Users/lowys/Downloads/Projects/giip-dev-agent/docs/50-technical/openclaw-slack-integration.md))
+   - 목적: 슬랙 메신저 Socket Mode 연결을 통해 에이전트 소환 및 대화형 일정/할 일 추가 기능 구현 (가이드: [OpenClaw Slack 연동 가이드](../../docs/50-technical/openclaw-slack-integration.md))
 
 ---
 

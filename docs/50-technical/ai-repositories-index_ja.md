@@ -4,7 +4,7 @@ AIエージェントシステムと連携したり、活用したりできる便
 
 ## 🤖 AIエージェント・メンテナンスツール
 
-### [ClawSweeper](https://github.com/openclaw/clawsweeper) ([紹介ページ](file:///c:/Users/lowys/Downloads/projects/giip-dev-agent/docs/50-technical/clawsweeper-intro_ja.md))
+### [ClawSweeper](https://github.com/openclaw/clawsweeper) ([紹介ページ](../../docs/50-technical/clawsweeper-intro_ja.md))
 - **一言紹介**: 大規模なGitHubリポジトリのIssueやPRをAIで自動分析・整理するメンテナンスボットです。
 
 ### [awesome-agents](https://github.com/kyrolabs/awesome-agents)
@@ -19,11 +19,14 @@ AIエージェントシステムと連携したり、活用したりできる便
 ### [cmux](https://github.com/craigsc/cmux)
 - **一言紹介**: 複数のClaudeエージェントを効率的に並列実行・管理するためのツールです。
 
-### [gstack](https://github.com/garrytan/gstack) ([分析レポート](file:///c:/Users/lowys/Downloads/projects/giip-dev-agent/docs/50-technical/gstack-analysis.md))
+### [gstack](https://github.com/garrytan/gstack) ([分析レポート](../../docs/50-technical/gstack-analysis.md))
 - **一言紹介**: Garry Tanによる23の専門的なエージェントツールセットで、CEO、デザイナー、セキュリティ担当者など、多様な役割の遂行を支援します。
 
-### [LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) ([分析レポート](file:///c:/Users/lowys/Downloads/projects/giip-dev-agent/docs/70-LowyOpinion/capacydiagram.md))
+### [LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) ([分析レポート](../../docs/70-LowyOpinion/capacydiagram.md))
 - **一言紹介**: Andrej Karpathyが提唱した、AIエージェントによる継続的な知識蓄積とウィキ管理のパターン（K-Layerの原型）です。
+
+### [SkillOpt](https://github.com/microsoft/SkillOpt)
+- **一言紹介**: 重みの微調整なしで、ミニバッチ、学習率（テキスト編集予算）、検証ゲートを通じて、エージェントの指示ファイル（SKILL.md）をテキスト空間上で最適化するスキル学習フレームワークです。
 
 ## 🎨 デザイン・ドキュメントツール
 

@@ -4,7 +4,7 @@ A collection of useful external repositories and tools that can be integrated wi
 
 ## 🤖 AI Agents & Maintenance Tools
 
-### [ClawSweeper](https://github.com/openclaw/clawsweeper) ([Intro Page](file:///c:/Users/lowys/Downloads/projects/giip-dev-agent/docs/50-technical/clawsweeper-intro_en.md))
+### [ClawSweeper](https://github.com/openclaw/clawsweeper) ([Intro Page](../../docs/50-technical/clawsweeper-intro_en.md))
 - **One-line Intro**: An AI-powered maintenance bot that automatically analyzes and cleans up issues and PRs in large GitHub repositories.
 
 ### [awesome-agents](https://github.com/kyrolabs/awesome-agents)
@@ -19,11 +19,15 @@ A collection of useful external repositories and tools that can be integrated wi
 ### [cmux](https://github.com/craigsc/cmux)
 - **One-line Intro**: A tool to help run and manage multiple Claude agents in parallel efficiently.
 
-### [gstack](https://github.com/garrytan/gstack) ([Analysis Report](file:///c:/Users/lowys/Downloads/projects/giip-dev-agent/docs/50-technical/gstack-analysis.md))
+### [gstack](https://github.com/garrytan/gstack) ([Analysis Report](../../docs/50-technical/gstack-analysis.md))
 - **One-line Intro**: Garry Tan's collection of 23 professional agent tools, helping perform various roles like CEO, Designer, and CSO.
 
-### [LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) ([Analysis Report](file:///c:/Users/lowys/Downloads/projects/giip-dev-agent/docs/70-LowyOpinion/capacydiagram.md))
+### [LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) ([Analysis Report](../../docs/70-LowyOpinion/capacydiagram.md))
 - **One-line Intro**: The AI agent-based persistent knowledge accumulation and wiki management pattern proposed by Andrej Karpathy (the prototype of K-Layer).
+
+### [SkillOpt](https://github.com/microsoft/SkillOpt)
+- **One-line Intro**: A text-space optimizer that trains reusable natural-language skills for frozen LLM agents through trajectory-driven edits, validation-gated updates, and deployable best_skill.md artifacts.
+
 
 ## 🎨 Design & Documentation Tools
 
