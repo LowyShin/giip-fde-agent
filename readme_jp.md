@@ -19,7 +19,7 @@
 
 > **🚀 はじめてですか？**  
 > [**クイックスタートガイド**](QUICK_START.md)で、5分で最初のエージェントを稼働させてみましょう！  
-> [ツールダウンロード](TOOLS_DOWNLOAD.md) | [Antigravity使用法](ANTIGRAVITY_USAGE_GUIDE.md) | [便利なリンク](links.md)
+> [ツールダウンロード](TOOLS_DOWNLOAD.md) | [Antigravity使用法](ANTIGRAVITY_USAGE_GUIDE.md) | [90分オンボーディング](docs/00-onboarding/README.md) | [運用ガバナンス](docs/60-operations/README.md) | [便利なリンク](links.md)
 
 ---
 
@@ -175,6 +175,13 @@ GIIP Agent Systemは、単なるプロンプトの集まりではなく、世界
 > [!IMPORTANT]
 > **API Keyの設定 (自動化に必要)**:  
 > `.agent/settings.json.sample` ファイルを `settings.json` にコピーし、発行された Gemini API Key を入力してください。
+
+### 🧭 AI-Native 運用スターターパック
+- [90分オンボーディング経路](docs/00-onboarding/README.md) (Beginner / Team Lead / Ops)
+- [運用KPI標準](docs/60-operations/ai-native-kpi.md) + [週次KPIテンプレート](.agent/templates/weekly-kpi-report.template.md)
+- [承認ゲートワークフロー](.agent/workflows/human-approval-gate.md)
+- [Incident + Rollback プレイブック](docs/60-operations/incident-rollback-playbook.md)
+- [Skill/Role 運用責任メタデータスキーマ](.agent/templates/shared/operational-metadata-schema.md)
 
 ---
 
