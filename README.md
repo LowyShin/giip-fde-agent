@@ -15,7 +15,7 @@
 
 > **🚀 처음이신가요?**  
 > [**빠른 시작 가이드**](QUICK_START.md)에서 5분 만에 첫 에이전트를 가동해 보세요!  
-> [도구 다운로드](TOOLS_DOWNLOAD.md) | [Antigravity 사용법](ANTIGRAVITY_USAGE_GUIDE.md) | [하네스 가이드](docs/04-tools/harness.md) | [유용한 링크](links.md)
+> [도구 다운로드](TOOLS_DOWNLOAD.md) | [Antigravity 사용법](ANTIGRAVITY_USAGE_GUIDE.md) | [하네스 가이드](docs/04-tools/harness.md) | [90분 온보딩](docs/00-onboarding/README.md) | [운영 거버넌스](docs/60-operations/README.md) | [유용한 링크](links.md)
 
 ---
 
@@ -171,6 +171,13 @@ graph TD
 > [!IMPORTANT]
 > **API Key 설정 (자동화 시 필요. 수동으로 작업할 경우 필요 없음)**:  
 > `.agent/settings.json.sample` 파일을 `settings.json`으로 복사하고 발급받은 Gemini API Key를 입력하세요.
+
+### 🧭 AI-Native 운영 스타터팩
+- [90분 온보딩 경로](docs/00-onboarding/README.md) (Beginner / Team Lead / Ops)
+- [운영 KPI 표준](docs/60-operations/ai-native-kpi.md) + [주간 KPI 템플릿](.agent/templates/weekly-kpi-report.template.md)
+- [승인 게이트 워크플로우](.agent/workflows/human-approval-gate.md)
+- [Incident + Rollback 플레이북](docs/60-operations/incident-rollback-playbook.md)
+- [Skill/Role 운영 책임 메타데이터 스키마](.agent/templates/shared/operational-metadata-schema.md)
 
 ---
 

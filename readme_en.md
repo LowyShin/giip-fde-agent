@@ -19,7 +19,7 @@
 
 > **🚀 First time here?**  
 > Check out the [**Quick Start Guide**](QUICK_START.md) to launch your first agent in 5 minutes!  
-> [Tools Download](TOOLS_DOWNLOAD.md) | [Antigravity Usage](ANTIGRAVITY_USAGE_GUIDE.md) | [Useful Links](links.md)
+> [Tools Download](TOOLS_DOWNLOAD.md) | [Antigravity Usage](ANTIGRAVITY_USAGE_GUIDE.md) | [90-min Onboarding](docs/00-onboarding/README.md) | [Operations Governance](docs/60-operations/README.md) | [Useful Links](links.md)
 
 ---
 
@@ -175,6 +175,13 @@ GIIP Agent System is more than just a collection of prompts; it's a consolidatio
 > [!IMPORTANT]
 > **API Key Setup (Required for automation)**:  
 > Copy `.agent/settings.json.sample` to `settings.json` and enter your issued Gemini API Key.
+
+### 🧭 AI-Native Operations Starter Pack
+- [90-min onboarding paths](docs/00-onboarding/README.md) (Beginner / Team Lead / Ops)
+- [Operations KPI standard](docs/60-operations/ai-native-kpi.md) + [weekly KPI template](.agent/templates/weekly-kpi-report.template.md)
+- [Human approval gate workflow](.agent/workflows/human-approval-gate.md)
+- [Incident + rollback playbook](docs/60-operations/incident-rollback-playbook.md)
+- [Skill/Role operational metadata schema](.agent/templates/shared/operational-metadata-schema.md)
 
 ---
 
