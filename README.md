@@ -27,6 +27,7 @@
 | :--- | :--- | :--- |
 | **Antigravity** | Google Gemini 기반의 전문가용 에이전트 플랫폼 | [상세 보기](docs/04-tools/antigravity.md) |
 | **Claude Code** | Anthropic의 CLI 기반 에이전틱 코딩 도구 | [상세 보기](docs/04-tools/claude-code.md) |
+| **Codex** | OpenAI의 에이전틱 코딩 플랫폼 (멀티 환경 지원) | [상세 보기](docs/04-tools/codex.md) |
 | **Cursor** | 코드베이스 전체를 이해하는 AI 네이티브 에디터 | [상세 보기](docs/04-tools/cursor.md) |
 | **Gemini CLI** | 가장 빠르고 가벼운 터미널용 AI 유틸리티 | [상세 보기](docs/04-tools/gemini-cli.md) |
 | **Windsurf** | 흐름(Flow) 중심의 지능형 에이전틱 IDE | [상세 보기](docs/04-tools/windsurf.md) |
@@ -156,6 +157,12 @@ graph TD
 - **고도화된 역할 시스템**: `Workflow Architect`(시스템 경로 설계), `Korean Business Navigator`(한국 비즈니스 특화) 등 검증된 전문가 페르소나를 내장.
 - **프리미엄 UI/UX**: `premium-ui-craft` 스킬을 통해 단순 기능을 넘어선 고도의 미적 완성도(Glassmorphism, 60fps 애니메이션 등)를 추구.
 - **철저한 예외 경로 설계**: `workflow-mapping`을 통해 "코드는 있지만 명세가 없는 워크플로우"를 방지하고 모든 실패 복구 경로를 사전에 정의.
+
+### 10. Codex 성능 유지 (keep-codex-fast)
+- **Codex 속도 저하 방지**: 오래된 채팅·워크트리·로그·프로젝트 참조가 쌓여 Codex가 느려질 때, 로컬 상태를 안전하게 점검하고 정리합니다.
+- **핸드오프 우선 원칙**: 아카이브 전 반드시 핸드오프 문서를 생성하여 작업 맥락을 보존합니다.
+- **주기적 유지보수**: 주간/격주 알림으로 Codex 상태를 자동 점검하되, 적용은 사용자 승인 후 수동으로 진행합니다.
+- [keep-codex-fast 스킬](.agent/skills/keep-codex-fast/SKILL.md) | [유지보수 워크플로우](.agent/workflows/codex-maintenance.md) | [Codex 도구 가이드](docs/04-tools/codex.md)
 
 ---
 

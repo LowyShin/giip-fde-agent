@@ -31,6 +31,7 @@ GIIP Agent System is perfectly compatible with the following state-of-the-art AI
 | :--- | :--- | :--- |
 | **Antigravity** | Professional agent platform based on Google Gemini | [Details](docs/04-tools/antigravity.md) |
 | **Claude Code** | Anthropic's CLI-based agentic coding tool | [Details](docs/04-tools/claude-code.md) |
+| **Codex** | OpenAI's agentic coding platform (multi-environment) | [Details](docs/04-tools/codex.md) |
 | **Cursor** | AI-native editor with full codebase understanding | [Details](docs/04-tools/cursor.md) |
 | **Gemini CLI** | Fastest and lightest terminal AI utility | [Details](docs/04-tools/gemini-cli.md) |
 | **Windsurf** | Flow-centric intelligent agentic IDE | [Details](docs/04-tools/windsurf.md) |
@@ -160,6 +161,12 @@ GIIP Agent System is more than just a collection of prompts; it's a consolidatio
 - **Advanced Role System**: Built-in specialized expert personas like `Workflow Architect` (system path design) and `Korean Business Navigator` (specialized in Korean business).
 - **Premium UI/UX**: Pursue high aesthetic quality (Glassmorphism, 60fps animations, etc.) through the `premium-ui-craft` skill.
 - **Exhaustive Exception Design**: Prevent "workflows that exist in code but not in specs" via `workflow-mapping` and define all failure recovery paths in advance.
+
+### 10. Codex Performance Maintenance (keep-codex-fast)
+- **Prevent Codex Slowdowns**: When old chats, worktrees, logs, and project references accumulate and Codex starts feeling heavy, safely inspect and clean up local state.
+- **Handoffs-First Principle**: Always create handoff documents before archiving to preserve work context.
+- **Periodic Maintenance**: Automatic weekly/biweekly inspection reminders — applies only after user approval.
+- [keep-codex-fast Skill](.agent/skills/keep-codex-fast/SKILL.md) | [Maintenance Workflow](.agent/workflows/codex-maintenance.md) | [Codex Tool Guide](docs/04-tools/codex.md)
 
 ---
 
