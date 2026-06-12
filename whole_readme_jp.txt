@@ -200,7 +200,7 @@ graph TD
 ### **2. 自己最適化 (`/aioptimize`)**
 収集された実行履歴を分析して、エージェントの内部スキルとプロンプトを自動的に改善します。
 - **使用法**: `/aioptimize` ワークフローを実行します。
-- **コマンド**: `python giipdb/scripts/prompt_optimization/native_optimizer.py`
+- **コマンド**: `python scripts/prompt_optimization/native_optimizer.py`
 - **ロジック**: 報酬スコアが低い（< 0.8）タスクを分析して失敗の原因を特定し、関連するスキルのMarkdown指示を最適化して提案します。
 
 ### **3. 報酬システム (Reward System)**

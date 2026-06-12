@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const PROJECT_ROOT = process.cwd();
-const EMPLOYEES_DB = path.join(PROJECT_ROOT, 'giipdb/employees.json');
+const EMPLOYEES_DB = path.join(PROJECT_ROOT, 'docs', '51-features', '_data', 'employees.json');
 const OUTPUT_DIR = path.join(PROJECT_ROOT, 'docs/51-features/admin-automation/output');
 
 // Ensure output directory exists

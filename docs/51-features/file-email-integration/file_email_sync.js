@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const PROJECT_ROOT = process.cwd();
-const EMAILS_DB = path.join(PROJECT_ROOT, 'giipdb/emails.json');
+const EMAILS_DB = path.join(PROJECT_ROOT, 'docs', '51-features', '_data', 'emails.json');
 
 // Mock Google Drive Upload
 function syncFileToDrive(filePath) {
@@ -51,7 +51,7 @@ function searchEmails(query) {
 // Sync mock incoming emails
 function syncEmails() {
     console.log('🔄 IMAP/Gmail API 메일 동기화 중...');
-    // We can simulate fetching emails and adding them to giipdb/emails.json
+    // We can simulate fetching emails and adding them to docs/51-features/_data/emails.json
     if (!fs.existsSync(EMAILS_DB)) {
         console.log('❌ DB가 없어 동기화가 불가합니다.');
         return;

@@ -4,7 +4,7 @@ const { execSync } = require('child_process');
 
 const PROJECT_ROOT = process.cwd();
 const OUTPUT_DIR = path.join(PROJECT_ROOT, 'docs/51-features/meeting-management/output');
-const SCHEDULE_DB = path.join(PROJECT_ROOT, 'giipdb/schedule.json');
+const SCHEDULE_DB = path.join(PROJECT_ROOT, 'docs', '51-features', '_data', 'schedule.json');
 
 // Ensure output directory exists
 if (!fs.existsSync(OUTPUT_DIR)) {
@@ -171,7 +171,7 @@ async function main() {
                 });
             });
             fs.writeFileSync(SCHEDULE_DB, JSON.stringify(schedules, null, 2), 'utf8');
-            console.log('✅ giipdb/schedule.json에 할 일이 성공적으로 등록되었습니다.');
+            console.log('✅ docs/51-features/_data/schedule.json에 할 일이 성공적으로 등록되었습니다.');
         } catch (e) {
             console.error('일정 DB 등록 중 오류 발생:', e.message);
         }

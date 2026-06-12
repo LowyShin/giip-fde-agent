@@ -3,7 +3,7 @@ const path = require('path');
 const { execSync } = require('child_process');
 
 const PROJECT_ROOT = process.cwd();
-const SCHEDULE_DB = path.join(PROJECT_ROOT, 'giipdb/schedule.json');
+const SCHEDULE_DB = path.join(PROJECT_ROOT, 'docs', '51-features', '_data', 'schedule.json');
 const OUTPUT_DIR = path.join(PROJECT_ROOT, 'docs/51-features/slackbot-briefing/output');
 
 // Ensure output directory exists

@@ -21,7 +21,7 @@ This script will automatically detect the **next pending task**, identify the **
 Any session started via `gemini-cli` (including sub-sessions) automatically inherits rules from `[GEMINI.md](../GEMINI.md)`:
 1.  **Strict Rule #1**: No raw SQL (`Invoke-Sqlcmd`). Use `mgmt/execSQLFile.ps1`.
 2.  **Evidence First**: Always link technical evidence as markdown files.
-3.  **Script Reuse**: Check `giipdb/mgmt/scriptlist.md` before writing new scripts.
+3.  **Script Reuse**: Check `mgmt/scriptlist.md` before writing new scripts.
 
 ## 📊 Monitoring Sub-Sessions
 To check the current status of all tasks and background sessions:

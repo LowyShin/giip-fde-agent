@@ -1,6 +1,6 @@
 # 사내 행정 자동화 모듈 (Internal Administration Automation) 📄
 
-이 모듈은 사내 인사 정보 데이터베이스(`giipdb/employees.json`)와 연동하여, 재직증명서(Certificate of Employment) 등의 행정 서류를 시스템에서 원클릭으로 자동 발급하고 보관할 수 있게 돕습니다.
+이 모듈은 사내 인사 정보 데이터베이스(`docs/51-features/_data/employees.json`)와 연동하여, 재직증명서(Certificate of Employment) 등의 행정 서류를 시스템에서 원클릭으로 자동 발급하고 보관할 수 있게 돕습니다.
 
 ---
 
