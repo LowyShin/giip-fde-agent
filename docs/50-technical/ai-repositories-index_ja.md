@@ -30,6 +30,9 @@ AIエージェントシステムと連携したり、活用したりできる便
 
 ## 🎨 デザイン・ドキュメントツール
 
+### [Open Design](https://github.com/nexu-io/open-design) ([紹介ページ](../../docs/50-technical/open-design-intro_ja.md))
+- **一言紹介**: Claude DesignのオープンソースAlternativeで、Claude Code・Codex・Cursor・CopilotなどのAIエージェントとMCPで連携し、150のブランドDESIGN.mdシステムと261プラグインを提供するエージェントネイティブなデザインワークスペースです。
+
 ### [designmd.ai](https://designmd.ai)
 - **一言紹介**: AI開発用の高品質なDESIGN.mdファイルとCLIツールを提供するプラットフォームです。
 
@@ -47,3 +50,4 @@ AIエージェントシステムと連携したり、活用したりできる便
 ---
 *作業履歴: 20260429 01:24:45: 外部AIリポジトリ一覧ページ作成*
 *作業履歴: 20260618: scientific-agent-skillsを科学・研究専用セクションに追加（Issue #17）*
+*作業履歴: 20260618: open-designをデザインツールセクションに追加（Issue #19）*
