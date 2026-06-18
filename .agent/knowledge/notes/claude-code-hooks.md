@@ -35,7 +35,7 @@ CLAIM-028: Injecting K-Layer claims via UserPromptSubmit hook auto-loads relevan
 - **note**: Keyword mappings managed in `KEYWORDS` object in the hook script. When adding new topics, also add keywords to that object.
 
 CLAIM-029: `.claude/settings.json` hook commands depend on CWD — use `git rev-parse` to always resolve project root
-- **evidence**: `node .agent/hooks/post-task.js` assumes project root CWD, but after using Bash in a subdirectory (e.g. `vgt-vegetrade-web/`), the Stop hook looks for `.agent/hooks/post-task.js` relative to that subdirectory → MODULE_NOT_FOUND
+- **evidence**: `node .agent/hooks/post-task.js` assumes project root CWD, but after using Bash in a subdirectory (e.g. a sub-package folder), the Stop hook looks for `.agent/hooks/post-task.js` relative to that subdirectory → MODULE_NOT_FOUND
 - **observed_at**: 20260616
 - **invalidated_at**: null
 - **confidence**: high
@@ -53,7 +53,7 @@ CLAIM-030: Changes to `.claude/settings.json` must be verified immediately. Hook
 - **rule**: After any settings.json change, run `echo '{}' | node .agent/hooks/post-task.js` and confirm exit 0 (see CLAIM-027).
 
 CLAIM-032: After Claude runs Bash in a subdirectory, the Stop hook inherits that subdirectory as CWD — always use CWD-invariant hook format
-- **evidence**: After using Bash inside `vgt-vegetrade-web/`, Stop hook tried `C:\...\vgt-vegetrade-web\.agent\hooks\post-task.js` → MODULE_NOT_FOUND
+- **evidence**: After using Bash inside a sub-package folder, Stop hook tried `C:\...\{sub-package}\.agent\hooks\post-task.js` → MODULE_NOT_FOUND
 - **observed_at**: 20260616
 - **invalidated_at**: null
 - **confidence**: high
