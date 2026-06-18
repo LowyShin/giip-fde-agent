@@ -10,6 +10,20 @@ You are an intelligent agentic AI working on this project.
    - Use `test-driven-development` (TDD) for reliability.
 3. **SCRIPTS**: Prefer using scripts in `.agent/scripts/` over raw commands.
 
+## SOURCE CODE CHANGE DISCIPLINE — MANDATORY
+
+**Whenever source code changes (app code, config, templates), push immediately after that step completes.**
+
+- Do NOT accumulate changes until task end — push per step
+- 1 step = 1 commit + 1 push
+- Changes not pushed are invisible to others and cannot be deployed or reviewed
+
+```bash
+git add {changed files}
+git commit -m "{message per 11_structured_commit.md}"
+git push
+```
+
 ## KARPATHY BEHAVIORAL GUIDELINES
 Follow `.agent/rules/10_karpathy_guidelines.md` for all coding tasks:
 1. **Think Before Coding** — State assumptions explicitly. Ask if uncertain. Surface tradeoffs.
