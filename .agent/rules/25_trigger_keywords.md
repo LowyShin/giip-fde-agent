@@ -4,6 +4,14 @@ This document lists the keywords that trigger specific skills in multiple langua
 
 ## 💡 Trigger Keywords
 
+### Jikji File Discovery
+| Language | Keywords |
+|----------|----------|
+| EN | find file, search file, locate file, file discovery, where is file |
+| KO | 파일 찾기, 파일 검색, 파일 탐색, 파일 위치 |
+| JA | ファイル検索, ファイル発見, ファイル探索 |
+| ZH | 文件搜索, 文件查找, 文件探索 |
+
 ### Gap Analysis
 | Language | Keywords |
 |----------|----------|

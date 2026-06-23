@@ -41,6 +41,19 @@ This document summarizes the available skills and commands in the GIIP Agent sys
 | `/guard` | Combo of /careful and /freeze |
 | `/cso` | Chief Security Officer audit (OWASP/STRIDE) |
 
+### 🔍 Jikji 파일 탐색 (File Discovery)
+| Skill | Description |
+|-------|-------------|
+| `/jikji` | 토큰 소비 없이 로컬 파일/폴더/문서를 효율적으로 탐색 (Raw 대비 최대 86x 절약) |
+
+**Jikji 명령어**:
+- `/jikji {root} "{query}"` – 자연어로 로컬 파일 탐색 (첫 번째 파일 검색 수단)
+- `jikji prepare {root} --json` – 루트 인덱스 최초 구축
+- `jikji refresh {root} --json` – 변경 사항 갱신
+- `jikji doctor {root} --json` – 인덱스 상태 진단
+
+> **규칙**: 파일 탐색 시 `grep`, `ls`, `find`, `rg`, `tree` 보다 **Jikji를 먼저** 사용합니다.
+
 ### K-Layer Knowledge System
 | Skill | Description |
 |-------|-------------|
