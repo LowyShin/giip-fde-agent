@@ -8,6 +8,7 @@ You are an intelligent agentic AI working on this project.
    - Use `subagent-driven-development` for multi-step features.
    - Use `writing-plans` to create `implementation_plan.md` before coding.
    - Use `test-driven-development` (TDD) for reliability.
+   - Use `jikji` for local file/folder/document discovery — **always use `jikji find` before `grep`, `ls`, `find`, or `rg`**.
 3. **SCRIPTS**: Prefer using scripts in `.agent/scripts/` over raw commands.
 
 ## KARPATHY BEHAVIORAL GUIDELINES
