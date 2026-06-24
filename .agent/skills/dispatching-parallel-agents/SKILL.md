@@ -13,6 +13,31 @@ When you have multiple unrelated failures (different test files, different subsy
 
 **Core principle:** Dispatch one agent per independent problem domain. Let them work concurrently.
 
+## Agent Selection Criteria (동적 에이전트 선발)
+
+에이전트를 병렬로 선발할 때 작업 유형에 맞는 역할을 점수화하여 선택한다. 이 기준은 moa의 동적 워커 선발 패턴에서 영감을 받았다.
+
+### 역할별 점수 기준
+
+| 역할 | 한국어 작업 | 코딩/구현 | 분석/설계 | 운영/인프라 |
+|------|------------|-----------|-----------|------------|
+| developer | 중 | 높음 | 낮음 | 낮음 |
+| analyst | 높음 | 낮음 | 높음 | 중 |
+| reviewer | 중 | 높음 | 높음 | 낮음 |
+| infra-architect | 낮음 | 중 | 중 | 높음 |
+| report-generator | 높음 | 낮음 | 중 | 낮음 |
+
+### 선발 원칙
+
+1. **작업 유형 분류 먼저**: 요청이 구현인지 분석인지 운영인지 먼저 판단한다.
+2. **한국어 비율 고려**: 요청의 한국어 비율이 높으면 한국어 아티팩트를 잘 처리하는 역할 우선.
+3. **상위 N개 선발**: 점수 상위 2~3개 역할을 병렬로 선발한다.
+4. **신뢰가중치 결정 및 명시**: 종합 시 각 에이전트 결과의 반영 비율을 다음 기준으로 결정한다.
+   - **도메인 전문성**: 해당 작업 유형과 역할의 점수 일치도가 높을수록 가중치 높음
+   - **과거 성공률**: `.agent/traces/`에 기록된 해당 역할의 최근 성공 실패 이력 참고 (없으면 50:50)
+   - **예시**: 코딩 작업에서 Developer(70%) + Analyst(30%) 비율로 종합
+   - 가중치 합은 반드시 100%가 되어야 하며, 종합 결과에 비율을 명시한다
+
 ## When to Use
 
 ```dot
