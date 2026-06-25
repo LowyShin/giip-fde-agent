@@ -1,3 +1,10 @@
 # Jikji generated artifacts — do not commit unless explicitly desired
 .jikji/
 .jikji_agent_map.md
+
+# Python cache/artifacts
+__pycache__/
+*.py[cod]
+
+# Block accidental project-specific cache roots (e.g. PYTHONPYCACHEPREFIX=giipdb)
+giipdb/

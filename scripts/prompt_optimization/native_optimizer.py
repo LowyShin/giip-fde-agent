@@ -1,7 +1,11 @@
+import sys
+
+# Prevent creation of __pycache__/custom pycache prefix folders in this repository.
+sys.dont_write_bytecode = True
+
 import json
 import os
 import glob
-import sys
 from datetime import datetime
 
 def analyze_traces(trace_dir=".agent/traces"):

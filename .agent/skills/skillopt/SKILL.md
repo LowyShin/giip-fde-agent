@@ -22,7 +22,7 @@ responsible SKILL.md, and checks those edits through a Validation Gate before co
 
 ```powershell
 # From the project root (WSL2 or PowerShell)
-python scripts/prompt_optimization/skillopt_optimizer.py
+python -B scripts/prompt_optimization/skillopt_optimizer.py
 ```
 
 The script:
