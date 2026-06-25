@@ -2,7 +2,7 @@
 
 This file tracks the history of tasks and changes performed by the GIIP Agent system.
 
-- 20260129 19:10:00: Completed RCA analysis for `pApiGiipIssueListbyAK` and `giip-issues` functionality. Generated RCA report `ANALYSIS_20260129_GIIP_ISSUE_LIST_RCA.md` in `giipdb/docs/50_Analysis/`.
+- 20260129 19:10:00: Completed RCA analysis for `pApiGiipIssueListbyAK` and `giip-issues` functionality. Generated RCA report `ANALYSIS_20260129_GIIP_ISSUE_LIST_RCA.md` in `docs/90-reports/`.
 - 20260130 11:34:00: Started README translation task (English and Japanese versions).
 - 20260130 11:38:00: Completed README translation task. Created `readme_en.md` and `readme_jp.md` with cross-language links.
 - 20260130 19:12:00: Initialized bkit Vibecoding Kit integration. Updated GEMINI.md and enabled hooks.
@@ -11,7 +11,7 @@ This file tracks the history of tasks and changes performed by the GIIP Agent sy
 - 20260201 16:51:00: Resolved git conflicts in `GEMINI.md` and updated documentation.
 - 20260303 20:41:00: Started task to explain document location rules.
 - 20260303 20:45:00: Completed task to explain document location rules. Documented SoR priority, PDCA document paths, and Korean language rule.
-- 20260303 20:53:15: Completed task to clarify report storage locations for `giipdb` and general reports.
+- 20260303 20:53:15: Completed task to clarify report storage locations for feature data and general reports.
 - 20260303 21:00:00: Started task to standardize documentation folder management guidelines, removing project-specific references.
 - 20260323 09:54:10: Started task to integrate gstack features into giip-dev-agent.
 - 20260323 10:25:00: Started task to research and add useful skills from `https://github.com/anthropics/skills`.
@@ -26,7 +26,7 @@ This file tracks the history of tasks and changes performed by the GIIP Agent sy
 - 20260403 22:56:50: Started task to research and integrate `microsoft/agent-lightning`. Created implementation plan for integration.
 - 20260403 23:04:00: Completed `microsoft/agent-lightning` integration. Added setup scripts, skills, workflows, and updated documentation across all languages.
 - 20260403 23:17:32: Completed 'Native' Agent Optimization integration (Concept of Agent Lightning without WSL2 requirement). Implemented `trace-manager` skill and `native-trace` workflow.
-- 20260403 23:34:35: Completed custom workflow `/aioptimize` implementation. Added `giipdb/scripts/prompt_optimization/native_optimizer.py` and updated documentation across all languages.
+- 20260403 23:34:35: Completed custom workflow `/aioptimize` implementation. Added `scripts/prompt_optimization/native_optimizer.py` and updated documentation across all languages.
 - 20260403 23:51:37: Completed global `/native-trace` integration across all workflows, skills, roles, and templates.
 - 20260404 00:08:00: Started task to reorder API Key setup in README files and clarify its usage for `gemini-cli` only.
 - 20260404 00:29:30: Started task to clarify Agent Lightning vs Native Optimization in documentation.

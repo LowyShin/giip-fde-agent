@@ -14,6 +14,7 @@ When asked to implement a feature:
 1. **Plan**: Create or update `implementation_plan.md` (see `.agent/skills/writing-plans`).
 2. **Execute**: Use TDD (Red-Green-Refactor) (see `.agent/skills/test-driven-development`).
 3. **Verify**: Run tests and record evidence.
+4. **File Search**: Use `jikji find` (`.agent/skills/jikji`) **before** `grep`, `ls`, `find`, or `rg` for local file discovery.
 
 ## 🧠 KARPATHY BEHAVIORAL GUIDELINES
 Follow the guidelines in `.agent/rules/10_karpathy_guidelines.md`:

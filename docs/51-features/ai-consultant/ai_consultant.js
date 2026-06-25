@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const PROJECT_ROOT = process.cwd();
-const EMAILS_DB = path.join(PROJECT_ROOT, 'giipdb/emails.json');
+const EMAILS_DB = path.join(PROJECT_ROOT, 'docs', '51-features', '_data', 'emails.json');
 const OUTPUT_DIR = path.join(PROJECT_ROOT, 'docs/51-features/ai-consultant/output');
 
 // Ensure output directory exists

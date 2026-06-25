@@ -31,8 +31,24 @@ A collection of useful external repositories and tools that can be integrated wi
 
 ## 🎨 Design & Documentation Tools
 
+### [Open Design](https://github.com/nexu-io/open-design) ([Intro Page](../../docs/50-technical/open-design-intro_en.md))
+- **One-line Intro**: An open-source alternative to Claude Design that integrates with major AI agents (Claude Code, Codex, Cursor, Copilot, Gemini CLI, etc.) via MCP, offering 150 brand-grade DESIGN.md systems, 261 plugins, and an agent-native design workspace for generating prototypes, dashboards, decks, images, and video.
+
 ### [designmd.ai](https://designmd.ai)
 - **One-line Intro**: A platform providing high-quality DESIGN.md files and CLI tools for AI development.
 
+## 🔬 Science & Research Skills (Optional Download)
+
+> ⚠️ **Skills in this section should only be downloaded for science or research-related projects.**
+> Do not include these in general development projects.
+
+### [scientific-agent-skills](https://github.com/K-Dense-AI/scientific-agent-skills)
+- **One-line Intro**: A collection of 147 ready-to-use scientific and research agent skills covering cancer genomics, drug-target binding, molecular dynamics, RNA velocity, geospatial science, time series forecasting, and 78+ scientific databases.
+- **Target Projects**: Biology, chemistry, medicine, earth science, and other science or research projects
+- **Compatible Tools**: Cursor, Claude Code, Codex, Google Antigravity, and any AI agent supporting the Agent Skills standard
+- **How to Download**: Run `git clone https://github.com/K-Dense-AI/scientific-agent-skills` in your project root, then copy only the needed skill files into `.agent/skills/`
+
 ---
 *Work History: 20260429 01:24:35: Created External AI Repositories listing page*
+*Work History: 20260618: Added scientific-agent-skills to science/research section (Issue #17)*
+*Work History: 20260618: Added open-design to design tools section (Issue #19)*

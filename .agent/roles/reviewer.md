@@ -27,9 +27,21 @@
 ## 워크플로우
 1. **분석**: 구현된 코드와 설계서(`design.md`)를 대조하여 갭 분석(Gap Analysis) 수행.
 2. **리포트 작성**: bkit 표준 형식에 따라 품질 점수 및 이슈(🔴Critical, 🟡Warning, 🟢Info) 기록.
-3. **상태 결정**: 
-   - **Approve**: 품질 만족 시 `Completed` 또는 `Ready for Test`로 변경.
-   - **Reject**: 90% 미만 일치 시 수정 요청과 함께 상태를 `Pending`으로 변경.
+3. **충분성 판단 (Verifier 패턴)**: 결과가 요구사항을 충분히 충족하는지 명시적으로 판단한다.
+   - 결과 첫 줄에 **`INSUFFICIENT`** 또는 **`SUFFICIENT`** 키워드를 반드시 기재한다.
+   - **`SUFFICIENT` 기준** (다음을 모두 충족):
+     - 요구사항의 90% 이상 구현
+     - 🔴Critical 이슈가 0개
+     - 테스트/검증 가능한 산출물 존재
+   - **`INSUFFICIENT` 기준** (다음 중 하나라도 해당):
+     - 요구사항 충족률 90% 미만
+     - 🔴Critical 이슈가 1개 이상 존재
+     - 누락된 핵심 기능 또는 보안 취약점 발견
+     - 설계서(`design.md`)와 구현 간 갭이 명확히 존재
+   - `INSUFFICIENT` 판단 시: 부족한 이유와 보완 방향을 구체적으로 적고, 오케스트레이터에 재작업 트리거를 요청한다.
+4. **상태 결정**: 
+   - **Approve** (`SUFFICIENT`): 품질 만족 시 `Completed` 또는 `Ready for Test`로 변경.
+   - **Reject** (`INSUFFICIENT`): 90% 미만 일치 또는 핵심 요구사항 미충족 시 수정 요청과 함께 상태를 `Pending`으로 변경.
 
 ## 시스템 가이드 (Tooling)
 - `pdca analyze`, `code-review` 기능을 적극 활용하십시오.

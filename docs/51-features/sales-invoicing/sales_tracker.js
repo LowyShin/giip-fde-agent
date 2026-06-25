@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const PROJECT_ROOT = process.cwd();
-const SALES_DB = path.join(PROJECT_ROOT, 'giipdb/sales.json');
+const SALES_DB = path.join(PROJECT_ROOT, 'docs', '51-features', '_data', 'sales.json');
 const OUTPUT_DIR = path.join(PROJECT_ROOT, 'docs/51-features/sales-invoicing/output');
 
 // Ensure output directory exists
@@ -104,7 +104,7 @@ function main() {
             if (!exists) {
                 sales.push(payload);
                 fs.writeFileSync(SALES_DB, JSON.stringify(sales, null, 2), 'utf8');
-                console.log(`✅ 사내 매출 DB(giipdb/sales.json)에 신규 매출이 연동되었습니다. (${payload.amount}원, 입금자: ${payload.sender})`);
+                console.log(`✅ 사내 매출 DB(docs/51-features/_data/sales.json)에 신규 매출이 연동되었습니다. (${payload.amount}원, 입금자: ${payload.sender})`);
             } else {
                 console.log('ℹ️ 이미 등록된 거래 건입니다. DB 갱신을 생략합니다.');
             }

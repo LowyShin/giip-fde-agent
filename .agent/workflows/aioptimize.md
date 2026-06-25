@@ -16,7 +16,7 @@ Check if `.agent/traces/` contains any data to analyze.
 ## 2. Run Native Optimizer
 Execute the analysis script:
 ```pwsh
-python giipdb/scripts/prompt_optimization/native_optimizer.py
+python scripts/prompt_optimization/native_optimizer.py
 ```
 
 ## 3. Analyze & Optimize (AI-Assisted)

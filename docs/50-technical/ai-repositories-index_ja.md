@@ -30,8 +30,24 @@ AIエージェントシステムと連携したり、活用したりできる便
 
 ## 🎨 デザイン・ドキュメントツール
 
+### [Open Design](https://github.com/nexu-io/open-design) ([紹介ページ](../../docs/50-technical/open-design-intro_ja.md))
+- **一言紹介**: Claude DesignのオープンソースAlternativeで、Claude Code・Codex・Cursor・CopilotなどのAIエージェントとMCPで連携し、150のブランドDESIGN.mdシステムと261プラグインを提供するエージェントネイティブなデザインワークスペースです。
+
 ### [designmd.ai](https://designmd.ai)
 - **一言紹介**: AI開発用の高品質なDESIGN.mdファイルとCLIツールを提供するプラットフォームです。
 
+## 🔬 科学・研究専用スキル（選択的ダウンロード）
+
+> ⚠️ **このセクションのスキルは、科学・研究関連プロジェクトでのみ選択的にダウンロードしてください。**
+> 一般的な開発プロジェクトには含めないでください。
+
+### [scientific-agent-skills](https://github.com/K-Dense-AI/scientific-agent-skills)
+- **一言紹介**: がんゲノミクス、創薬標的結合、分子動力学、RNAベロシティ、地理空間科学、時系列予測、78以上の科学データベースなどを含む、147個の科学・研究専用エージェントスキル集です。
+- **対象プロジェクト**: 生物学、化学、医学、地球科学など、科学・研究に関連するプロジェクト
+- **対応ツール**: Cursor、Claude Code、Codex、Google Antigravityなど、Agent Skills標準をサポートするすべてのAIエージェント
+- **ダウンロード方法**: プロジェクトルートで `git clone https://github.com/K-Dense-AI/scientific-agent-skills` を実行後、必要なスキルファイルのみ `.agent/skills/` にコピー
+
 ---
 *作業履歴: 20260429 01:24:45: 外部AIリポジトリ一覧ページ作成*
+*作業履歴: 20260618: scientific-agent-skillsを科学・研究専用セクションに追加（Issue #17）*
+*作業履歴: 20260618: open-designをデザインツールセクションに追加（Issue #19）*

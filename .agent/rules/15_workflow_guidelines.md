@@ -13,3 +13,12 @@ Agents MUST use the specialized skills in `.agent/skills/` for complex engineeri
 7.  **Workflow Mapping**: Before implementing complex logic, use the `workflow-mapping` skill to map all paths (happy paths, branches, recovery). "A workflow that exists in code but not in a spec is a liability."
 8.  **Premium Craftsmanship**: When building user-facing components, use the `premium-ui-craft` skill to ensure high-quality aesthetics, smooth animations, and interactive excellence.
 9.  **Knowledge-Based Updates**: When running `/gaupdate`, agents MUST first analyze the K-Layer knowledge base to ensure external roles, rules, or skills are relevant to the current project's context and technical needs.
+
+## Task File Rules
+
+> **PROHIBITED**: Do NOT add `## Estimated Time` (予想所要時間 / 예상 소요 시간) sections to task files.
+> Time estimates are inaccurate and create confusion. Omit entirely.
+
+> **MANDATORY — Immediate push after source code changes**:
+> When source code (application code, config files, templates) is modified, run `git add → commit → push` immediately after that step.
+> Do NOT defer pushes until task completion. Unpushed changes are invisible to others and cannot be deployed or reviewed.

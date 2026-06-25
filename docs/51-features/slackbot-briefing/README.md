@@ -6,7 +6,7 @@
 
 ## 🛠️ 주요 기능
 
-1. **아침 일정 브리핑**: 사내 일정 DB(`giipdb/schedule.json`)를 참조해 오늘의 일정 및 할 일(Todo) 목록을 채널에 브리핑합니다.
+1. **아침 일정 브리핑**: 사내 일정 DB(`docs/51-features/_data/schedule.json`)를 참조해 오늘의 일정 및 할 일(Todo) 목록을 채널에 브리핑합니다.
 2. **저녁 개발 진행 보고**: 최근 Git/GitHub 커밋 이력을 자동으로 파싱하여, 개발팀의 하루 업무 진행 내역을 요약하여 보고합니다.
 3. **OpenClaw 기반 대화형 원격 제어**: 슬랙 대화를 통해 에이전트에게 실시간 지시나 쿼리를 수행할 수 있습니다.
 
@@ -40,7 +40,7 @@ node docs/51-features/slackbot-briefing/slackbot_briefing.js --evening
 2. `openclaw onboard` 명령어로 연동 설정을 저장하고 `openclaw start`를 실행해 에이전트를 대기 상태로 활성화합니다.
 3. 슬랙 대화창에서 에이전트를 소환(`@GIIP Agent`)하여 업무를 할당할 수 있습니다:
    - *슬랙 명령 예시*: `@GIIP Agent 5월 23일 오후 2시에 "바이브 인베스팅 백테스트 코드 검토" 일정을 이지원 담당으로 등록해줘.`
-   - 에이전트는 OpenClaw의 파일 수정 도구를 사용하여 `giipdb/schedule.json` 파일을 자동 업데이트하고 등록 완료 피드백을 전달합니다.
+   - 에이전트는 OpenClaw의 파일 수정 도구를 사용하여 `docs/51-features/_data/schedule.json` 파일을 자동 업데이트하고 등록 완료 피드백을 전달합니다.
 
 ### B. 매일 정기 브리핑 자동 발송 (Windows 작업 스케줄러 설정)
 Windows 환경에서 아침 9시와 저녁 6시에 자동으로 스크립트가 실행되도록 등록합니다.

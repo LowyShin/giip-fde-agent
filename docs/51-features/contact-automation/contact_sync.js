@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const PROJECT_ROOT = process.cwd();
-const CONTACTS_DB = path.join(PROJECT_ROOT, 'giipdb/contacts.json');
+const CONTACTS_DB = path.join(PROJECT_ROOT, 'docs', '51-features', '_data', 'contacts.json');
 
 // Retrieve Gemini API Key
 function getApiKey() {
@@ -162,7 +162,7 @@ async function main() {
                 contact.registeredAt = new Date().toISOString();
                 contacts.push(contact);
                 fs.writeFileSync(CONTACTS_DB, JSON.stringify(contacts, null, 2), 'utf8');
-                console.log('✅ 사내 시스템 주소록(giipdb/contacts.json)에 연락처가 정상 추가되었습니다.');
+                console.log('✅ 사내 시스템 주소록(docs/51-features/_data/contacts.json)에 연락처가 정상 추가되었습니다.');
             } else {
                 console.log('ℹ️ 이미 주소록에 존재하는 연락처이므로 사내 주소록 저장을 생략합니다.');
             }
