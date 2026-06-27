@@ -791,6 +791,35 @@ async function onSlackMessage(event, conversations) {
   saveJSON(HISTORY_FILE, conversations);
 }
 
+// ── Startup: reconcile stale running tasks ────────────────────────────────────
+// On restart, any task still in "running" whose file is in done/ or cancel/
+// (or simply missing from tasks/) gets removed from the running map.
+function reconcileTaskState() {
+  const taskState = loadJSON(TASK_STATE_FILE, { pending: {}, running: {} });
+  const runningEntries = Object.entries(taskState.running || {});
+  if (!runningEntries.length) return;
+
+  const TASKS_DIR = path.join(BASE_DIR, '.agent', 'tasks');
+  let changed = false;
+
+  for (const [key, entry] of runningEntries) {
+    const taskId = entry.taskId;
+    const inDone    = fs.existsSync(path.join(TASKS_DIR, 'done',   `${taskId}.md`));
+    const inCancel  = fs.existsSync(path.join(TASKS_DIR, 'cancel', `${taskId}.md`));
+    const inPending = fs.existsSync(path.join(TASKS_DIR, `${taskId}.md`));
+
+    if (inDone || inCancel || !inPending) {
+      const reason = inDone ? 'done' : inCancel ? 'cancelled' : 'missing';
+      console.log(`[Bot] reconcile: task ${taskId} (${reason}) — removing from running`);
+      delete taskState.running[key];
+      tm.updateTasklistEntry(taskId, { status: inDone ? 'completed' : 'cancelled' });
+      changed = true;
+    }
+  }
+
+  if (changed) saveJSON(TASK_STATE_FILE, taskState);
+}
+
 async function main() {
   if (!BOT_TOKEN) { console.error('[Bot] SLACK_BOT_TOKEN is not set in .env'); process.exit(1); }
   if (!SLACK_APP_TOKEN) { console.error('[Bot] SLACK_APP_TOKEN is not set in .env'); process.exit(1); }
@@ -808,6 +837,7 @@ async function main() {
   console.log(`[Bot] Projects root: ${PROJECTS_ROOT}`);
   console.log(`[Bot] Channels: ${CHANNEL_IDS.join(', ') || '(DM only)'}`);
 
+  reconcileTaskState();
   const conversations = loadJSON(HISTORY_FILE, {});
   const socketClient = new SocketModeClient({
     appToken: SLACK_APP_TOKEN,
