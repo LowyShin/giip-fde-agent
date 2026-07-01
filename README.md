@@ -17,7 +17,7 @@
 
 > **🚀 처음이신가요?**  
 > [**빠른 시작 가이드**](QUICK_START.md)에서 5분 만에 첫 에이전트를 가동해 보세요!  
-> [도구 다운로드](TOOLS_DOWNLOAD.md) | [Antigravity 사용법](ANTIGRAVITY_USAGE_GUIDE.md) | [하네스 가이드](docs/04-tools/harness.md) | [90분 온보딩](docs/00-onboarding/README.md) | [운영 거버넌스](docs/60-operations/README.md) | [유용한 링크](links.md)
+> [도구 다운로드](TOOLS_DOWNLOAD.md) | [free-for.dev 추천 리스트](docs/50-technical/free-for-dev-for-giip.md) | [Antigravity 사용법](ANTIGRAVITY_USAGE_GUIDE.md) | [하네스 가이드](docs/04-tools/harness.md) | [90분 온보딩](docs/00-onboarding/README.md) | [운영 거버넌스](docs/60-operations/README.md) | [유용한 링크](links.md)
 
 ---
 
