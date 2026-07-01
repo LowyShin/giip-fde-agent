@@ -7,7 +7,7 @@ const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 async function fetchFromGitHub() {
   const token = process.env.GITHUB_TOKEN;
-  const repo = process.env.GITHUB_REPO; // e.g. 'owner/repo-name'
+  const repo = process.env.GITHUB_REPO; // owner/repo format, e.g. 'your-org/your-repo'
 
   if (!token || !repo) return null;
 
@@ -17,7 +17,7 @@ async function fetchFromGitHub() {
       path: `/repos/${repo}/issues?state=open&per_page=30&sort=updated`,
       headers: {
         'Authorization': `Bearer ${token}`,
-        'User-Agent': 'giipclaude-bot/1.0',
+        'User-Agent': 'giip-dev-agent-slack-bot/1.0',
         'Accept': 'application/vnd.github.v3+json',
       },
     }, (res) => {
@@ -70,9 +70,9 @@ function getCacheAge() {
     const cache = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
     const ageMs = Date.now() - cache.timestamp;
     const ageMins = Math.floor(ageMs / 60000);
-    return `cached ${ageMins}m ago`;
+    return `${ageMins}분 전 캐시`;
   } catch {
-    return 'no cache';
+    return '캐시 없음';
   }
 }
 

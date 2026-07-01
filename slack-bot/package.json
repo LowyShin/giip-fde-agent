@@ -1,7 +1,7 @@
 {
   "name": "giipclaude-bot",
-  "version": "1.0.0",
-  "description": "giipclaude Bot — claude CLI task workflow via Slack (no Anthropic API key needed)",
+  "version": "2.0.0",
+  "description": "giipclaude Bot — Slack bot that drives the claude CLI task workflow for any GIIP dev-agent workspace (no Anthropic API key needed). Project-agnostic; configured entirely via environment variables.",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"

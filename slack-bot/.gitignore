@@ -1,0 +1,13 @@
+# Secrets — never commit
+.env
+
+# Runtime state (per-machine / per-conversation)
+.conversations.json
+.task-state.json
+.bot-threads.json
+.issues-cache.json
+tasklist.json
+
+# Dependencies
+node_modules/
+package-lock.json

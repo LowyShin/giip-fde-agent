@@ -1,18 +1,17 @@
 const fs = require('fs');
 const path = require('path');
 
-const BASE_DIR = process.env.WORKSPACE_DIR ? path.resolve(process.env.WORKSPACE_DIR) : path.join(__dirname, '..');
-const NOTES_DIR = path.join(BASE_DIR, '.agent', 'knowledge', 'notes');
+const NOTES_DIR = path.join(__dirname, '..', '.agent', 'knowledge', 'notes');
 
 const KEYWORDS = {
-  'auth': ['auth', '인증', 'login', '로그인', 'jwt', 'token', 'sso', '認証'],
-  'order': ['order', '주문', '注文', 'checkout'],
-  'deployment': ['deploy', '배포', 'デプロイ', 'git push', 'release', '릴리스'],
-  'debug': ['error', 'bug', 'fail', '오류', '에러', '버그', '실패', 'エラー', 'バグ'],
+  'auth': ['auth', '인증', 'login', '로그인', 'jwt', 'token', 'sso'],
+  'mobile-order': ['order', '주문', 'code', 'access', 'mobile', '코드'],
+  'deployment': ['deploy', '배포', 'azure', 'git push', 'static', 'css'],
+  'debug': ['error', 'bug', 'fail', '오류', '에러', '버그', '실패', '무효'],
   'api': ['api', 'endpoint', 'request', 'response', '엔드포인트'],
-  'storage': ['storage', 'blob', 'file', '파일', 'upload', 'ファイル'],
+  'storage': ['storage', 'blob', 'file', '파일', 'upload'],
   'agent-setup': ['hook', 'trace', 'k-layer', 'skill', 'klayer'],
-  'design': ['design', 'デザイン', 'mock', 'html', 'top page', 'github'],
+  'design-references': ['pjcatapult', 'design', 'デザイン', 'mock', 'html', 'kashiwa', 'top page', 'トップ', 'ローカル', 'local', 'github', 'raw.github'],
 };
 
 function searchKLayer(prompt) {
