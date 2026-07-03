@@ -283,6 +283,129 @@ function findSimilarPendingTasks(requestText) {
   return similar;
 }
 
+// ── 未完了(pending)タスクのメタ情報を全件読み込む ────────────────────────────
+// taskmerge 用。各タスクの request/title と、類似判定用の単語集合・ブラケットキーを返す。
+function loadPendingTaskMeta() {
+  const taskDir = path.join(AGENT_DIR, 'tasks');
+  let files;
+  try { files = fs.readdirSync(taskDir).filter(f => /^\d{14}\.md$/.test(f)); }
+  catch { return []; }
+
+  const metas = [];
+  for (const file of files) {
+    try {
+      const content = fs.readFileSync(path.join(taskDir, file), 'utf8');
+      const statusM = content.match(/^status:\s*(.+)$/m);
+      const status = statusM ? statusM[1].trim() : 'pending';
+      if (status !== 'pending') continue;
+
+      const request = (content.match(/request:\s*"?([^\n"]{1,300})/) || [])[1] || '';
+      const titleLine = (content.match(/# TASK:\s*(.+)/) || [])[1] || '';
+      const title = (titleLine || request.slice(0, 50)).trim();
+      const combined = `${request} ${titleLine}`;
+      const bracketM = combined.match(/\[([^\]]{4,})\]/);
+      const bracketKey = bracketM ? bracketM[1].slice(0, 20) : null;
+      // Hangul(가-힣) を含めて分割する。旧 findSimilarPendingTasks の `぀-鿿` は
+      // Hangul(U+AC00〜) を範囲外にしてしまい韓国語タスクが全く語を持たず重複判定できなかった。
+      const words = new Set(
+        combined.replace(/[^0-9A-Za-z가-힣ぁ-んァ-ヶー一-龥]/g, ' ')
+          .split(/\s+/).filter(w => w.length >= 2)
+      );
+      metas.push({ taskId: file.replace('.md', ''), title, request: request.trim(), words, bracketKey });
+    } catch {}
+  }
+  return metas;
+}
+
+// ── 2つのタスクmetaが重複（類似）かを判定 ────────────────────────────────────
+// ブラケットキー一致 or 共有語 >= 2（generic な1語だけの誤マッチ防止）かつ 重なり率 >= 50%。
+function tasksAreSimilar(a, b) {
+  if (a.bracketKey && b.bracketKey && a.bracketKey === b.bracketKey) return true;
+  const smaller = a.words.size <= b.words.size ? a.words : b.words;
+  const larger  = smaller === a.words ? b.words : a.words;
+  if (smaller.size < 2) return false;
+  let hits = 0;
+  for (const w of smaller) if (larger.has(w)) hits++;
+  return hits >= 2 && hits / smaller.size >= 0.5;
+}
+
+// ── 未完了の重複タスクをクラスタリング ──────────────────────────────────────
+// 貪欲法で similar なもの同士をまとめ、2件以上のクラスタのみ返す。
+// survivor（残す代表）= タスク番号が最も新しい（=最新の意図を反映）もの。
+function findDuplicatePendingClusters() {
+  const metas = loadPendingTaskMeta();
+  const assigned = new Set();
+  const clusters = [];
+  for (let i = 0; i < metas.length; i++) {
+    if (assigned.has(metas[i].taskId)) continue;
+    const members = [metas[i]];
+    assigned.add(metas[i].taskId);
+    for (let j = i + 1; j < metas.length; j++) {
+      if (assigned.has(metas[j].taskId)) continue;
+      if (members.some(m => tasksAreSimilar(m, metas[j]))) {
+        members.push(metas[j]);
+        assigned.add(metas[j].taskId);
+      }
+    }
+    if (members.length >= 2) {
+      const survivor = [...members].sort((a, b) => b.taskId.localeCompare(a.taskId))[0];
+      clusters.push({ members, survivor });
+    }
+  }
+  return clusters;
+}
+
+// ── 重複クラスタを実際に統合する ────────────────────────────────────────────
+// survivor に重複分の request を「統合された重複タスク」節として追記し、
+// 残りは統合案内を書いてから cancel/ へ移動・tasklist を cancelled 化・pending state から除去。
+function applyTaskMerge(clusters, taskState) {
+  const now = new Date().toISOString();
+  const lines = [`*🔀 タスク統合完了 — ${clusters.length}グループ*`, ''];
+
+  for (const cl of clusters) {
+    const survivor = cl.survivor;
+    const merged = cl.members.filter(m => m.taskId !== survivor.taskId);
+
+    // ① survivor ファイルに統合記録を追記
+    const survivorFile = path.join(AGENT_DIR, 'tasks', `${survivor.taskId}.md`);
+    try {
+      let sc = fs.readFileSync(survivorFile, 'utf8');
+      const section = [
+        '',
+        '## 🔀 統合された重複タスク',
+        `統合日時: ${now}`,
+        ...merged.map(m => `- \`${m.taskId}\` — ${m.title}${m.request ? `\n  - 요청: ${m.request}` : ''}`),
+        '',
+      ].join('\n');
+      fs.writeFileSync(survivorFile, `${sc.trimEnd()}\n${section}`);
+    } catch {}
+
+    // ② 残りを統合案内付きで取り消し
+    const cancelledIds = [];
+    for (const m of merged) {
+      try {
+        const mf = path.join(AGENT_DIR, 'tasks', `${m.taskId}.md`);
+        if (fs.existsSync(mf)) {
+          const mc = fs.readFileSync(mf, 'utf8');
+          fs.writeFileSync(mf, `${mc.trimEnd()}\n\n## 統合案内\n${now} — このタスクは \`${survivor.taskId}\` へ統合され取り消されました。\n`);
+        }
+        tm.cancelTaskFile(m.taskId);
+        tm.updateTasklistEntry(m.taskId, { status: 'cancelled', completedAt: now });
+        Object.keys(taskState.pending || {}).forEach(k => {
+          if ((taskState.pending[k] || {}).taskId === m.taskId) delete taskState.pending[k];
+        });
+        cancelledIds.push(m.taskId);
+      } catch {}
+    }
+
+    lines.push(`• 維持 \`${survivor.taskId}\` — ${survivor.title}`);
+    cancelledIds.forEach(id => lines.push(`    ↳ 統合取消 \`${id}\``));
+  }
+
+  lines.push('', '維持されたタスクは `go <番号>` で実行してください。');
+  return lines.join('\n');
+}
+
 // ── 確認コマンド判定 ──────────────────────────────────────────────────────────
 const GO_WORDS = ['go', 'start', '시작', '실행', '진행', 'ok', 'yes', '예', '응', '開始', 'はい', 'よし', '実行', '進める'];
 const CANCEL_WORDS = ['cancel', '취소', 'no', '아니', '중단', 'stop', 'キャンセル', '中断', 'やめ'];
@@ -728,6 +851,8 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
       '• `go <Task番号>` — 指定した Task を実行',
       '• `cancel` — 待機中 Task の一覧を表示',
       '• `cancel <Task番号>` — 指定した Task をキャンセル',
+      '• `taskmerge` — 未完了の重複タスクを検出（プレビュー）',
+      '• `taskmerge go` — 重複タスクを統合（代表1件に集約し残りを取消）',
       '',
       '*ワークフロー:*',
       '• `<プロジェクト名> wflist` — そのプロジェクトの .agent/workflows 一覧',
@@ -912,6 +1037,46 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
       ? `*全 Task 一覧 (${tasks.length}件)*`
       : `*待機中 Task 一覧 (${tasks.length}件)*`;
     await postLong(channelId, [header, '', ...lines].join('\n'), replyTs);
+    return;
+  }
+
+  // ── taskmerge — 未完了の重複タスクを検出・統合 ─────────────────────────────
+  //   `taskmerge`           → プレビュー（何を統合するか表示のみ、変更なし）
+  //   `taskmerge go/실행/apply` → 実際に統合（重複を survivor に集約し残りを取消）
+  const mergeCmd = cmd.match(/^(?:taskmerge|task\s*merge|dedupe|중복\s*통합|타스크\s*통합|머지)(?:\s+(go|실행|확정|apply|yes|はい|실시))?$/);
+  if (mergeCmd) {
+    const doApply = !!mergeCmd[1];
+    const clusters = findDuplicatePendingClusters();
+    if (clusters.length === 0) {
+      await postMessage(channelId, '🔍 統合対象の重複した未完了タスクはありません。', replyTs);
+      return;
+    }
+
+    if (!doApply) {
+      // プレビュー（dry-run）
+      const blocks = clusters.map((cl, i) => {
+        const merged = cl.members.filter(m => m.taskId !== cl.survivor.taskId);
+        return [
+          `*グループ ${i + 1}* (${cl.members.length}件)`,
+          `  ✅ 維持: \`${cl.survivor.taskId}\` — ${cl.survivor.title}`,
+          ...merged.map(m => `  🚫 統合→取消: \`${m.taskId}\` — ${m.title}`),
+        ].join('\n');
+      });
+      await postLong(channelId, [
+        `*🔀 重複した未完了タスク ${clusters.length}グループを検出*`,
+        '',
+        ...blocks,
+        '',
+        '統合を実行するには: `taskmerge go`',
+        '（維持タスクに重複要請を統合記録し、残りは cancel フォルダへ移動します。取消済みは復元可能です。）',
+      ].join('\n'), replyTs);
+      return;
+    }
+
+    // 実行
+    const report = applyTaskMerge(clusters, taskState);
+    saveJSON(TASK_STATE_FILE, taskState);
+    await postLong(channelId, report, replyTs);
     return;
   }
 
