@@ -1054,7 +1054,10 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
     return;
   }
 
-  // ── 既存タスクIDへの言及 → 質問なら答える、作業依頼なら新規作成を防ぐ ────
+  // ── 既存タスクIDへの言及 → 3分岐: 質問=回答 / 修正依頼=再実行 / ID単独=状態表示 ──
+  //   注意: ここでの分類結果は下流の intent 判定でも再利用し、二重の classifyRequest 呼び出しを避ける。
+  let preIntent = null;        // この分岐で確定した意図（下流で再分類しないため）
+  let refTaskContext = '';     // 修正依頼時に本文へ付加する親タスク文脈
   const mentionedIds = extractExistingTaskIds(text);
   if (mentionedIds.length > 0) {
     const targetId = mentionedIds[0];
@@ -1064,33 +1067,46 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
       path.join(AGENT_DIR, 'tasks', 'cancel', `${targetId}.md`),
     ].find(f => fs.existsSync(f));
 
-    // テキストがタスクIDだけでなく質問内容も含む場合は意図を判定する
+    // テキストがタスクID単独（些末な語のみ）か、指示を含むかを判定
     const isOnlyId = text.trim().replace(/`/g, '').match(/^(\d{14}|\d{8}_[\w-]+)$/);
-    if (!isOnlyId) {
-      const mentionIntent = await classifyRequest(text, workDir);
-      if (mentionIntent === 'question') {
-        // 質問なのでそのまま回答する（タスクファイルのパスをコンテキストとして付加）
-        const taskContext = activeFile
-          ? `\n\n[参考] タスク ${targetId} のファイルパス: ${activeFile}`
-          : '';
-        await answerInChannel({ channelId, replyTs, text: text + taskContext, workDir });
-        return;
+    if (isOnlyId) {
+      // ① ID単独 → 状態表示のみ（新規タスクは作らない）
+      if (activeFile) {
+        const fc = fs.readFileSync(activeFile, 'utf8');
+        const statusM = fc.match(/^status:\s*(.+)$/m);
+        const requestM = fc.match(/^request:\s*"?([^\n"]{1,100})/m);
+        const status = statusM ? statusM[1].trim() : '不明';
+        const request = requestM ? requestM[1].trim() : '（内容なし）';
+        await postMessage(channelId,
+          `📌 タスク \`${targetId}\` 参照:\n• ステータス: ${status}\n• 内容: ${request}\n📁 ファイル: \`${activeFile}\`\n\n実行: \`go ${targetId}\` | キャンセル: \`cancel ${targetId}\``,
+          replyTs
+        );
+      } else {
+        await postMessage(channelId, `⚠️ タスク \`${targetId}\` が見つかりません。`, replyTs);
       }
+      return;
     }
 
-    // 作業依頼 or IDのみ → 状態を表示して新規タスク作成を防ぐ
+    // ID以外の指示を含む → 意図を判定（下流と共有するため preIntent に保持）
+    preIntent = await classifyRequest(text, workDir);
+    if (preIntent === 'question') {
+      // ② 質問 → その場で回答（タスクファイルのパスをコンテキストとして付加）
+      const taskContext = activeFile
+        ? `\n\n[参考] タスク ${targetId} のファイルパス: ${activeFile}`
+        : '';
+      await answerInChannel({ channelId, replyTs, text: text + taskContext, workDir });
+      return;
+    }
+
+    // ③ 修正・再実行依頼（task）→ 拒否せず、親タスクを文脈に付けて通常のタスク生成フローへ流す
     if (activeFile) {
-      const fc = fs.readFileSync(activeFile, 'utf8');
-      const statusM = fc.match(/^status:\s*(.+)$/m);
-      const requestM = fc.match(/^request:\s*"?([^\n"]{1,100})/m);
-      const status = statusM ? statusM[1].trim() : '不明';
-      const request = requestM ? requestM[1].trim() : '（内容なし）';
+      refTaskContext = `\n\n[修正対象] このリクエストは既存タスク ${targetId}（${activeFile}）に対する修正/再実行依頼です。元タスクの内容・成果物を踏まえて対応してください。`;
       await postMessage(channelId,
-        `📌 タスク \`${targetId}\` 参照:\n• ステータス: ${status}\n• 内容: ${request}\n📁 ファイル: \`${activeFile}\`\n\n_タスク番号が含まれるため新規タスクは作成しません。_\n別の作業指示は新しいメッセージで送ってください。`,
+        `🔧 タスク \`${targetId}\` への修正依頼として受け付けました。内容を分析して新しいタスクを作成します。`,
         replyTs
       );
     }
-    return;
+    // ここで return せず、下流の「タスク確定 → 分析 → 作成」フローへ落とす
   }
 
   // ── 実行中チェック ────────────────────────────────────────────────────────
@@ -1104,8 +1120,9 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
   }
 
   // ── 意図を分類してルーティング ──────────────────────────────────────────────
-  const intent = await classifyRequest(text, workDir);
-  console.log(`[Bot] intent="${intent}" text="${text.slice(0, 60)}"`);
+  // preIntent（既存タスクID分岐で確定済み）があれば再分類せず流用する
+  const intent = preIntent || await classifyRequest(text, workDir);
+  console.log(`[Bot] intent="${intent}"${preIntent ? ' (reused)' : ''} text="${text.slice(0, 60)}"`);
 
   if (intent === 'question') {
     // 質問・曖昧 → その場で回答
@@ -1133,22 +1150,25 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
 
   await postMessage(channelId, '🔍 作業内容を分析中です...', replyTs);
 
+  // 修正依頼（既存タスクID言及）の場合は親タスク文脈を本文に付加して分析・保存する
+  const taskRequestText = text + refTaskContext;
+
   let planContent, filesRead;
   try {
-    ({ planContent, filesRead } = tm.analyzeRequest(text, null, workDir));
+    ({ planContent, filesRead } = tm.analyzeRequest(taskRequestText, null, workDir));
   } catch (err) {
     await postMessage(channelId, `分析エラー: ${err.message}`, replyTs);
     return;
   }
 
   const taskId = tm.getTimestampId();
-  const taskFile = tm.createTaskFile(taskId, text, planContent, filesRead);
+  const taskFile = tm.createTaskFile(taskId, taskRequestText, planContent, filesRead);
   const taskTitle = tm.extractTitle(planContent);
   const taskSummary = tm.extractSummary(planContent);
 
-  taskState.pending[convKey] = { taskId, taskTitle, taskFile, requestText: text };
+  taskState.pending[convKey] = { taskId, taskTitle, taskFile, requestText: taskRequestText };
   saveJSON(TASK_STATE_FILE, taskState);
-  tm.addToTasklist(taskId, taskTitle, taskSummary, text);
+  tm.addToTasklist(taskId, taskTitle, taskSummary, taskRequestText);
 
   await postLong(channelId,
     `📋 *Task 分析完了* (\`${taskId}\`)${closedNotice}\n\n${planContent}\n\n---\n*実行: \`go ${taskId}\` / キャンセル: \`cancel ${taskId}\`*`,
