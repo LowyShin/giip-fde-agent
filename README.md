@@ -1,69 +1,46 @@
-# Agentic Framework: Autonomous Multi-Agent Rule System 🤖
+# giip FDE Agent 🤖📦
+
+**당신의 PC에 설치되는 포워드 배포형(Forward-Deployed) AI 엔지니어링 팀**
 
 [English](readme_en.md) | [日本語](readme_jp.md)
 
-> 분석 자료: [SkillOpt와 Agent Lightning의 GIIP Dev Agent 적용 비교 분석](docs/90-reports/msopt-lightning-giip-analysis.md)
-
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Korean Support](https://img.shields.io/badge/Language-Korean-blue.svg)](#-핵심-규칙)
+[![Korean Support](https://img.shields.io/badge/Language-Korean-blue.svg)](#-핵심-역량-한눈에)
 [![AI Powered](https://img.shields.io/badge/AI-Gemini-orange.svg)](https://aistudio.google.com/app/apikey)
-[![Bkit Integration](https://img.shields.io/badge/Methodology-PDCA-brightgreen.svg)](https://github.com/popup-studio-ai/bkit-claude-code)
-
-본 **에이전트 시스템**은 복잡한 소프트웨어 개발과 작업 자동화를 위해 설계된 **자율형 멀티 에이전트 프레임워크**입니다. 단순한 코딩 어시스턴트를 넘어, 스스로 계획하고(Plan), 검증하며(Check), 지속적으로 자가 최적화하는(AI-Optimize) "생각하는 에이전트 팀"을 여러분의 프로젝트에 즉시 투입할 수 있습니다.
+[![Methodology: PDCA](https://img.shields.io/badge/Methodology-PDCA-brightgreen.svg)](https://github.com/popup-studio-ai/bkit-claude-code)
 
 ---
 
-## 🎯 입문의 가교 (Gateway)
+## FDE Agent란? (What is the FDE Agent?)
 
-> **🚀 처음이신가요?**  
-> [**빠른 시작 가이드**](QUICK_START.md)에서 5분 만에 첫 에이전트를 가동해 보세요!  
-> [도구 다운로드](TOOLS_DOWNLOAD.md) | [free-for.dev 추천 리스트](docs/50-technical/free-for-dev-for-giip.md) | [Antigravity 사용법](ANTIGRAVITY_USAGE_GUIDE.md) | [하네스 가이드](docs/04-tools/harness.md) | [90분 온보딩](docs/00-onboarding/README.md) | [운영 거버넌스](docs/60-operations/README.md) | [유용한 링크](links.md)
+**giip FDE Agent**는 여러분의 PC에 직접 설치되어 상주하는 **AI 엔지니어링 팀**입니다.
+`.agent` 폴더 하나로 이식되어, 스스로 계획하고(Plan) 구현하며(Do) 검증하고(Check) 자가 최적화하는(Act) —
+**"생각하는 에이전트 팀"**을 여러분의 프로젝트에 즉시 투입합니다.
 
----
+이 에이전트는 giip의 **FDE(Full-cycle Development & Enterprise Ops)** 역량을 하나의 박스로 제공하는
+[**giip FDE Box**](https://giip.littleworld.net/docs/plans/AIFDEOpsProposalko.html)의 실행 주체입니다.
+인프라 운영부터 AI 네이티브 개발까지, 엔터프라이즈 운영 전 주기를 여러분의 로컬 환경에서 수행합니다.
 
-## 🛠️ 지원되는 도구 (Supported Tools)
-
-본 시스템은 아래의 최신 AI 개발 도구들과 완벽하게 호환됩니다. 각 도구의 상세 가이드와 다운로드 정보는 링크를 참조하세요.
-
-| 도구 | 설명 | 상세 가이드 |
-| :--- | :--- | :--- |
-| **Antigravity** | Google Gemini 기반의 전문가용 에이전트 플랫폼 | [상세 보기](docs/04-tools/antigravity.md) |
-| **Claude Code** | Anthropic의 CLI 기반 에이전틱 코딩 도구 | [상세 보기](docs/04-tools/claude-code.md) |
-| **Codex** | OpenAI의 에이전틱 코딩 플랫폼 (멀티 환경 지원) | [상세 보기](docs/04-tools/codex.md) |
-| **Cursor** | 코드베이스 전체를 이해하는 AI 네이티브 에디터 | [상세 보기](docs/04-tools/cursor.md) |
-| **Gemini CLI** | 가장 빠르고 가벼운 터미널용 AI 유틸리티 | [상세 보기](docs/04-tools/gemini-cli.md) |
-| **Windsurf** | 흐름(Flow) 중심의 지능형 에이전틱 IDE | [상세 보기](docs/04-tools/windsurf.md) |
-| **VS Code** | Autopilot 자율 모드를 지원하는 표준 에디터 | [상세 보기](docs/04-tools/vscode.md) |
-| **OpenClaw** | 에이전트를 메신저(Slack 등)와 연결하는 게이트웨이 | [상세 보기](docs/04-tools/openclaw.md) |
+> **포워드 배포(Forward-Deployed)란?** 원격 SaaS가 아니라, 에이전트가 **현장(=당신의 PC)에 배치되어**
+> 코드·인프라·문서 옆에서 직접 일한다는 뜻입니다. 데이터와 컨텍스트가 로컬을 벗어나지 않습니다.
 
 ---
 
-## 👥 대상 사용자 (Target Audience)
+## 🚀 처음이신가요? (Gateway)
 
-- **AI Native 개발자**: AI와 함께 페어 프로그래밍을 넘어, 에이전트 팀을 관리하길 원하는 분.
-- **스타트업 & MVP 팀**: 최소한의 인원으로 고품질의 코드와 체계적인 문서를 동시에 확보하려는 팀.
-- **복잡한 레거시 관리자**: Systematic Debugging과 TDD를 통해 안전하게 코드를 리팩토링하려는 분.
-- **자동화 매니아**: 반복적인 운영 업무를 신뢰할 수 있는 에이전트에게 위임하고 싶은 분.
-
----
-
-## ✨ 왜 이 에이전트 시스템인가? (Key Strengths)
-
-1.  **Zero-Tool Setup**: 추가적인 서드파티 툴 설치 없이, PowerShell과 기존 AI 개발 도구(Cursor, Antigravity 등)만으로 즉시 구동됩니다.
-2.  **Korean-First Workflow**: 한국 개발 생태계에 최적화되어 한글 문서화와 상호작용성에서 독보적인 성능을 발휘합니다.
-3.  **Advanced Engineering DNA**: Bkit(PDCA), Superpowers(TDD/Debugging), Gstack(보안/안전) 등 검증된 프레임워크들의 정수를 하나로 통합했습니다.
-4.  **Native Optimization**: 리눅스나 WSL2 없이도 Windows 환경에서 완벽한 실행 추정(Trace) 및 자가 프롬프트 최적화(AI-Optimize)를 지원합니다.
-5.  **Unobtrusive Transplant**: 기존 프로젝트 폴더에 `.agent` 폴더만 복사하면 즉시 에이전트 시스템이 활성화됩니다.
+> [**빠른 시작 가이드**](QUICK_START.md)에서 5분 만에 첫 에이전트를 가동해 보세요!
+>
+> [도구 다운로드](TOOLS_DOWNLOAD.md) · [Antigravity 사용법](ANTIGRAVITY_USAGE_GUIDE.md) · [90분 온보딩](docs/00-onboarding/README.md) · [운영 거버넌스](docs/60-operations/README.md) · [유용한 링크](links.md)
 
 ---
 
-## 🚀 기존 프로젝트에 즉시 적용하기
+## 💻 내 PC에 FDE Agent 설치하기
 
-여러분의 프로젝트 폴더로 이동하여 아래 명령어를 실행하면 에이전트 시스템이 활성화됩니다 (**.git 폴더 제외**).
+여러분의 프로젝트 폴더로 이동한 뒤 아래 명령으로 에이전트 파일을 이식하면(**`.git` 폴더 제외**), 즉시 FDE Agent가 활성화됩니다.
 
 ### Windows (PowerShell)
 ```powershell
-# 필수 파일 복사 (giip-dev-agent 폴더 안에서 실행 또는 상대 경로 지정)
+# 필수 파일 복사 (giip-fde-agent 폴더 안에서 실행 또는 상대 경로 지정)
 Copy-Item -Path ".agent", "GEMINI.md", ".cursorrules", "COPILOT_INSTRUCTIONS.md" -Destination "내_프로젝트_경로" -Recurse -Force
 ```
 
@@ -74,13 +51,19 @@ rsync -av --exclude='.git' .agent GEMINI.md .cursorrules COPILOT_INSTRUCTIONS.md
 ```
 
 > [!TIP]
-> 적용 후 AI 도구(Antigravity, Cursor 등)에게 **"넌 오케스트레이터야. 메인 지침서(GEMINI.md)를 읽고 현재 태스크를 분석해줘."**라고 명령해 보세요.
+> 설치 후 AI 도구(Antigravity, Cursor 등)에게 이렇게 명령해 보세요:
+> **"넌 오케스트레이터야. 메인 지침서(GEMINI.md)를 읽고 현재 태스크를 분석해줘."**
+
+> [!IMPORTANT]
+> **API Key 설정** (자동화 시 필요, 수동 작업 시 불필요):
+> `.agent/settings.json.sample`을 `settings.json`으로 복사하고 발급받은 Gemini API Key를 입력하세요.
 
 ---
 
-## 🧠 핵심 개념 및 워크플로우
+## 🧠 어떻게 동작하는가 (How It Works)
 
-본 프레임워크는 **오케스트레이터(Orchestrator)**가 전체 전략을 짜고, **서브 에이전트(Sub-Agents)**들이 각자의 전문 분야에서 작업을 실행하는 구조입니다.
+FDE Agent는 **오케스트레이터(Orchestrator)**가 전체 전략을 세우고,
+**서브 에이전트(Sub-Agents)**들이 각자의 전문 분야에서 작업을 실행하는 구조입니다.
 
 ```mermaid
 graph TD
@@ -93,78 +76,41 @@ graph TD
     B -- 최종 완료 --> G[사용자 보고]
 ```
 
----
-
-## 📂 에이전트 시스템 구성요소 (System Architecture)
-
-본 프레임워크를 구성하는 네 가지 핵심 요소에 대한 상세 가이드입니다.
-
-- [**전체 구성 요소 개요**](docs/02-design/agent-components/overview.md)
-- [**역할 (Roles)**](docs/02-design/agent-components/role.md): 에이전트의 페르소나와 책임 정의
-- [**규칙 (Rules)**](docs/02-design/agent-components/rule.md): 강제 지침 및 품질 관리 원칙
-- [**스킬 (Skills)**](docs/02-design/agent-components/skill.md): 도구 사용법 및 전문 지식 패키지
-- [**워크플로우 (Workflows)**](docs/02-design/agent-components/workflow.md): 복잡한 작업 절차 및 커스텀 명령어 생성
+에이전트를 구성하는 4대 요소(역할·규칙·스킬·워크플로우)의 상세는
+👉 [**시스템 아키텍처 가이드**](docs/02-design/agent-components/overview.md)를 참고하세요.
 
 ---
 
-## 🛠️ 강력한 에코시스템 통합 (Advanced Capabilities)
+## ✨ 왜 FDE Agent인가? (Key Strengths)
 
-본 시스템은 단순한 프롬프트 모음이 아닌, 고도화된 에이전트 기술들의 집약체입니다.
+1. **Zero-Tool Setup**: 서드파티 툴 설치 없이, PowerShell과 기존 AI 개발 도구(Cursor, Antigravity 등)만으로 즉시 구동됩니다.
+2. **Local-First / Forward-Deployed**: 에이전트가 현장(PC)에 상주하여 코드·인프라·문서 옆에서 직접 작업합니다.
+3. **Korean-First Workflow**: 한국 개발 생태계에 최적화되어 한글 문서화와 상호작용성에서 독보적입니다.
+4. **Advanced Engineering DNA**: Bkit(PDCA), Superpowers(TDD/Debugging), Gstack(보안/안전)의 정수를 통합했습니다.
+5. **Native Optimization**: 리눅스·WSL2 없이 Windows 환경에서 실행 추적(Trace)과 자가 프롬프트 최적화(AI-Optimize)를 지원합니다.
 
-### 1. Bkit Vibecoding Kit (PDCA)
-- **Plan-Design-Do-Check-Act**: 모든 기능을 구현하기 전 설계(Design)와 분석(Analyze) 단계를 거쳐 '만들면서 생각하는' 실수를 방지합니다.
-- **`/pdca` 명령어**: 체계적인 리포팅과 갭 분석을 자동화합니다.
+### 👥 이런 분께 (Target Audience)
+- **AI Native 개발자**: 페어 프로그래밍을 넘어 에이전트 팀을 관리하려는 분
+- **스타트업 & MVP 팀**: 최소 인원으로 고품질 코드와 체계적 문서를 동시에 확보하려는 팀
+- **레거시 관리자**: Systematic Debugging과 TDD로 안전하게 리팩토링하려는 분
+- **자동화 매니아**: 반복 운영 업무를 신뢰할 수 있는 에이전트에게 위임하려는 분
 
-### 2. Superpowers Engineering
-- **Subagent-Driven**: 하나의 작업을 `설계` -> `구현` -> `검증`의 파이프라인으로 분리.
-- **Strong Skills**: TDD(Test Driven Development), Systematic Debugging, Brainstorming 스킬이 내장되어 있습니다.
+---
 
-### 3. Gstack (Safety & Security)
-- **Founder Mode**: `/office-hours`, `/ceo-review`를 통해 제품의 본질과 UX를 다시 질문합니다.
-- **Guardrails**: 파괴적 명령 전 경고(`/careful`) 및 작업 범위 제한(`/freeze`)으로 안전한 개발 환경을 제공합니다.
-- **Security Audit**: `/cso` 명령어로 STRIDE/OWASP 기반의 보안 검사를 수행합니다.
+## 🛠️ 지원되는 도구 (Supported Tools)
 
-### 4. Native Optimization & Tracing
-- **`/native-trace`**: AI의 모든 추론 과정과 툴 호출 이력을 기록합니다.
-- **`/aioptimize`**: 수집된 데이터를 바탕으로 에이전트가 스스로의 프롬프트를 수정하여 더 똑똑해집니다.
+FDE Agent는 아래 최신 AI 개발 도구들과 완벽하게 호환됩니다.
 
-### 5. K-Layer Knowledge System (Karpathy Diagram)
-- **Source-linked Knowledge**: 에이전트 작업 이력에서 재사용 가능한 패턴과 교훈을 `Claim` 단위로 자동으로 추출하고 축적합니다.
-- **자기강화 루프**: 모든 지식은 원본 근거(Trace/Source)와 연결되어 있으며, 다음 작업 시 에이전트가 이를 참조하여 더 똑똑하게 행동합니다.
-- [K-Layer 작동 원리](.agent/skills/k-layer/SKILL.md) | [지식 베이스](.agent/knowledge/README.md)
-
-### 5-1. Behavioral Guidelines (Karpathy Style)
-- **Think Before Coding**: 구현 전 가정을 명시하고, 불확실하면 질문하며, 여러 해석이 있을 경우 제시합니다.
-- **Simplicity First**: 문제를 해결하는 최소한의 코드만 작성합니다. 요청하지 않은 기능, 추상화, 유연성은 추가하지 않습니다.
-- **Surgical Changes**: 반드시 필요한 것만 수정합니다. 관련 없는 코드, 주석, 포맷은 건드리지 않습니다.
-- **Goal-Driven Execution**: 검증 가능한 성공 기준을 정의하고, 충족될 때까지 반복합니다.
-- [Karpathy 가이드라인](.agent/rules/10_karpathy_guidelines.md) | [원본 레포](https://github.com/forrestchang/andrej-karpathy-skills)
-
-### 6. Multi-Source Design Discovery (design-md)
-- **통합 디자인 탐색**: `designmd.ai`, `designmd.app`, `getdesign.md`, `designmd.me` 등 4가지 주요 플랫폼을 결합하여 최적의 디자인 시스템을 발굴합니다.
-- **브랜드 복제 & 자동 생성**: Stripe, Vercel 등 유명 브랜드의 스타일을 즉시 이식하거나, 특정 URL로부터 디자인 마크다운을 자동 생성합니다.
-- [디자인 탐색 및 통합 가이드](docs/DESIGN_DISCOVERY_GUIDE.md)
-
-### 7. Messenger Control (OpenClaw)
-- **메신저 기반 원격 제어**: Slack, Discord, Telegram을 통해 언제 어디서든 레포지토리의 정보를 쿼리하고 작업을 지시합니다.
-- **주머니 속의 에이전트**: 모바일 기기에서도 프로젝트의 지식 베이스(K-Layer)에 접근하여 실시간 질문과 답변이 가능합니다.
-- [OpenClaw 메신저 연동 가이드](docs/50-technical/openclaw-slack-integration.md)
-
-### 8. 투자/트레이딩 통합 (Vibe Investing)
-- **투자 기능 안전 통합**: 외부 투자 레포를 5축(활성도/성숙도/학습곡선/시장적합성/라이선스)으로 평가해 GIIP role/rule/skill/workflow에 최소 변경으로 반영합니다.
-- **리스크 우선 체크리스트**: 백테스트 편향, 실행 현실성(슬리피지/유동성/수수료), 규제/비용 항목을 기본 검증으로 강제합니다.
-- [투자 스킬](.agent/skills/vibe-investing/SKILL.md) | [투자 워크플로우](.agent/workflows/investment-evaluation.md)
-
-### 9. AI Agency 전문가 팀 통합 (Agency-Agents)
-- **고도화된 역할 시스템**: `Workflow Architect`(시스템 경로 설계), `Korean Business Navigator`(한국 비즈니스 특화) 등 검증된 전문가 페르소나를 내장.
-- **프리미엄 UI/UX**: `premium-ui-craft` 스킬을 통해 단순 기능을 넘어선 고도의 미적 완성도(Glassmorphism, 60fps 애니메이션 등)를 추구.
-- **철저한 예외 경로 설계**: `workflow-mapping`을 통해 "코드는 있지만 명세가 없는 워크플로우"를 방지하고 모든 실패 복구 경로를 사전에 정의.
-
-### 10. Codex 성능 유지 (keep-codex-fast)
-- **Codex 속도 저하 방지**: 오래된 채팅·워크트리·로그·프로젝트 참조가 쌓여 Codex가 느려질 때, 로컬 상태를 안전하게 점검하고 정리합니다.
-- **핸드오프 우선 원칙**: 아카이브 전 반드시 핸드오프 문서를 생성하여 작업 맥락을 보존합니다.
-- **주기적 유지보수**: 주간/격주 알림으로 Codex 상태를 자동 점검하되, 적용은 사용자 승인 후 수동으로 진행합니다.
-- [keep-codex-fast 스킬](.agent/skills/keep-codex-fast/SKILL.md) | [유지보수 워크플로우](.agent/workflows/codex-maintenance.md) | [Codex 도구 가이드](docs/04-tools/codex.md)
+| 도구 | 설명 | 상세 가이드 |
+| :--- | :--- | :--- |
+| **Antigravity** | Google Gemini 기반 전문가용 에이전트 플랫폼 | [보기](docs/04-tools/antigravity.md) |
+| **Claude Code** | Anthropic의 CLI 기반 에이전틱 코딩 도구 | [보기](docs/04-tools/claude-code.md) |
+| **Codex** | OpenAI의 에이전틱 코딩 플랫폼 (멀티 환경) | [보기](docs/04-tools/codex.md) |
+| **Cursor** | 코드베이스 전체를 이해하는 AI 네이티브 에디터 | [보기](docs/04-tools/cursor.md) |
+| **Gemini CLI** | 가장 빠르고 가벼운 터미널용 AI 유틸리티 | [보기](docs/04-tools/gemini-cli.md) |
+| **Windsurf** | 흐름(Flow) 중심의 지능형 에이전틱 IDE | [보기](docs/04-tools/windsurf.md) |
+| **VS Code** | Autopilot 자율 모드 지원 표준 에디터 | [보기](docs/04-tools/vscode.md) |
+| **OpenClaw** | 에이전트를 메신저(Slack 등)와 연결하는 게이트웨이 | [보기](docs/04-tools/openclaw.md) |
 
 ---
 
@@ -172,27 +118,40 @@ graph TD
 
 | 작업 | 명령어 (PowerShell) | 설명 |
 | :--- | :--- | :--- |
-| **자동 실행** | `.\.agent\scripts\launch_subsession.ps1` | 대기 중인 태스크를 감지하고 백그라운드 세션 시작 |
-| **수동 핸드오프** | `.\.agent\scripts\launch_role.ps1` | 태스크 컨텍스트를 클립보드에 복사 (다른 채팅창에 전달용) |
-| **상태 확인** | `.\.agent\scripts\check_status.ps1` | 현재 진행 중인 모든 태스크와 프로세스 모니터링 |
-| **자동 모니터링** | `.\auto_agent.bat` | 5분 간격으로 대기 작업을 체크하여 자동 실행 |
+| **자동 실행** | `.\.agent\scripts\launch_subsession.ps1` | 대기 중인 태스크를 감지해 백그라운드 세션 시작 |
+| **수동 핸드오프** | `.\.agent\scripts\launch_role.ps1` | 태스크 컨텍스트를 클립보드에 복사 (다른 채팅창 전달용) |
+| **상태 확인** | `.\.agent\scripts\check_status.ps1` | 진행 중인 모든 태스크·프로세스 모니터링 |
+| **자동 모니터링** | `.\auto_agent.bat` | 5분 간격으로 대기 작업을 체크해 자동 실행 |
 
-> [!IMPORTANT]
-> **API Key 설정 (자동화 시 필요. 수동으로 작업할 경우 필요 없음)**:  
-> `.agent/settings.json.sample` 파일을 `settings.json`으로 복사하고 발급받은 Gemini API Key를 입력하세요.
+---
 
-### 🧭 AI-Native 운영 스타터팩
-- [90분 온보딩 경로](docs/00-onboarding/README.md) (Beginner / Team Lead / Ops)
-- [운영 KPI 표준](docs/60-operations/ai-native-kpi.md) + [주간 KPI 템플릿](.agent/templates/weekly-kpi-report.template.md)
-- [승인 게이트 워크플로우](.agent/workflows/human-approval-gate.md)
-- [Incident + Rollback 플레이북](docs/60-operations/incident-rollback-playbook.md)
-- [Skill/Role 운영 책임 메타데이터 스키마](.agent/templates/shared/operational-metadata-schema.md)
+## 🧩 핵심 역량 한눈에
+
+FDE Agent에는 검증된 프레임워크의 정수가 통합되어 있습니다. 각 역량의 상세 원리·명령어는
+👉 [**심화 역량 가이드 (CAPABILITIES.md)**](docs/CAPABILITIES.md)에서 확인하세요.
+
+| # | 역량 | 요약 |
+| :-: | :--- | :--- |
+| 1 | **Bkit PDCA** | 설계·분석 후 구현하는 `/pdca` 사이클로 '만들면서 생각하는' 실수 방지 |
+| 2 | **Superpowers** | 설계→구현→검증 파이프라인 + TDD·Systematic Debugging 내장 |
+| 3 | **Gstack 안전/보안** | `/careful`·`/freeze` 가드레일, `/cso` STRIDE/OWASP 보안 감사 |
+| 4 | **Native Trace/Optimize** | `/native-trace`로 추론 기록, `/aioptimize`로 프롬프트 자가 개선 |
+| 5 | **K-Layer 지식 시스템** | 작업 이력에서 재사용 패턴을 `Claim`으로 추출·축적하는 자기강화 루프 |
+| 6 | **design-md 디자인 탐색** | 4개 플랫폼 통합, 유명 브랜드 스타일 즉시 이식 |
+| 7 | **OpenClaw 메신저 제어** | Slack·Discord·Telegram으로 원격 쿼리·작업 지시 |
+| 8 | **Vibe Investing** | 외부 투자 레포를 5축 평가해 안전하게 통합 |
+| 9 | **Agency 전문가 팀** | Workflow Architect 등 전문가 페르소나 + 프리미엄 UI/UX |
+| 10 | **keep-codex-fast** | Codex 로컬 상태 점검·정리로 속도 저하 방지 |
+
+> 코딩 전 행동 원칙(Think Before Coding / Simplicity First / Surgical Changes / Goal-Driven)은
+> [Karpathy 가이드라인](.agent/rules/10_karpathy_guidelines.md)을 따릅니다.
 
 ---
 
 ## 🌐 GIIP Enterprise & Support
 
 전문적인 서버 구축이나 AI 기반 인프라 관리가 필요하신가요?
+- **giip FDE Box 제안서**: [한국어](https://giip.littleworld.net/docs/plans/AIFDEOpsProposalko.html) · [日本語](https://giip.littleworld.net/docs/plans/AIFDEOpsProposalja.html) · [English](https://giip.littleworld.net/docs/plans/AIFDEOpsProposalen.html)
 - **공식 홈페이지**: [giip.littleworld.net](https://giip.littleworld.net/)
 - **문의 메일**: contact@littleworld.net
 
@@ -206,5 +165,7 @@ graph TD
 - **[Gstack](https://github.com/garrytan/gstack)** (Product Thinking & Safety)
 - **[Agent Lightning](https://github.com/microsoft/agent-lightning)** (Tracing & APO)
 
+> 참고 분석: [SkillOpt와 Agent Lightning의 GIIP Dev Agent 적용 비교 분석](docs/90-reports/msopt-lightning-giip-analysis.md)
+
 ---
-© 2026 Agentic Rule System. Optimized for Antigravity & AI-Native Builders.
+© 2026 giip FDE Agent. Optimized for Antigravity & AI-Native Builders.
