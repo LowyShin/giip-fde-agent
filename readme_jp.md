@@ -2,13 +2,15 @@
 
 **あなたのPCにインストールされる、フォワードデプロイ型（Forward-Deployed）のAIエンジニアリングチーム**
 
-[한국어](README.md) | [English](readme_en.md)
+[![한국어](https://img.shields.io/badge/lang-한국어-lightgrey.svg)](README.md)
+[![日本語](https://img.shields.io/badge/lang-日本語-0A66C2.svg)](readme_jp.md)
+[![English](https://img.shields.io/badge/lang-English-lightgrey.svg)](readme_en.md)
 
 > [!TIP]
 > このリポジトリをダウンロードした後、ご自身の言語のファイルがなく韓国語のファイルのみが存在する場合は、AIエージェント（Antigravity、Cursorなど）に翻訳を依頼してください。
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Korean Support](https://img.shields.io/badge/Language-Korean-blue.svg)](#-機能一覧)
+[![Type: Forward Deployed Engineer](https://img.shields.io/badge/Type-Forward%20Deployed%20Engineer-8A2BE2.svg)](https://en.wikipedia.org/wiki/Forward_Deployed_Engineer)
 [![AI Powered](https://img.shields.io/badge/AI-Gemini-orange.svg)](https://aistudio.google.com/app/apikey)
 [![Methodology: PDCA](https://img.shields.io/badge/Methodology-PDCA-brightgreen.svg)](https://github.com/popup-studio-ai/bkit-claude-code)
 
@@ -28,7 +30,7 @@
 
 > [**クイックスタートガイド**](QUICK_START.md)で、5分で最初のエージェントを稼働させてみましょう！
 >
-> [ツールダウンロード](TOOLS_DOWNLOAD.md) · [Antigravity使用法](ANTIGRAVITY_USAGE_GUIDE.md) · [90分オンボーディング](docs/00-onboarding/README.md) · [運用ガバナンス](docs/60-operations/README.md) · [便利なリンク](links.md)
+> [ツールダウンロード](TOOLS_DOWNLOAD.md) · [Antigravity使用法](ANTIGRAVITY_USAGE_GUIDE.md) · [90分オンボーディング](docs/00-onboarding/README.md) · [運用ガバナンス](docs/60-operations/README.md) · [Slack ボット連携](slack-bot/SLACK_APP_SETUP.md) · [便利なリンク](links.md)
 
 ---
 

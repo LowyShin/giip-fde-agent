@@ -10,18 +10,19 @@ AI 개발 도구를 처음 접하시는 분들을 위한 친절한 시작 가이
 ---
 
 ## 📚 목차
-1. [GIIP Agent System이란?](#-giip-agent-system이란)
+1. [giip FDE Agent란?](#-giip-fde-agent란)
 2. [필요한 도구 준비하기](#-필요한-도구-준비하기)
 3. [저장소 다운로드 및 설정](#-저장소-다운로드-및-설정)
 4. [AI 도구 선택 및 설치](#-ai-도구-선택-및-설치)
 5. [첫 번째 대화 시작하기](#-첫-번째-대화-시작하기)
-6. [다음 단계](#-다음-단계)
+6. [Slack 봇 연결하기 (giipclaude Bot)](#-slack-봇-연결하기-giipclaude-bot)
+7. [다음 단계](#-다음-단계)
 
 ---
 
-## 🤔 GIIP Agent System이란?
+## 🤔 giip FDE Agent란?
 
-**GIIP Agent System**은 AI가 여러분의 코드 작성을 도와주는 똑똑한 도우미 시스템입니다.
+**giip FDE Agent**는 여러분의 PC에 설치되어 상주하는 **포워드 배포형(Forward-Deployed) AI 엔지니어링 팀**입니다. AI가 여러분의 코드 작성을 도와주는 것을 넘어, 계획·구현·검증·최적화를 스스로 수행합니다.
 
 ### 무엇을 할 수 있나요?
 - ✅ 복잡한 개발 작업을 자동으로 수행
@@ -77,15 +78,15 @@ git --version
 cd 내문서/프로젝트
 
 # 2. 저장소 복제
-git clone https://github.com/LowyShin/giip-dev-agent.git
+git clone https://github.com/LowyShin/giip-fde-agent.git
 
 # 3. 폴더로 이동
-cd giip-dev-agent
+cd giip-fde-agent
 ```
 
 ### 방법 2: ZIP 파일 다운로드
 
-1. [GitHub 저장소](https://github.com/LowyShin/giip-dev-agent) 방문
+1. [GitHub 저장소](https://github.com/LowyShin/giip-fde-agent) 방문
 2. 녹색 "Code" 버튼 클릭
 3. "Download ZIP" 선택
 4. 다운로드한 파일 압축 해제
@@ -99,7 +100,13 @@ cd giip-dev-agent
 
 ### 🎯 추천 선택 가이드
 
-#### 초보자용: Antigravity (무료) ⭐
+#### ⭐ 최우선 추천: Claude Code (Claude CLI)
+- **장점**: FDE Agent와 가장 궁합이 좋습니다. 이 저장소의 Slack 봇(**giipclaude**)이 `claude -p` CLI로 동작하도록 설계되어, **Anthropic API Key 없이**(구독 로그인만으로) 에이전트/서브에이전트 실행과 원격 제어까지 바로 이어집니다.
+- **비용**: Claude 구독(Pro/Max) 또는 사용량제. `claude` CLI 로그인만으로 사용
+- **설치**: [claude.ai/code](https://claude.ai/code) 에서 설치 → `claude --version` 확인 → 최초 1회 로그인
+- **다음 단계**: 설치했다면 아래 [Slack 봇 연결하기](#-slack-봇-연결하기-giipclaude-bot)로 바로 원격 조종까지 세팅하세요.
+
+#### 초보자·무료용: Antigravity (무료)
 - **장점**: 한국어 지원, 사용하기 쉬움, 무료
 - **단점**: 백그라운드 자동화 사용 시 Gemini API Key 필요 (수동 모드는 불필요)
 - **다운로드**: [Antigravity Manager](https://agm.littleworld.net/)
@@ -118,7 +125,7 @@ cd giip-dev-agent
 
 ---
 
-## 🎬 Antigravity로 시작하기 (권장)
+## 🎬 Antigravity로 시작하기 (무료 옵션)
 
 ### 1단계: (선택) API Key 발급
 > 💡 **자동화 기능을 사용하지 않으려면 이 단계는 건너뛰어도 됩니다.**
@@ -143,15 +150,15 @@ cd 내프로젝트폴더
 
 # 2. GIIP Agent 파일 복사 (PowerShell)
 # .git 폴더를 제외하고 복사
-Copy-Item -Path "giip-dev-agent\.agent" -Destination "." -Recurse -Force
-Copy-Item -Path "giip-dev-agent\GEMINI.md" -Destination "." -Force
-Copy-Item -Path "giip-dev-agent\.cursorrules" -Destination "." -Force
+Copy-Item -Path "giip-fde-agent\.agent" -Destination "." -Recurse -Force
+Copy-Item -Path "giip-fde-agent\GEMINI.md" -Destination "." -Force
+Copy-Item -Path "giip-fde-agent\.cursorrules" -Destination "." -Force
 ```
 
 #### B. 새 프로젝트 시작하기
 ```bash
 # GIIP Agent 저장소를 그대로 프로젝트로 사용
-cd giip-dev-agent
+cd giip-fde-agent
 ```
 
 ### 4단계: (선택) 자동화를 위한 API Key 설정
@@ -270,6 +277,72 @@ systematic-debugging 스킬을 사용해서 원인을 찾아줘.
 
 ---
 
+## 💬 Slack 봇 연결하기 (giipclaude Bot)
+
+FDE Agent를 **Slack에서 원격으로 조종**할 수 있습니다. `slack-bot/`의 **giipclaude Bot**은 Anthropic API Key 없이 **Claude CLI(`claude -p`)로 동작**하며, 멘션 한 번으로 작업을 분석·실행하고 결과 GitHub URL까지 답신합니다.
+
+### 사전 준비
+- **Node.js 18+**
+- **Claude CLI** 설치 및 로그인 (`claude --version` 이 동작해야 함) — 위 [최우선 추천: Claude Code](#-ai-도구-선택-및-설치) 참고
+- **Socket Mode**를 켠 Slack App (아래 1단계)
+
+### 1단계: Slack App 만들기 (Socket Mode)
+1. [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From scratch** → 앱 이름·워크스페이스 선택
+2. **Socket Mode** 활성화 → **App-Level Token** 생성(스코프 `connections:write`) → `xapp-...` 복사
+3. **OAuth & Permissions → Bot Token Scopes** 추가:
+   `app_mentions:read`, `chat:write`, `channels:history`, `channels:read`, `groups:history`, `im:history`, `im:read`, `im:write`, `users:read`
+4. **Event Subscriptions** 활성화 → Bot 이벤트 구독: `app_mention`, `message.im`, `message.channels`, `message.groups`
+5. **Install to Workspace** → **Bot User OAuth Token** `xoxb-...` 복사
+6. 봇을 사용할 채널에 초대: `/invite @<봇이름>`
+
+> ⚠️ 스코프를 바꾼 뒤에는 반드시 **Reinstall** 해야 반영됩니다. Socket Mode라 Request URL은 비워둬도 됩니다.
+
+### 2단계: 설치 & 환경설정
+```bash
+cd giip-fde-agent/slack-bot
+npm install
+cp .env.example .env
+```
+`.env` 최소 설정:
+```env
+SLACK_BOT_TOKEN=xoxb-...            # 5단계의 Bot User OAuth Token
+SLACK_APP_TOKEN=xapp-...            # 2단계의 App-Level Token
+WORKSPACE_DIR=/절대경로/내프로젝트     # .agent/ 가 있는 작업 폴더 (git push 대상)
+
+# 선택
+# SLACK_CHANNEL_IDS=C0XXXX,C0YYYY   # 특정 채널만 청취 (DM은 항상 동작)
+# PROJECTS_ROOT=/절대경로/projects    # 여러 프로젝트 prefix 전환용
+# GITHUB_TOKEN=ghp_...              # !issues 명령용 (repo 스코프)
+# GITHUB_REPO=owner/repo
+```
+
+### 3단계: 실행
+```bash
+node index.js
+
+# 또는 pm2로 상시 실행 (권장)
+npm install -g pm2
+pm2 start index.js --name giipclaude-bot
+pm2 save
+pm2 startup     # 출력된 안내를 따라 부팅 시 자동 시작 등록
+```
+Socket Mode 연결 성공 로그가 뜨면 준비 완료입니다.
+
+### 사용 예시
+```
+@giipclaude 설정 페이지에 다크모드 토글 추가해줘
+```
+→ 봇이 분석 후 **태스크 ID와 계획**을 제시하고 승인을 기다립니다.
+```
+go 20240601120000     # 승인 → 서브에이전트 실행 → git push → 결과 GitHub URL 답신
+tasklist              # 대기 중 태스크 목록
+@giipclaude 인증 흐름이 어떻게 되나요?    # K-Layer 지식 기반 Q&A
+```
+
+> 📖 상세 스코프·이벤트·트러블슈팅: [slack-bot/SLACK_APP_SETUP.md](slack-bot/SLACK_APP_SETUP.md) · [slack-bot/README.md](slack-bot/README.md)
+
+---
+
 ## 🎯 다음 단계
 
 축하합니다! 🎉 첫 번째 AI 에이전트 대화를 시작하셨습니다.
@@ -287,6 +360,7 @@ A: Google Gemini API는 무료 할당량이 넉넉합니다. 일반적인 개발
 
 #### Q: 어떤 도구가 가장 좋나요?
 A: 
+- **FDE Agent 정석 (권장)**: Claude Code (Claude CLI) — Slack 봇 연결까지 그대로 이어짐
 - **무료로 시작**: Antigravity + Gemini API
 - **전문 개발자**: Cursor 또는 GitHub Copilot
 - **VS Code 사용자**: GitHub Copilot
@@ -296,7 +370,7 @@ A: 네! 이 시스템은 한국어 우선(Korean-First)으로 설계되었습니
 
 #### Q: 오류가 발생하면 어떻게 하나요?
 A: 
-1. [Issues 페이지](https://github.com/LowyShin/giip-dev-agent/issues)에 질문 올리기
+1. [Issues 페이지](https://github.com/LowyShin/giip-fde-agent/issues)에 질문 올리기
 2. 에러 메시지와 함께 AI에게 물어보기
 3. [GIIP 공식 홈페이지](https://giip.littleworld.net/)에서 지원 받기
 
@@ -326,9 +400,9 @@ A:
 
 ## 🆘 도움이 필요하신가요?
 
-- **GitHub Issues**: [문제 보고하기](https://github.com/LowyShin/giip-dev-agent/issues)
+- **GitHub Issues**: [문제 보고하기](https://github.com/LowyShin/giip-fde-agent/issues)
 - **공식 홈페이지**: [https://giip.littleworld.net/](https://giip.littleworld.net/)
-- **커뮤니티**: [GitHub Discussions](https://github.com/LowyShin/giip-dev-agent/discussions)
+- **커뮤니티**: [GitHub Discussions](https://github.com/LowyShin/giip-fde-agent/discussions)
 
 ---
 
@@ -368,8 +442,8 @@ npm install -g @google/gemini-cli --force
 
 ---
 
-**마지막 업데이트**: 2026-02-07  
-**작성**: GIIP Agent System Team
+**마지막 업데이트**: 2026-07-03  
+**작성**: giip FDE Agent Team
 
 ---
 

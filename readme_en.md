@@ -2,13 +2,15 @@
 
 **A Forward-Deployed AI engineering team that installs onto your PC**
 
-[한국어](README.md) | [日本語](readme_jp.md)
+[![한국어](https://img.shields.io/badge/lang-한국어-lightgrey.svg)](README.md)
+[![日本語](https://img.shields.io/badge/lang-日本語-lightgrey.svg)](readme_jp.md)
+[![English](https://img.shields.io/badge/lang-English-0A66C2.svg)](readme_en.md)
 
 > [!TIP]
 > If you have downloaded this repository and find that documentation in your language is missing (only Korean is available), please ask your AI assistant (Antigravity, Cursor, etc.) to translate it for you.
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Korean Support](https://img.shields.io/badge/Language-Korean-blue.svg)](#-capabilities-at-a-glance)
+[![Type: Forward Deployed Engineer](https://img.shields.io/badge/Type-Forward%20Deployed%20Engineer-8A2BE2.svg)](https://en.wikipedia.org/wiki/Forward_Deployed_Engineer)
 [![AI Powered](https://img.shields.io/badge/AI-Gemini-orange.svg)](https://aistudio.google.com/app/apikey)
 [![Methodology: PDCA](https://img.shields.io/badge/Methodology-PDCA-brightgreen.svg)](https://github.com/popup-studio-ai/bkit-claude-code)
 
@@ -28,7 +30,7 @@ This agent is the executor of the [**giip FDE Box**](https://giip.littleworld.ne
 
 > Check out the [**Quick Start Guide**](QUICK_START_EN.md) to launch your first agent in 5 minutes!
 >
-> [Tools Download](TOOLS_DOWNLOAD.md) · [Antigravity Usage](ANTIGRAVITY_USAGE_GUIDE.md) · [90-min Onboarding](docs/00-onboarding/README.md) · [Operations Governance](docs/60-operations/README.md) · [Useful Links](links.md)
+> [Tools Download](TOOLS_DOWNLOAD.md) · [Antigravity Usage](ANTIGRAVITY_USAGE_GUIDE.md) · [90-min Onboarding](docs/00-onboarding/README.md) · [Operations Governance](docs/60-operations/README.md) · [Slack Bot Setup](slack-bot/SLACK_APP_SETUP.md) · [Useful Links](links.md)
 
 ---
 

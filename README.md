@@ -2,10 +2,12 @@
 
 **당신의 PC에 설치되는 포워드 배포형(Forward-Deployed) AI 엔지니어링 팀**
 
-[English](readme_en.md) | [日本語](readme_jp.md)
+[![한국어](https://img.shields.io/badge/lang-한국어-0A66C2.svg)](README.md)
+[![日本語](https://img.shields.io/badge/lang-日本語-lightgrey.svg)](readme_jp.md)
+[![English](https://img.shields.io/badge/lang-English-lightgrey.svg)](readme_en.md)
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Korean Support](https://img.shields.io/badge/Language-Korean-blue.svg)](#-핵심-역량-한눈에)
+[![Type: Forward Deployed Engineer](https://img.shields.io/badge/Type-Forward%20Deployed%20Engineer-8A2BE2.svg)](https://en.wikipedia.org/wiki/Forward_Deployed_Engineer)
 [![AI Powered](https://img.shields.io/badge/AI-Gemini-orange.svg)](https://aistudio.google.com/app/apikey)
 [![Methodology: PDCA](https://img.shields.io/badge/Methodology-PDCA-brightgreen.svg)](https://github.com/popup-studio-ai/bkit-claude-code)
 
@@ -31,7 +33,7 @@
 
 > [**빠른 시작 가이드**](QUICK_START.md)에서 5분 만에 첫 에이전트를 가동해 보세요!
 >
-> [도구 다운로드](TOOLS_DOWNLOAD.md) · [Antigravity 사용법](ANTIGRAVITY_USAGE_GUIDE.md) · [90분 온보딩](docs/00-onboarding/README.md) · [운영 거버넌스](docs/60-operations/README.md) · [유용한 링크](links.md)
+> [도구 다운로드](TOOLS_DOWNLOAD.md) · [Antigravity 사용법](ANTIGRAVITY_USAGE_GUIDE.md) · [90분 온보딩](docs/00-onboarding/README.md) · [운영 거버넌스](docs/60-operations/README.md) · [Slack 봇 연결](QUICK_START.md#-slack-봇-연결하기-giipclaude-bot) · [유용한 링크](links.md)
 
 ---
 
