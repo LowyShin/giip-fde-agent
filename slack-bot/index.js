@@ -729,6 +729,11 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
       '• `cancel` — 待機中 Task の一覧を表示',
       '• `cancel <Task番号>` — 指定した Task をキャンセル',
       '',
+      '*ワークフロー:*',
+      '• `<プロジェクト名> wflist` — そのプロジェクトの .agent/workflows 一覧',
+      '• `<プロジェクト名> wflist <絞り込み語>` — 名前で絞り込み',
+      '• `<プロジェクト名> wflist all` — 参考ドキュメントも表示',
+      '',
       '*情報:*',
       '• `!issues` — GitHub Issue 一覧',
       '• `!klayer <キーワード>` — K-Layer 検索',
@@ -747,6 +752,40 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
     const kw = cmd.slice(8).trim();
     const claims = searchKLayer(kw);
     await postMessage(channelId, claims.length ? `K-Layer "${kw}":\n${claims.map(c=>`• ${c}`).join('\n')}` : `"${kw}" に関連する claim はありません`, replyTs);
+    return;
+  }
+
+  // ── wflist — 指定プロジェクトの .agent/workflows 一覧 ──────────────────────
+  //   使い方: `<プロジェクト名> wflist [絞り込み語|all]`
+  //   プロジェクト名は parseProjectPrefix で workDir に解決済み。
+  //   例: `giipprj wflist` → giipprj/.agent/workflows を一覧表示。
+  //   `all` を付けると README 等の参考ドキュメントも表示。
+  if (cmd === 'wflist' || cmd.startsWith('wflist ')) {
+    const filter = cmd === 'wflist' ? '' : cmd.slice('wflist '.length).trim();
+    const showAll = filter === 'all';
+    const agentDir = getAgentDir(workDir);
+    const wfDir = path.join(agentDir, 'workflows');
+    const projName = path.basename(workDir);
+    const usingFallback = !fs.existsSync(path.join(workDir, '.agent'));
+    let files = [];
+    try { files = fs.readdirSync(wfDir).filter(f => f.toLowerCase().endsWith('.md')); } catch { files = []; }
+    if (!files.length) {
+      await postMessage(channelId,
+        `📂 \`${projName}\` の .agent/workflows にワークフローがありません。\n探索パス: \`${wfDir}\``,
+        replyTs);
+      return;
+    }
+    const isDoc = f => /^(readme|common_|scheduling|_)/i.test(f);
+    const nameOf = f => f.replace(/\.md$/i, '');
+    let wf = files.filter(f => !isDoc(f)).sort();
+    const docs = files.filter(isDoc).sort();
+    if (filter && !showAll) wf = wf.filter(f => f.toLowerCase().includes(filter));
+    const header = usingFallback
+      ? `📋 *\`${projName}\` に .agent が無いため既定(${path.basename(BASE_DIR)}/.agent)を表示* (${wf.length}件)`
+      : `📋 *\`${projName}\` ワークフロー一覧* (${wf.length}件${filter && !showAll ? ` / 絞り込み: "${filter}"` : ''})`;
+    const lines = wf.length ? wf.map(f => `• \`${nameOf(f)}\``) : ['(該当なし)'];
+    if (showAll && docs.length) lines.push('', '_参考ドキュメント:_ ' + docs.map(f => `\`${nameOf(f)}\``).join(', '));
+    await postMessage(channelId, `${header}\n${lines.join('\n')}`, replyTs);
     return;
   }
 
