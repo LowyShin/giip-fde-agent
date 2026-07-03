@@ -733,7 +733,11 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
       '• `<プロジェクト名> wflist` — そのプロジェクトの .agent/workflows 一覧',
       '• `<プロジェクト名> wflist <絞り込み語>` — 名前で絞り込み',
       '• `<プロジェクト名> wflist all` — 参考ドキュメントも表示',
-      '• `<プロジェクト名> 워크플로우 <名>` — ワークフローを実行 (`wfrun <名>` も可)',
+      '• *ワークフロー実行* — 次のどの形でもOK（実行サブエージェント経路で走るので DB/スクリプトが権限に阻まれない）:',
+      '    ‣ `<プロジェクト> workflow <名>` / `wf <名>` / `wfrun <名>` / `워크플로우 <名>`  （「워크플로우」が長い時は workflow / wf でOK）',
+      '    ‣ `<プロジェクト> <名> 실행` / `<プロジェクト> /<名>` / `<プロジェクト> <名>`',
+      '    例) `giipprj wf errorproc` = `giipprj errorproc 실행` = `giipprj /errorproc` = `giipprj workflow errorproc`',
+      '    ※ 「<名> 실행」「<名>」の形は実在ワークフロー名と完全一致した時のみ実行（誤爆防止）',
       '',
       '*情報:*',
       '• `!issues` — GitHub Issue 一覧',
@@ -790,14 +794,32 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
     return;
   }
 
-  // ── wfrun / 워크플로우 <이름> — 指定ワークフローをサブエージェントで実行 ──────
-  //   使い方: `<プロジェクト名> 워크플로우 <ワークフロー名>` または `<プロジェクト名> wfrun <名>`
-  //   名前は wflist の表示名（拡張子なし）。完全一致 → 部分一致の順で解決。
-  //   例: `giipprj 워크플로우 gissue-sync` → giipprj/.agent/workflows/gissue-sync.md を実行。
+  // ── ワークフロー実行 — 指定ワークフローをサブエージェントで実行 ────────────────
+  //   受け付ける言い回し（すべて実行サブエージェント経路 = --dangerously-skip-permissions）:
+  //     明示形（keyword-first / slash）— 部分一致も許可:
+  //       `<プロジェクト> 워크플로우 <名>` / `workflow <名>` / `wfrun <名>` / `wf <名>` / `/<名>`
+  //       （「워크플로우」は長いので英語別名 workflow / wf / wfrun いずれも可）
+  //     ゆるい形（name-first / 単語のみ）— 一般質問の誤爆を防ぐため .agent/workflows に
+  //     完全一致する時だけ実行:
+  //       `<プロジェクト> <名> 실행[해/해줘]` / `<名> 워크플로우 실행` / `<名> run|start` / `<名>`
+  //   例: `giipprj wf errorproc` / `giipprj errorproc 실행` / `giipprj /errorproc` → errorproc.md を実行。
+  //   なぜ必須か: DB照会等の .ps1 を含むワークフローは、この実行経路（権限スキップ）
+  //   でしか非対話 Slack セッションの権限ポリシーを越えられない。Q&A経路(callClaude)は
+  //   skip 権限が無いため必ずブロックされる。ワークフローは必ずここへ載せること。
   {
-    const wfRun = cmd.match(/^(?:wfrun|wf run|워크플로우\s*실행|워크플로우|워크플로)\s+(.+)$/);
-    if (wfRun) {
-      const query = wfRun[1].trim().replace(/\.md$/i, '');
+    let wfQuery = null, looseForm = false, mWf;
+    if ((mWf = cmd.match(/^(?:wfrun|workflow|wf\s+run|wf|워크플로우\s*실행|워크플로우|워크플로)\s+(.+)$/))) {
+      wfQuery = mWf[1];                                   // 明示: keyword-first (wfrun/workflow/wf/워크플로우)
+    } else if ((mWf = cmd.match(/^\/([\w가-힣-]+)$/))) {
+      wfQuery = mWf[1];                                   // 明示: slash-command "/name"
+    } else if ((mWf = cmd.match(/^(.+?)\s*(?:워크플로우\s*)?(?:실행(?:\s*해\s*주세요|\s*해\s*줘|\s*해|\s*하기)?|run|start)$/))) {
+      wfQuery = mWf[1]; looseForm = true;                 // ゆるい: "<name> 実行/실행/run"
+    } else if (/^[\w가-힣-]+$/.test(cmd)) {
+      wfQuery = cmd; looseForm = true;                    // ゆるい: 単語のみ "<name>"
+    }
+
+    if (wfQuery) {
+      const query = wfQuery.trim().replace(/\.md$/i, '');
       const agentDir = getAgentDir(workDir);
       const wfDir = path.join(agentDir, 'workflows');
       const projName = path.basename(workDir);
@@ -808,7 +830,8 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
       const nameOf = f => f.replace(/\.md$/i, '');
       const q = query.toLowerCase();
       let match = candidates.find(f => nameOf(f).toLowerCase() === q);
-      if (!match) {
+      // 明示形のみ部分一致を許可（ゆるい形は完全一致に限定して誤爆を防ぐ）
+      if (!match && !looseForm) {
         const subs = candidates.filter(f => f.toLowerCase().includes(q));
         if (subs.length === 1) match = subs[0];
         else if (subs.length > 1) {
@@ -818,13 +841,15 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
           return;
         }
       }
-      if (!match) {
+      // ゆるい形で未一致 → ワークフロー指示ではない。通常ルーティングへフォールスルー。
+      if (!match && !looseForm) {
         const list = candidates.length ? candidates.map(f => `• \`${nameOf(f)}\``).join('\n') : '(なし)';
         await postMessage(channelId,
           `❓ \`${projName}\` に \`${query}\` というワークフローが見つかりません。\n利用可能:\n${list}\n\n一覧: \`${projName} wflist\``,
           replyTs);
         return;
       }
+      if (match) {
       const wfPath = path.join(wfDir, match);
       const wfName = nameOf(match);
       let wfContent = '';
@@ -860,6 +885,7 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
         replyTs);
       await startTaskExecution(convKey, taskState.pending[convKey], channelId, replyTs, taskState, workDir);
       return;
+      }
     }
   }
 
