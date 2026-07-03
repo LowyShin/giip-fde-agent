@@ -102,7 +102,7 @@ function runClaude(args, cwd = BASE_DIR) {
     cwd,
     encoding: 'utf8',
     maxBuffer: 10 * 1024 * 1024,
-    timeout: 300000,
+    timeout: 20 * 60 * 1000, // 20分
     windowsHide: true,
   });
   if (result.error) throw result.error;

@@ -383,7 +383,7 @@ async function callClaude(prompt, workDir = BASE_DIR) {
         '--add-dir', PROJECTS_ROOT,  // 全プロジェクト横断アクセス
       ], {
         cwd: workDir,
-        timeout: 300000,
+        timeout: 20 * 60 * 1000, // 20分
       });
     } catch (err) {
       throw err; // ETIMEDOUT 등
@@ -517,7 +517,7 @@ MANDATORY RULE — Task Number: If the user's message contains a 14-digit task n
   } catch (err) {
     const isTimeout = err.code === 'ETIMEDOUT' || (err.message && err.message.includes('ETIMEDOUT'));
     const msg2 = isTimeout
-      ? '⏱️ 処理がタイムアウトしました（5分超過）。もう少し短い要求に分けて送ってください。'
+      ? '⏱️ 処理がタイムアウトしました（20分超過）。もう少し短い要求に分けて送ってください。'
       : `回答エラー: ${err.message}`;
     await postMessage(channelId, msg2, replyTs);
   }
