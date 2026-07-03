@@ -851,7 +851,7 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
       '• `go <Task番号>` — 指定した Task を実行',
       '• `cancel` — 待機中 Task の一覧を表示',
       '• `cancel <Task番号>` — 指定した Task をキャンセル',
-      '• `taskmerge` — 未完了の重複タスクを検出（プレビュー）',
+      '• `taskmerge` — 未完了の重複タスクを検出（プレビュー） *別名: 중복 정리 / dedup / マージ*',
       '• `taskmerge go` — 重複タスクを統合（代表1件に集約し残りを取消）',
       '',
       '*ワークフロー:*',
@@ -1043,7 +1043,7 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
   // ── taskmerge — 未完了の重複タスクを検出・統合 ─────────────────────────────
   //   `taskmerge`           → プレビュー（何を統合するか表示のみ、変更なし）
   //   `taskmerge go/실행/apply` → 実際に統合（重複を survivor に集約し残りを取消）
-  const mergeCmd = cmd.match(/^(?:taskmerge|task\s*merge|dedupe|중복\s*통합|타스크\s*통합|머지)(?:\s+(go|실행|확정|apply|yes|はい|실시))?$/);
+  const mergeCmd = cmd.match(/^(?:taskmerge|task\s*merge|merge\s*tasks|dedupe?|dupes|duplicates|consolidate|중복\s*통합|중복\s*정리|중복\s*제거|중복\s*태스크|태스크\s*정리|중복\s*찾기|타스크\s*통합|머지|タスク統合|重複統合|重複整理|マージ)(?:\s+(go|실행|실행해|확정|apply|yes|ok|はい|実行|실시))?$/);
   if (mergeCmd) {
     const doApply = !!mergeCmd[1];
     const clusters = findDuplicatePendingClusters();
