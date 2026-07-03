@@ -8,3 +8,8 @@ __pycache__/
 
 # Block accidental project-specific cache roots (e.g. PYTHONPYCACHEPREFIX=giipdb)
 giipdb/
+
+# slack-bot runtime state (machine-local, must NOT be versioned) — dirty tree breaks rebase/push
+slack-bot/.bot-threads.json
+slack-bot/.task-state.json
+slack-bot/tasklist.json

@@ -679,7 +679,7 @@ async function startTaskExecution(pendingKey, pendingTask, channelId, replyTs, t
         );
       } else {
         await postMessage(channelId,
-          `✅ *작업 완료* (git push 실패)\n• \`${pendingTask.taskId}\`: ${pendingTask.taskTitle}\n결과 파일: \`.agent/tasks/done/${pendingTask.taskId}.md\``,
+          `✅ *작업 완료* (⚠️ git push 실패 — 원격 미반영이라 GitHub URL 미생성)\n• \`${pendingTask.taskId}\`: ${pendingTask.taskTitle}\n결과 파일: \`.agent/tasks/done/${pendingTask.taskId}.md\`\n봇 로그의 git push 오류를 확인하세요.`,
           replyTs
         );
         await postLong(channelId, checkAllRepoStatus(), replyTs);

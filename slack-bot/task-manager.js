@@ -345,9 +345,24 @@ function gitPushResult(taskId, taskTitle, resultFile, doneTaskFile = null) {
     return null;
   }
 
-  // pull --rebase then push to current branch
-  spawnSync('git', ['pull', '--rebase', 'origin', branch], { cwd: BASE_DIR, encoding: 'utf8', windowsHide: true });
-  const pushRes = spawnSync('git', ['push', 'origin', branch], { cwd: BASE_DIR, encoding: 'utf8', windowsHide: true });
+  // Rebase onto latest remote and push, retrying once on non-fast-forward.
+  // --autostash so uncommitted runtime state (bot json) never blocks the rebase. This was the
+  // bug that silently dropped result URLs: dirty tree → rebase refused → push rejected → null.
+  const runGit = (args) => spawnSync('git', args, { cwd: BASE_DIR, encoding: 'utf8', windowsHide: true });
+  const rebaseAndPush = () => {
+    const pull = runGit(['pull', '--rebase', '--autostash', 'origin', branch]);
+    if (pull.status !== 0) {
+      console.error('[TaskManager] git pull --rebase:', (pull.stderr || '').trim());
+      runGit(['rebase', '--abort']); // never leave the repo mid-rebase
+    }
+    return runGit(['push', 'origin', branch]);
+  };
+  let pushRes = rebaseAndPush();
+  if (pushRes.status !== 0) {
+    console.error('[TaskManager] git push rejected, retrying after fetch:', (pushRes.stderr || '').trim());
+    runGit(['fetch', 'origin', branch]);
+    pushRes = rebaseAndPush();
+  }
   if (pushRes.status !== 0) {
     console.error('[TaskManager] git push:', (pushRes.stderr || '').trim());
     return null;
