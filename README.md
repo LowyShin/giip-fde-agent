@@ -13,16 +13,17 @@
 
 ## FDE Agent란? (What is the FDE Agent?)
 
-**giip FDE Agent**는 여러분의 PC에 직접 설치되어 상주하는 **AI 엔지니어링 팀**입니다.
-`.agent` 폴더 하나로 이식되어, 스스로 계획하고(Plan) 구현하며(Do) 검증하고(Check) 자가 최적화하는(Act) —
-**"생각하는 에이전트 팀"**을 여러분의 프로젝트에 즉시 투입합니다.
+**FDE(Forward Deployed Engineer)**는 원격에서 지원하는 대신 **고객의 현장에 직접 배치되어**
+그 조직의 문제를 함께 풀어내는 엔지니어를 뜻합니다. Palantir가 만든 용어로, 요구사항 분석부터 설계·구현·통합·배포까지
+고객 옆에서 전 주기를 책임지는 것이 특징입니다. ([Wikipedia](https://en.wikipedia.org/wiki/Forward_Deployed_Engineer))
 
-이 에이전트는 giip의 **FDE(Full-cycle Development & Enterprise Ops)** 역량을 하나의 박스로 제공하는
+**giip FDE Agent**는 이 개념을 AI 에이전트로 구현한 것입니다. 사람 대신 **AI 엔지니어링 팀이 여러분의 PC(=현장)에 상주**하며,
+`.agent` 폴더 하나로 이식되어 스스로 계획하고(Plan) 구현하며(Do) 검증하고(Check) 자가 최적화하는(Act)
+**"생각하는 에이전트 팀"**을 프로젝트에 즉시 투입합니다. 데이터와 컨텍스트는 로컬을 벗어나지 않습니다.
+
+이 에이전트는 giip의 FDE 역량 — AI 기반 풀사이클 개발과 엔터프라이즈 운영 — 을 하나로 묶어 제공하는
 [**giip FDE Box**](https://giip.littleworld.net/docs/plans/AIFDEOpsProposalko.html)의 실행 주체입니다.
 인프라 운영부터 AI 네이티브 개발까지, 엔터프라이즈 운영 전 주기를 여러분의 로컬 환경에서 수행합니다.
-
-> **포워드 배포(Forward-Deployed)란?** 원격 SaaS가 아니라, 에이전트가 **현장(=당신의 PC)에 배치되어**
-> 코드·인프라·문서 옆에서 직접 일한다는 뜻입니다. 데이터와 컨텍스트가 로컬을 벗어나지 않습니다.
 
 ---
 
