@@ -247,7 +247,12 @@ ${new Date().toISOString()}
 
 지금 바로 작업을 시작하세요.`;
 
-  const proc = spawn('claude', ['-p', executionPrompt, '--dangerously-skip-permissions'], {
+  // 実行サブエージェントが roles/rules/skills/workflows を参照できるよう .agent を許可
+  // （baseDir に .agent が無ければ BASE_DIR/.agent にフォールバック — index.js の getAgentDir と同じ規則）
+  const agentDir = fs.existsSync(path.join(baseDir, '.agent'))
+    ? path.join(baseDir, '.agent')
+    : path.join(BASE_DIR, '.agent');
+  const proc = spawn('claude', ['-p', executionPrompt, '--dangerously-skip-permissions', '--add-dir', agentDir], {
     cwd: baseDir,
     stdio: ['ignore', 'pipe', 'pipe'],
   });

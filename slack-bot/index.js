@@ -733,6 +733,7 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
       '• `<プロジェクト名> wflist` — そのプロジェクトの .agent/workflows 一覧',
       '• `<プロジェクト名> wflist <絞り込み語>` — 名前で絞り込み',
       '• `<プロジェクト名> wflist all` — 参考ドキュメントも表示',
+      '• `<プロジェクト名> 워크플로우 <名>` — ワークフローを実行 (`wfrun <名>` も可)',
       '',
       '*情報:*',
       '• `!issues` — GitHub Issue 一覧',
@@ -787,6 +788,79 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
     if (showAll && docs.length) lines.push('', '_参考ドキュメント:_ ' + docs.map(f => `\`${nameOf(f)}\``).join(', '));
     await postMessage(channelId, `${header}\n${lines.join('\n')}`, replyTs);
     return;
+  }
+
+  // ── wfrun / 워크플로우 <이름> — 指定ワークフローをサブエージェントで実行 ──────
+  //   使い方: `<プロジェクト名> 워크플로우 <ワークフロー名>` または `<プロジェクト名> wfrun <名>`
+  //   名前は wflist の表示名（拡張子なし）。完全一致 → 部分一致の順で解決。
+  //   例: `giipprj 워크플로우 gissue-sync` → giipprj/.agent/workflows/gissue-sync.md を実行。
+  {
+    const wfRun = cmd.match(/^(?:wfrun|wf run|워크플로우\s*실행|워크플로우|워크플로)\s+(.+)$/);
+    if (wfRun) {
+      const query = wfRun[1].trim().replace(/\.md$/i, '');
+      const agentDir = getAgentDir(workDir);
+      const wfDir = path.join(agentDir, 'workflows');
+      const projName = path.basename(workDir);
+      let files = [];
+      try { files = fs.readdirSync(wfDir).filter(f => f.toLowerCase().endsWith('.md')); } catch { files = []; }
+      const isDoc = f => /^(readme|common_|scheduling|_)/i.test(f);
+      const candidates = files.filter(f => !isDoc(f));
+      const nameOf = f => f.replace(/\.md$/i, '');
+      const q = query.toLowerCase();
+      let match = candidates.find(f => nameOf(f).toLowerCase() === q);
+      if (!match) {
+        const subs = candidates.filter(f => f.toLowerCase().includes(q));
+        if (subs.length === 1) match = subs[0];
+        else if (subs.length > 1) {
+          await postMessage(channelId,
+            `🔎 \`${query}\` に一致するワークフローが複数あります。1つに絞ってください:\n${subs.map(f => `• \`${nameOf(f)}\``).join('\n')}`,
+            replyTs);
+          return;
+        }
+      }
+      if (!match) {
+        const list = candidates.length ? candidates.map(f => `• \`${nameOf(f)}\``).join('\n') : '(なし)';
+        await postMessage(channelId,
+          `❓ \`${projName}\` に \`${query}\` というワークフローが見つかりません。\n利用可能:\n${list}\n\n一覧: \`${projName} wflist\``,
+          replyTs);
+        return;
+      }
+      const wfPath = path.join(wfDir, match);
+      const wfName = nameOf(match);
+      let wfContent = '';
+      try { wfContent = fs.readFileSync(wfPath, 'utf8'); }
+      catch (e) { await postMessage(channelId, `⚠️ ワークフロー読み込み失敗: ${e.message}`, replyTs); return; }
+      const relWf = path.relative(workDir, wfPath).replace(/\\/g, '/');
+      const taskId = tm.getTimestampId();
+      const planContent = [
+        `# TASK: 워크플로우 실행 — ${wfName} (${projName})`,
+        '',
+        '## リクエスト内容',
+        `プロジェクト \`${projName}\` のワークフロー \`${wfName}\` を定義どおり実行`,
+        '',
+        '## 実行方針',
+        `- 対象ワークフロー定義: \`${relWf}\``,
+        '- 下記「ワークフロー定義」を上から順に、記載どおり忠実に実行する。',
+        '- 定義が他の roles/rules/skills/workflows を参照する場合、.agent 配下の該当ファイルを読んで従う。',
+        '- ファイルを変更したら実行プロンプトの共通規則に従い即コミット＆push する。',
+        '',
+        '## ワークフロー定義（この内容を実行）',
+        `===== BEGIN WORKFLOW: ${wfName} =====`,
+        wfContent.trim(),
+        `===== END WORKFLOW: ${wfName} =====`,
+      ].join('\n');
+      const taskFile = tm.createTaskFile(taskId, `[wfrun] ${projName}/${wfName}`, planContent, [wfPath]);
+      const taskTitle = tm.extractTitle(planContent);
+      const taskSummary = tm.extractSummary(planContent);
+      taskState.pending[convKey] = { taskId, taskTitle, taskFile, requestText: `wfrun ${wfName}` };
+      saveJSON(TASK_STATE_FILE, taskState);
+      tm.addToTasklist(taskId, taskTitle, taskSummary, `wfrun ${wfName}`);
+      await postMessage(channelId,
+        `🚀 *ワークフロー実行*: \`${wfName}\` (プロジェクト \`${projName}\`)\nTask \`${taskId}\` として開始します。`,
+        replyTs);
+      await startTaskExecution(convKey, taskState.pending[convKey], channelId, replyTs, taskState, workDir);
+      return;
+    }
   }
 
   // ── tasklist / tasklist all ────────────────────────────────────────────────
