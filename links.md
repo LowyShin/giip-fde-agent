@@ -35,6 +35,9 @@
 ### [garrytan/gstack](https://github.com/garrytan/gstack) ([분석 리포트](./docs/50-technical/gstack-analysis.md))
 - **설명**: Garry Tan의 23가지 전문 에이전트 도구 모음(CEO, Designer, CSO 등)으로 에이전트의 생산성을 극대화합니다.
 
+### [LilMGenius/paperthin](https://github.com/LilMGenius/paperthin)
+- **설명**: 아티팩트를 "깨끗하고 참되게(clean & true)" 유지하는 에이전트-불문 저수준 마크다운 스킬 모음(re0/shower/factchk/ssotchk/hate 등). DRY·에고리스 프로그래밍·fail-fast 같은 엔지니어링 지혜를 에이전트가 스스로 꺼내 쓰는 반사동작으로 만듭니다. **본 레포 `.agent/skills/`에 14종 이식 완료** (출처: `.agent/skills/PAPERTHIN_NOTICE.md`).
+
 ## 🎨 디자인 및 MD 리소스 (Design & MD Resources)
 
 ### [designmd.ai](https://designmd.ai)

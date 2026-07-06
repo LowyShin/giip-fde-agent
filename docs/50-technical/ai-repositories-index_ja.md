@@ -22,6 +22,10 @@ AIエージェントシステムと連携したり、活用したりできる便
 ### [gstack](https://github.com/garrytan/gstack) ([分析レポート](../../docs/50-technical/gstack-analysis.md))
 - **一言紹介**: Garry Tanによる23の専門的なエージェントツールセットで、CEO、デザイナー、セキュリティ担当者など、多様な役割の遂行を支援します。
 
+### [paperthin](https://github.com/LilMGenius/paperthin)
+- **一言紹介**: アーティファクトを「クリーンかつ真実（clean & true）」に保つエージェント非依存の低レベルMarkdownスキル集（re0/shower/factchk/ssotchk/hateなど）。DRY・エゴレスプログラミング・fail-fastといったエンジニアリングの知恵を、エージェントが自ら手を伸ばす反射動作に変えます。
+- **導入状況**: 本レポの `.agent/skills/` に14種を移植済み（出典・一覧: [`.agent/skills/PAPERTHIN_NOTICE.md`](../../.agent/skills/PAPERTHIN_NOTICE.md)）
+
 ### [LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) ([分析レポート](../../docs/70-LowyOpinion/capacydiagram.md))
 - **一言紹介**: Andrej Karpathyが提唱した、AIエージェントによる継続的な知識蓄積とウィキ管理のパターン（K-Layerの原型）です。
 
@@ -51,3 +55,4 @@ AIエージェントシステムと連携したり、活用したりできる便
 *作業履歴: 20260429 01:24:45: 外部AIリポジトリ一覧ページ作成*
 *作業履歴: 20260618: scientific-agent-skillsを科学・研究専用セクションに追加（Issue #17）*
 *作業履歴: 20260618: open-designをデザインツールセクションに追加（Issue #19）*
+*作業履歴: 20260706: paperthinを追加し、スキル14種を `.agent/skills/` に移植*

@@ -22,6 +22,10 @@ A collection of useful external repositories and tools that can be integrated wi
 ### [gstack](https://github.com/garrytan/gstack) ([Analysis Report](../../docs/50-technical/gstack-analysis.md))
 - **One-line Intro**: Garry Tan's collection of 23 professional agent tools, helping perform various roles like CEO, Designer, and CSO.
 
+### [paperthin](https://github.com/LilMGenius/paperthin)
+- **One-line Intro**: An agent-agnostic suite of low-level plain-Markdown skills (re0/shower/factchk/ssotchk/hate, etc.) that keep an artifact "clean and true", turning engineering wisdom like DRY, egoless programming, and fail-fast into reflexes the agent reaches for on its own.
+- **Adoption Status**: 14 skills ported into this repo's `.agent/skills/` (source & list: [`.agent/skills/PAPERTHIN_NOTICE.md`](../../.agent/skills/PAPERTHIN_NOTICE.md))
+
 ### [LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) ([Analysis Report](../../docs/70-LowyOpinion/capacydiagram.md))
 - **One-line Intro**: The AI agent-based persistent knowledge accumulation and wiki management pattern proposed by Andrej Karpathy (the prototype of K-Layer).
 
@@ -52,3 +56,4 @@ A collection of useful external repositories and tools that can be integrated wi
 *Work History: 20260429 01:24:35: Created External AI Repositories listing page*
 *Work History: 20260618: Added scientific-agent-skills to science/research section (Issue #17)*
 *Work History: 20260618: Added open-design to design tools section (Issue #19)*
+*Work History: 20260706: Added paperthin and ported 14 skills into `.agent/skills/`*
