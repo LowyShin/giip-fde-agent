@@ -26,6 +26,10 @@ AIエージェントシステムと連携したり、活用したりできる便
 - **一言紹介**: アーティファクトを「クリーンかつ真実（clean & true）」に保つエージェント非依存の低レベルMarkdownスキル集（re0/shower/factchk/ssotchk/hateなど）。DRY・エゴレスプログラミング・fail-fastといったエンジニアリングの知恵を、エージェントが自ら手を伸ばす反射動作に変えます。
 - **導入状況**: 本レポの `.agent/skills/` に14種を移植済み（出典・一覧: [`.agent/skills/PAPERTHIN_NOTICE.md`](../../.agent/skills/PAPERTHIN_NOTICE.md)）
 
+### [keep-codex-fast](https://github.com/vibeforge1111/keep-codex-fast)
+- **一言紹介**: Codexのローカル状態（古いチャット・ワークツリー・ログ・肥大化したSQLiteメタデータ）を**バックアップ優先**で点検・整理し、パフォーマンスを維持するスキルです。inspect/maintain/repairの3モードと「削除せずアーカイブ、ハンドオフを先に」の原則に従います（MIT）。
+- **導入状況**: 本レポの `.agent/skills/keep-codex-fast/` に移植済み（`codex-maintenance` ワークフロー付き、月1回の原本確認を推奨）
+
 ### [LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) ([分析レポート](../../docs/70-LowyOpinion/capacydiagram.md))
 - **一言紹介**: Andrej Karpathyが提唱した、AIエージェントによる継続的な知識蓄積とウィキ管理のパターン（K-Layerの原型）です。
 
@@ -56,3 +60,4 @@ AIエージェントシステムと連携したり、活用したりできる便
 *作業履歴: 20260618: scientific-agent-skillsを科学・研究専用セクションに追加（Issue #17）*
 *作業履歴: 20260618: open-designをデザインツールセクションに追加（Issue #19）*
 *作業履歴: 20260706: paperthinを追加し、スキル14種を `.agent/skills/` に移植*
+*作業履歴: 20260706: keep-codex-fastをメンテナンスツールセクションに登録（スキルは既に移植済み）*

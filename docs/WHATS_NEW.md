@@ -11,7 +11,9 @@
 ---
 
 ## 2026-07-06
+- **What's New 롤링 페이지 신설** — README 최상단에 링크. 최근 7일 갱신을 이 페이지에서 확인, 유지 규칙은 [`36_whats_new_maintenance`](../.agent/rules/36_whats_new_maintenance.md).
 - **paperthin 스킬 14종 이식 + 외부 레포 목록 등록** — [LilMGenius/paperthin](https://github.com/LilMGenius/paperthin)(MIT)의 "clean & true" 저수준 스킬(re0·shower·factchk·ssotchk·hate 등)을 `.agent/skills/`에 이식하고, `links.md` 및 `ai-repositories-index`(KR/EN/JP)에 등록. → [`.agent/skills/PAPERTHIN_NOTICE.md`](../.agent/skills/PAPERTHIN_NOTICE.md)
+- **keep-codex-fast 외부 레포 목록 등록** — [vibeforge1111/keep-codex-fast](https://github.com/vibeforge1111/keep-codex-fast)(MIT, Codex 성능 유지 스킬)를 `links.md`·`ai-repositories-index`에 등록. 스킬은 기존 이식 완료(`codex-maintenance` 워크플로 포함).
 
 ## 2026-07-03
 - **README를 FDE Agent 정체성 중심으로 재구성** — FDE 정의를 Palantir "Forward Deployed Engineer"로 정정하고 EN/JP 동기화.

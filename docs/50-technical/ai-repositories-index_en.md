@@ -26,6 +26,10 @@ A collection of useful external repositories and tools that can be integrated wi
 - **One-line Intro**: An agent-agnostic suite of low-level plain-Markdown skills (re0/shower/factchk/ssotchk/hate, etc.) that keep an artifact "clean and true", turning engineering wisdom like DRY, egoless programming, and fail-fast into reflexes the agent reaches for on its own.
 - **Adoption Status**: 14 skills ported into this repo's `.agent/skills/` (source & list: [`.agent/skills/PAPERTHIN_NOTICE.md`](../../.agent/skills/PAPERTHIN_NOTICE.md))
 
+### [keep-codex-fast](https://github.com/vibeforge1111/keep-codex-fast)
+- **One-line Intro**: A backup-first skill that inspects and tidies Codex's local state (stale chats, worktrees, logs, bloated SQLite metadata) to keep it fast. Runs in inspect/maintain/repair modes and follows "archive, don't delete; handoff first" (MIT).
+- **Adoption Status**: Ported into this repo's `.agent/skills/keep-codex-fast/` (with a `codex-maintenance` workflow; recheck upstream ~monthly)
+
 ### [LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) ([Analysis Report](../../docs/70-LowyOpinion/capacydiagram.md))
 - **One-line Intro**: The AI agent-based persistent knowledge accumulation and wiki management pattern proposed by Andrej Karpathy (the prototype of K-Layer).
 
@@ -57,3 +61,4 @@ A collection of useful external repositories and tools that can be integrated wi
 *Work History: 20260618: Added scientific-agent-skills to science/research section (Issue #17)*
 *Work History: 20260618: Added open-design to design tools section (Issue #19)*
 *Work History: 20260706: Added paperthin and ported 14 skills into `.agent/skills/`*
+*Work History: 20260706: Registered keep-codex-fast in maintenance tools section (skill already ported)*
