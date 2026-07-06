@@ -2,6 +2,8 @@
 
 **あなたのPCにインストールされる、フォワードデプロイ型（Forward-Deployed）のAIエンジニアリングチーム**
 
+> 🆕 **[What's New（最近の更新）](docs/WHATS_NEW.md)** · 直近7日以内の更新をこちらで確認できます。
+
 [![한국어](https://img.shields.io/badge/lang-한국어-lightgrey.svg)](README.md)
 [![日本語](https://img.shields.io/badge/lang-日本語-0A66C2.svg)](readme_jp.md)
 [![English](https://img.shields.io/badge/lang-English-lightgrey.svg)](readme_en.md)

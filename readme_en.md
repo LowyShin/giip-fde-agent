@@ -2,6 +2,8 @@
 
 **A Forward-Deployed AI engineering team that installs onto your PC**
 
+> 🆕 **[What's New](docs/WHATS_NEW.md)** · updates from the last 7 days.
+
 [![한국어](https://img.shields.io/badge/lang-한국어-lightgrey.svg)](README.md)
 [![日本語](https://img.shields.io/badge/lang-日本語-lightgrey.svg)](readme_jp.md)
 [![English](https://img.shields.io/badge/lang-English-0A66C2.svg)](readme_en.md)
