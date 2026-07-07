@@ -528,7 +528,7 @@ async function callClaude(prompt, workDir = BASE_DIR) {
 // 曖昧・質問・情報照会 → "question"
 async function classifyRequest(text, workDir = BASE_DIR) {
   // git push / pull / stash などの単純操作はタスク不要 → 即 question
-  if (/^\s*(git\s+(push|pull|stash|fetch|merge|rebase|status|log|diff)|タスク(?:一覧|リスト|確認|状況)|tasklist)/i.test(text.replace(/[^\x00-\x7Fぁ-ん亜-熙ー]/g, ' '))) {
+  if (/^\s*(git\s+(push|pull|stash|fetch|merge|rebase|status|log|diff)|タスク(?:一覧|リスト|確認|状況)|tasklist|task7d)/i.test(text.replace(/[^\x00-\x7Fぁ-ん亜-熙ー]/g, ' '))) {
     return 'question';
   }
 
@@ -847,6 +847,7 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
       '*Task 管理:*',
       '• `tasklist` — 待機中 Task 一覧',
       '• `tasklist all` — 全 Task 一覧 (完了・キャンセル含む)',
+      '• `task7days` — 直近7日間の全 Task (完了・キャンセル含む／未処理・異常検知用)',
       '• `go` — 待機中 Task の一覧を表示',
       '• `go <Task番号>` — 指定した Task を実行',
       '• `cancel` — 待機中 Task の一覧を表示',
@@ -1036,6 +1037,45 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
     const header = showAll
       ? `*全 Task 一覧 (${tasks.length}件)*`
       : `*待機中 Task 一覧 (${tasks.length}件)*`;
+    await postLong(channelId, [header, '', ...lines].join('\n'), replyTs);
+    return;
+  }
+
+  // ── task7days — 直近7日間の全 Task (完了・キャンセル含む) ─────────────────
+  //   未処理・異常処理された Task を洗い出すため、期間内は全ステータスを列挙する
+  if (cmd === 'task7days' || cmd === 'task 7days' || cmd === 'task7d' || cmd === 'tasklist 7days') {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const cutoff = Date.now() - 7 * DAY_MS;
+    const inWindow = (t) => {
+      // createdAt / startedAt / completedAt のいずれかが直近7日以内なら対象
+      const stamps = [t.createdAt, t.startedAt, t.completedAt]
+        .filter(Boolean)
+        .map(s => Date.parse(s))
+        .filter(n => !isNaN(n));
+      return stamps.some(n => n >= cutoff);
+    };
+    const tasks = tm.getTasklistByStatus(null)
+      .filter(inWindow)
+      .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+    if (tasks.length === 0) {
+      await postMessage(channelId, '直近7日間に記録された Task はありません。', replyTs);
+      return;
+    }
+    // ステータス別に件数を集計（未処理／異常検知の手がかりに）
+    const counts = tasks.reduce((acc, t) => { acc[t.status] = (acc[t.status] || 0) + 1; return acc; }, {});
+    const summary = ['pending', 'running', 'completed', 'cancelled']
+      .filter(s => counts[s])
+      .map(s => `${tm.statusEmoji(s)} ${s} ${counts[s]}`)
+      .join('  ');
+    const lines = tasks.map(t => {
+      const emoji = tm.statusEmoji(t.status);
+      const date = t.createdAt ? t.createdAt.slice(0, 10) : '';
+      const taskUrl = tm.getTaskFileUrl(t.taskId);
+      const taskLink = taskUrl ? `\n     📁 ${taskUrl}` : '';
+      const result = t.resultUrl ? `\n     📄 ${t.resultUrl}` : '';
+      return `${emoji} \`${t.taskId}\` [${t.status}] ${date}\n     *${t.title}*\n     ${t.summary}${taskLink}${result}`;
+    });
+    const header = `*直近7日間の全 Task 一覧 (${tasks.length}件)*\n${summary}`;
     await postLong(channelId, [header, '', ...lines].join('\n'), replyTs);
     return;
   }
