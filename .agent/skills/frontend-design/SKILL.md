@@ -42,6 +42,40 @@ Interpret creatively and make unexpected choices that feel genuinely designed fo
 
 Remember: Claude is capable of extraordinary creative work. Don't hold back, show what can truly be created when thinking outside the box and committing fully to a distinctive vision.
 
+## Forbidden AI Tells (anti-slop)
+
+> Adapted from taste-skill (MIT © Leonxlnx, <https://github.com/Leonxlnx/taste-skill>). These are **mechanical FAIL conditions**, not aesthetic judgment calls — if any appears, the work is not done.
+
+- **Em-dash (—) in visible UI copy: 0 allowed** (non-negotiable). Use commas, periods, or restructure the sentence.
+- No "hero version labels" (v2.0, Beta badges) unless functionally required.
+- No section-number eyebrows ("01 — Features", "Step 02").
+- No purple/violet gradients on white or dark, and no center-aligned dark hero as the default reflex.
+- No reflexive 3-equal-column feature-card grid as the go-to layout.
+- No fake avatars, fake dashboards, fake logos, or invented "precise" metrics (e.g. "10,432 users", "99.98%") faked to look real.
+- No generic glassmorphism as a default surface treatment.
+- Accent color: **1 dominant accent, saturation < 80%** — don't scatter many bright hues.
+- Corner-radius: pick **one** scale and lock it (don't mix 4/8/16/24px at random).
+- Anti-center bias: default to intentional asymmetry; **max 2 consecutive** alternating (zigzag) sections.
+- Bento / grid layouts: no empty filler cells.
+- Contrast: meet **WCAG AA** (text 4.5:1, large text/UI 3:1).
+- Fonts: never Inter / Roboto / Arial / system as the *deliberate* choice.
+
+## Pre-Flight Check (pass/fail)
+
+> Condensed from taste-skill's Pre-Flight matrix. Run this before declaring frontend work done. **One fail = not done.**
+
+- [ ] 0 em-dashes in all visible copy.
+- [ ] Design direction stated in one line before coding ("Reading this as: [page type] for [audience], tone [x]").
+- [ ] Distinctive display + body font pairing (no generic/system fonts).
+- [ ] 1 dominant accent (saturation < 80%), colors driven by CSS variables.
+- [ ] One locked corner-radius scale.
+- [ ] Layout is not the default center-hero + 3-card reflex.
+- [ ] No fake data / avatars / metrics presented as real.
+- [ ] WCAG AA contrast on text and interactive elements.
+- [ ] Motion is intentional (a page-load stagger or purposeful micro-interactions), not scattered.
+- [ ] Responsive: no horizontal body scroll at mobile widths.
+
+**Scope / stack note**: taste-skill assumes Next.js + Tailwind v4 + Motion. Our work also includes static sites and blogs (e.g. lweb02, LowyOpinion), so apply the **stack-independent** rules above (anti-tells, accessibility, copy audit, layout discipline) and skip framework-specific mandates that don't fit the target. Dashboards, data tables, and multi-step forms are out of scope for this skill — reach for purpose-built libraries there.
 
 ## ⚡ Optimization Integration
 When using this skill for critical tasks, please run it within a /native-trace context to capture performance data for self-improvement via /aioptimize.
