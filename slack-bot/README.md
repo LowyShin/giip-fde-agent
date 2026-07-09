@@ -81,6 +81,8 @@ WORKSPACE_DIR/
 
 ## Usage
 
+> **Full custom-command list:** see **[COMMANDS.md](./COMMANDS.md)** for every command the bot responds to (the same list `!help` returns), with aliases and DM-vs-channel differences. Send `@botname !help` in a channel or `!help` in a DM to get the live list.
+
 ### Channel mentions
 
 ```
