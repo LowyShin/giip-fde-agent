@@ -36,29 +36,144 @@ This agent is the executor of the [**giip FDE Box**](https://giip.littleworld.ne
 
 ---
 
-## 💻 Install the FDE Agent onto your PC
+## 💻 Install the FDE Agent onto your PC — Bring up the Slack bot first
 
-Move to your project folder and transplant the agent files (**excluding the `.git` folder**) to instantly activate the FDE Agent.
+`giip-fde-agent` is a **public repository**. So instead of working inside this repo folder directly,
+the fastest and safest start is to **get the repo → copy the needed files into a folder you'll use as your main workspace → run the Slack bot with that folder as the workspace.**
+This way, when you pull the repo again for updates, it won't mix with your own work.
 
-### Windows (PowerShell)
+Follow the steps below to reach a state where you can **assign work to the FDE Agent from Slack via `@bot <request>`**.
+
+### Prerequisites
+
+- **Node.js 18+** (`node -v`)
+- **Claude CLI** installed and logged in — the bot drives the `claude -p` CLI directly, no Anthropic API Key needed.
+  `claude --version` must work and you must have logged in once (run `claude` and authenticate). → [Claude Code](https://claude.ai/code)
+- **Slack workspace admin rights** (you must be able to install an app)
+
+---
+
+### Step 1. Get the repo & copy into your main work folder
+
+First clone the repo, create **a folder you'll use as your main workspace** (e.g. `C:\work\my-project`), and copy the agent files there (**excluding the `.git` folder**).
+
+#### Windows (PowerShell)
 ```powershell
-# Copy essential files (run inside the giip-fde-agent folder or specify a relative path)
-Copy-Item -Path ".agent", "GEMINI.md", ".cursorrules", "COPILOT_INSTRUCTIONS.md" -Destination "YOUR_PROJECT_PATH" -Recurse -Force
+# 1) Clone the repo (any location)
+git clone https://github.com/LowyShin/giip-fde-agent.git
+
+# 2) Create your main work folder (path is up to you)
+New-Item -ItemType Directory -Force "C:\work\my-project"
+
+# 3) Copy agent + slack-bot files into your work folder
+cd giip-fde-agent
+Copy-Item -Path ".agent", "GEMINI.md", ".cursorrules", "COPILOT_INSTRUCTIONS.md", "slack-bot" -Destination "C:\work\my-project" -Recurse -Force
 ```
 
-### Mac/Linux
+#### Mac/Linux
 ```bash
-# Copy essential files (rsync recommended)
-rsync -av --exclude='.git' .agent GEMINI.md .cursorrules COPILOT_INSTRUCTIONS.md YOUR_PROJECT_PATH/
+# 1) Clone the repo
+git clone https://github.com/LowyShin/giip-fde-agent.git
+
+# 2) Create your main work folder
+mkdir -p ~/work/my-project
+
+# 3) Copy agent + slack-bot files (excluding .git)
+cd giip-fde-agent
+rsync -av --exclude='.git' .agent GEMINI.md .cursorrules COPILOT_INSTRUCTIONS.md slack-bot ~/work/my-project/
 ```
+
+> From here on, do all work in the **copied work folder** (`C:\work\my-project`). Keep the original `giip-fde-agent` folder only for receiving updates.
+
+---
+
+### Step 2. Create a Slack app (Socket Mode)
+
+The bot runs in **Socket Mode** (no public URL needed). Create an app at [api.slack.com/apps](https://api.slack.com/apps) and issue the two tokens below.
+
+1. **Create New App → From scratch**
+2. Enable **Socket Mode** → generate an App-Level Token (scope `connections:write`) → copy `xapp-...`
+3. **OAuth & Permissions → Bot Token Scopes**: `chat:write`, `app_mentions:read`, `channels:history`, `channels:read`, `groups:history`, `im:history`, `im:read`, `im:write`, `users:read`
+4. Enable **Event Subscriptions** → Subscribe to bot events: `app_mention`, `message.im`, `message.channels`, `message.groups`
+5. **Install to Workspace** → after install, copy the **Bot User OAuth Token** `xoxb-...`
+
+> For a screenshot-level detailed guide, see [`slack-bot/SLACK_APP_SETUP.md`](slack-bot/SLACK_APP_SETUP.md).
+
+---
+
+### Step 3. Install slack-bot & configure `.env`
+
+Go into `slack-bot` inside your work folder, install dependencies, and fill in `.env`.
+
+```powershell
+cd C:\work\my-project\slack-bot
+npm install
+Copy-Item .env.example .env   # (Mac/Linux: cp .env.example .env)
+```
+
+Fill in at least three values in `.env`:
+
+```env
+SLACK_BOT_TOKEN=xoxb-...                 # Bot Token copied in Step 2-5
+SLACK_APP_TOKEN=xapp-...                 # App-Level Token copied in Step 2-2
+WORKSPACE_DIR=C:\work\my-project         # the work folder from Step 1 (where .agent lives)
+
+# Optional
+# SLACK_CHANNEL_IDS=C0123456789          # channel IDs the bot listens to (DMs always work if omitted)
+# BOT_NAME=My Team Bot
+# GITHUB_TOKEN=ghp_...                    # GitHub PAT (repo scope) for the !issues command
+# GITHUB_REPO=your-org/your-repo
+```
+
+> `WORKSPACE_DIR` must point to the **work folder containing `.agent/`**. The bot processes tasks and runs git push relative to this folder.
+
+---
+
+### Step 4. Run the bot
+
+```powershell
+node index.js
+```
+
+A `Socket Mode connected` log means success. To keep it always on, running it under **pm2** is recommended.
+
+```powershell
+npm install -g pm2
+pm2 start index.js --name giipclaude-bot
+pm2 save
+pm2 logs giipclaude-bot     # check logs
+```
+
+---
+
+### Step 5. Invite to a channel and use it
+
+Invite the bot to the channel you want, then mention it.
+
+```
+/invite @<bot name>
+
+@<bot name> add a dark mode toggle to the settings page
+→ The bot analyzes the request and posts a task plan (with an ID)
+
+go 20240601120000
+→ A subagent executes, runs git push, and replies with the result's GitHub URL
+```
+
+Other commands: `tasklist` (pending tasks), `cancel <taskID>`, `!issues`, or DM the bot for a direct conversation.
+See [`slack-bot/README.md`](slack-bot/README.md) for the full usage.
+
+---
 
 > [!TIP]
-> After installation, tell your AI tool (Antigravity, Cursor, etc.):
+> If you'd rather use it **directly with AI tools (Antigravity, Cursor, etc.)** without the Slack bot, the copy in Step 1 alone is enough.
+> Tell your AI tool:
 > **"You are the Orchestrator. Read GEMINI.md and analyze the current task."**
 
 > [!IMPORTANT]
-> **API Key Setup** (required for automation, not needed for manual work):
+> **Gemini API Key Setup** (required for `.agent` automation such as image generation, not needed for manual work):
 > Copy `.agent/settings.json.sample` to `settings.json` and enter your issued Gemini API Key.
+> (The Slack bot's task execution itself uses the Claude CLI, so it works even without this key.)
 
 ---
 
