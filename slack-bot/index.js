@@ -156,6 +156,71 @@ async function postLong(channel, text, thread_ts) {
   if (remaining) await postMessage(channel, remaining, thread_ts);
 }
 
+// ── スレッド全体を読み取る (conversations.replies) ───────────────────────────
+// Bot は mention された1件のメッセージしか event で受け取らないため、スレッドの
+// 前後文脈は Slack API で明示的に取得しないと Claude からは全く見えない。
+// これを行わないと「이전 대화 기록이 없습니다 / no prior conversation」等の誤答になる。
+// 必要スコープ: channels:history / groups:history（本文）, users:read（話者の実名解決/任意）。
+const _userNameCache = new Map();
+let _usersReadMissing = false; // users:read スコープ無し → users.info 呼び出しを打ち切る
+async function resolveUserName(userId) {
+  if (!userId) return null;
+  if (BOT_USER_ID && userId === BOT_USER_ID) return BOT_NAME;
+  if (_userNameCache.has(userId)) return _userNameCache.get(userId);
+  // users:read が無い環境では users.info が missing_scope になる。一度失敗したら
+  // 以降は API を叩かず ID をそのまま話者ラベルにフォールバック（同一話者は同一IDで一貫）。
+  if (_usersReadMissing) { _userNameCache.set(userId, userId); return userId; }
+  const res = await slackGet('users.info', { user: userId });
+  if (res && res.ok === false && res.error === 'missing_scope') _usersReadMissing = true;
+  const name = (res.ok && res.user)
+    ? ((res.user.profile && res.user.profile.display_name) || res.user.real_name || res.user.name || userId)
+    : userId;
+  _userNameCache.set(userId, name);
+  return name;
+}
+
+// Slack メッセージ本文を人間可読テキストへ整形（mention/tel/url/装飾記号を除去）
+function cleanThreadText(t) {
+  return (t || '')
+    .replace(/<@[A-Z0-9]+>/g, '@mention')
+    .replace(/<tel:(\d+)\|[^>]*>/g, '$1')
+    .replace(/<tel:(\d+)>/g, '$1')
+    .replace(/<(https?:\/\/[^|>]+)\|[^>]*>/g, '$1')
+    .replace(/<(https?:\/\/[^>]+)>/g, '$1')
+    .replace(/`/g, '')
+    .trim();
+}
+
+// threadTs のスレッド全体を「話者: 発言」形式のテキストで返す。取得不可なら ''。
+// 他の bot/app の発言も username 付きで含める。
+async function fetchThreadTranscript(channelId, threadTs) {
+  if (!threadTs) return '';
+  const res = await slackGet('conversations.replies', {
+    channel: channelId, ts: threadTs, limit: 200,
+  });
+  if (!res.ok || !Array.isArray(res.messages) || res.messages.length === 0) {
+    if (res && res.ok === false) console.error(`[Bot] conversations.replies error: ${res.error}`);
+    return '';
+  }
+  const lines = [];
+  for (const m of res.messages) {
+    let name = m.username || null;
+    if (!name && m.user) name = await resolveUserName(m.user);
+    if (!name) name = m.bot_id ? 'bot' : 'unknown';
+    let body = cleanThreadText(m.text);
+    if (!body && m.files && m.files.length) body = `(attachment x${m.files.length})`;
+    if (!body && m.attachments && m.attachments.length) {
+      body = cleanThreadText(m.attachments.map(a => a.text || a.fallback || '').join(' '));
+    }
+    if (!body) continue;
+    lines.push(`${name}: ${body}`);
+  }
+  let transcript = lines.join('\n');
+  const MAX = 12000; // プロンプト肥大を防ぐ上限（超過分は古い側を切る）
+  if (transcript.length > MAX) transcript = '…(older messages truncated)\n' + transcript.slice(-MAX);
+  return transcript;
+}
+
 // ── PROJECTS_ROOT 直下の git リポジトリを動的スキャン ────────────────────────
 function discoverGitRepos() {
   let entries;
@@ -600,8 +665,18 @@ async function handleSimpleGitOp({ channelId, replyTs, text, workDir = BASE_DIR 
   return false;
 }
 
-async function answerInChannel({ channelId, replyTs, text, workDir = BASE_DIR }) {
+async function answerInChannel({ channelId, replyTs, text, workDir = BASE_DIR, threadTs = null }) {
   if (await handleSimpleGitOp({ channelId, replyTs, text, workDir })) return;
+
+  // スレッド内での質問なら、スレッド全体を取得して文脈として渡す。
+  // Bot は mention された1件しか受け取らないため、これをやらないと
+  // 「スレッドを要約して」に対して「会話履歴がない」と誤答してしまう。
+  let threadTranscript = '';
+  try {
+    threadTranscript = await fetchThreadTranscript(channelId, threadTs);
+  } catch (e) {
+    console.error('[Bot] fetchThreadTranscript error:', e.message);
+  }
 
   const claims = searchKLayer(text);
   let issues = [];
@@ -627,6 +702,9 @@ IMPORTANT: Answer based on your knowledge of the project directory and K-Layer c
 MANDATORY RULE — Task Number: If the user's message contains a 14-digit task number (e.g. 20260630170105), you MUST start your response with "[task \`<task_number>\`]" on the very first line. Never omit the task number from your response.`;
   if (claims.length) prompt += '\n\nK-Layer:\n' + claims.map(c => `• ${c}`).join('\n');
   if (issues.length) prompt += '\n\nOpen Issues:\n' + issues.map(i => `• #${i.number} ${i.title}`).join('\n');
+  if (threadTranscript) {
+    prompt += `\n\n── Full current Slack thread (chronological, "speaker: message") ──\n${threadTranscript}\n── end of thread ──\n\nThe thread above is what the user means by "this thread / this conversation / this Slack message". When asked to summarize the thread, explain who said what, or check the surrounding context, you MUST answer based on the content above. Never reply that there is no conversation history.`;
+  }
   prompt += `\n\nQuestion: ${text}\nAnswer:`;
 
   try {
@@ -1299,7 +1377,7 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
       const taskContext = activeFile
         ? `\n\n[参考] タスク ${targetId} のファイルパス: ${activeFile}`
         : '';
-      await answerInChannel({ channelId, replyTs, text: text + taskContext, workDir });
+      await answerInChannel({ channelId, replyTs, text: text + taskContext, workDir, threadTs });
       return;
     }
 
@@ -1330,8 +1408,8 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
   console.log(`[Bot] intent="${intent}"${preIntent ? ' (reused)' : ''} text="${text.slice(0, 60)}"`);
 
   if (intent === 'question') {
-    // 質問・曖昧 → その場で回答
-    await answerInChannel({ channelId, replyTs, text, workDir });
+    // 質問・曖昧 → その場で回答（スレッド内なら全文脈を渡す）
+    await answerInChannel({ channelId, replyTs, text, workDir, threadTs });
     return;
   }
 

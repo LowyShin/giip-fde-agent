@@ -27,7 +27,12 @@ This bot runs in **Socket Mode** (no public Request URL needed).
 | `im:history` | Read DM messages |
 | `im:read` | Read DM info |
 | `im:write` | Send DMs |
-| `users:read` | Resolve user info |
+| `users:read` | Resolve display names (show real speaker names in thread summaries; optional) |
+
+> **About `users:read`**: thread reading/summarizing works without it — only the speaker
+> labels differ. Without it, thread-summary speakers show as Slack user IDs (e.g. `UM8P5UALQ`);
+> with it, they show real display names. Used together with `conversations.replies`
+> (thread fetch) + `users.info` (name resolution).
 
 > After adding/changing scopes you **must Reinstall** the app (see §5).
 
