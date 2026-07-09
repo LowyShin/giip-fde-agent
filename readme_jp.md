@@ -36,29 +36,144 @@
 
 ---
 
-## 💻 自分のPCに FDE Agent をインストールする
+## 💻 自分のPCに FDE Agent をインストールする — まず Slack ボットを起動する
 
-プロジェクトフォルダに移動し、エージェントファイルを移植（**`.git` フォルダは除く**）すると、即座に FDE Agent が有効になります。
+`giip-fde-agent` は **public リポジトリ**です。したがってこのリポジトリのフォルダ内で直接作業するのではなく、
+**リポジトリを取得 → あなたが作業メインで使うフォルダへ必要ファイルをコピー → そのフォルダをワークスペースとして Slack ボットを起動する**
+のが最も速く安全なスタートです。こうすればアップデート時にリポジトリを再 pull しても、あなたの作業物と混ざりません。
 
-### Windows (PowerShell)
+以下の手順どおりに進めれば、**Slack で `@ボット <依頼>` と話しかけて FDE Agent に仕事を任せられる状態**まで到達します。
+
+### 事前準備 (Prerequisites)
+
+- **Node.js 18+** (`node -v`)
+- **Claude CLI** のインストールとログイン — ボットは Anthropic API Key なしで `claude -p` CLI をそのまま駆動します。
+  `claude --version` が動作し、一度ログイン（`claude` 実行後に認証）済みである必要があります。→ [Claude Code](https://claude.ai/code)
+- **Slack ワークスペースの管理者権限**（アプリをインストールできること）
+
+---
+
+### ステップ1. リポジトリ取得 & 作業メインフォルダへコピー
+
+まずリポジトリをクローンし、**あなたが作業メインで使うフォルダ**（例: `C:\work\my-project`）を作成して、そこへエージェントファイルをコピーします（**`.git` フォルダは除く**）。
+
+#### Windows (PowerShell)
 ```powershell
-# 必須ファイルのコピー (giip-fde-agentフォルダ内で実行、または相対パスを指定)
-Copy-Item -Path ".agent", "GEMINI.md", ".cursorrules", "COPILOT_INSTRUCTIONS.md" -Destination "あなたのプロジェクトパス" -Recurse -Force
+# 1) リポジトリをクローン（任意の場所）
+git clone https://github.com/LowyShin/giip-fde-agent.git
+
+# 2) 作業メインフォルダを作成（パスは自由）
+New-Item -ItemType Directory -Force "C:\work\my-project"
+
+# 3) エージェント + slack-bot ファイルを作業フォルダへコピー
+cd giip-fde-agent
+Copy-Item -Path ".agent", "GEMINI.md", ".cursorrules", "COPILOT_INSTRUCTIONS.md", "slack-bot" -Destination "C:\work\my-project" -Recurse -Force
 ```
 
-### Mac/Linux
+#### Mac/Linux
 ```bash
-# 必須ファイルのコピー (rsync推奨)
-rsync -av --exclude='.git' .agent GEMINI.md .cursorrules COPILOT_INSTRUCTIONS.md あなたのプロジェクトパス/
+# 1) リポジトリをクローン
+git clone https://github.com/LowyShin/giip-fde-agent.git
+
+# 2) 作業メインフォルダを作成
+mkdir -p ~/work/my-project
+
+# 3) エージェント + slack-bot ファイルをコピー (.git は除く)
+cd giip-fde-agent
+rsync -av --exclude='.git' .agent GEMINI.md .cursorrules COPILOT_INSTRUCTIONS.md slack-bot ~/work/my-project/
 ```
+
+> 以降のすべての作業は **コピーした作業フォルダ**（`C:\work\my-project`）で行います。元の `giip-fde-agent` フォルダはアップデート受信用に残しておいてください。
+
+---
+
+### ステップ2. Slack アプリを作成する (Socket Mode)
+
+ボットは公開 URL が不要な **Socket Mode** で動作します。[api.slack.com/apps](https://api.slack.com/apps) でアプリを作成し、以下の2つのトークンを発行してください。
+
+1. **Create New App → From scratch** でアプリ作成
+2. **Socket Mode** を有効化 → App-Level Token を生成（スコープ `connections:write`）→ `xapp-...` をコピー
+3. **OAuth & Permissions → Bot Token Scopes**: `chat:write`, `app_mentions:read`, `channels:history`, `channels:read`, `groups:history`, `im:history`, `im:read`, `im:write`, `users:read`
+4. **Event Subscriptions** を有効化 → Subscribe to bot events: `app_mention`, `message.im`, `message.channels`, `message.groups`
+5. **Install to Workspace** → インストール後 **Bot User OAuth Token** `xoxb-...` をコピー
+
+> スクリーンショットレベルの詳細ガイドは [`slack-bot/SLACK_APP_SETUP.md`](slack-bot/SLACK_APP_SETUP.md) を参照してください。
+
+---
+
+### ステップ3. slack-bot のインストール & `.env` 設定
+
+作業フォルダ内の `slack-bot` に入り、依存関係をインストールして `.env` を埋めます。
+
+```powershell
+cd C:\work\my-project\slack-bot
+npm install
+Copy-Item .env.example .env   # (Mac/Linux: cp .env.example .env)
+```
+
+`.env` で最低3つの値を埋めれば動きます。
+
+```env
+SLACK_BOT_TOKEN=xoxb-...                 # ステップ2-5でコピーした Bot Token
+SLACK_APP_TOKEN=xapp-...                 # ステップ2-2でコピーした App-Level Token
+WORKSPACE_DIR=C:\work\my-project         # ステップ1で作った作業フォルダ (.agent がある場所)
+
+# 任意
+# SLACK_CHANNEL_IDS=C0123456789          # ボットが聞くチャンネルID（未指定でも DM は常に動作）
+# BOT_NAME=My Team Bot
+# GITHUB_TOKEN=ghp_...                    # !issues コマンド用 GitHub PAT (repo scope)
+# GITHUB_REPO=your-org/your-repo
+```
+
+> `WORKSPACE_DIR` は **`.agent/` が入っている作業フォルダ**を指す必要があります。ボットはこのフォルダを基準にタスクを処理し、git push します。
+
+---
+
+### ステップ4. ボットを起動する
+
+```powershell
+node index.js
+```
+
+`Socket Mode connected` のログが出れば成功です。常時起動させるには **pm2** での常駐を推奨します。
+
+```powershell
+npm install -g pm2
+pm2 start index.js --name giipclaude-bot
+pm2 save
+pm2 logs giipclaude-bot     # ログ確認
+```
+
+---
+
+### ステップ5. チャンネルに招待して使う
+
+ボットを使いたいチャンネルに招待してからメンションします。
+
+```
+/invite @<ボット名>
+
+@<ボット名> 設定ページにダークモードトグルを追加して
+→ ボットが依頼を分析し、タスク計画（ID付き）を投稿
+
+go 20240601120000
+→ サブエージェントが実行後 git push し、結果の GitHub URL を返信
+```
+
+その他コマンド: `tasklist`（待機タスク）, `cancel <taskID>`, `!issues`, DM で直接会話 など。
+使い方の全体は [`slack-bot/README.md`](slack-bot/README.md) にあります。
+
+---
 
 > [!TIP]
-> インストール後、AIツール（Antigravity、Cursorなど）に次のように指示してみてください：
+> Slack ボットなしで **AIツール（Antigravity、Cursorなど）で直接**使いたい場合は、ステップ1のコピーだけで十分です。
+> AIツールに次のように指示してみてください：
 > **「君はオーケストレーターだ。GEMINI.mdを読んで、現在のタスクを分析してくれ。」**
 
 > [!IMPORTANT]
-> **API Keyの設定**（自動化に必要、手動作業には不要）:
+> **Gemini API Keyの設定**（画像生成など `.agent` 自動化に必要、手動作業には不要）:
 > `.agent/settings.json.sample` を `settings.json` にコピーし、発行された Gemini API Key を入力してください。
+> （Slack ボットのタスク駆動自体は Claude CLI を使うため、このキーがなくても動きます。）
 
 ---
 
