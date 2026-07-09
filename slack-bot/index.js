@@ -221,6 +221,55 @@ async function fetchThreadTranscript(channelId, threadTs) {
   return transcript;
 }
 
+// ── Read other threads referenced by URL (Method 2) ──────────────────────────
+// Detect Slack permalinks pasted in the message → read that channel/thread via
+// conversations.replies and inject it into the prompt. This is what lets a single
+// line "summarize this URL thread" pull in another thread (same or other channel).
+//   https://<workspace>.slack.com/archives/<channel>/p<16-digit ts>[?thread_ts=..]
+//     channel   = <channel>
+//     thread_ts = the ?thread_ts= value if present (thread root), else p<ts> → 10digits.6digits
+// Requires: the bot is a member of that channel AND has channels:history (public) /
+// groups:history (private) scope; otherwise the read fails gracefully.
+const SLACK_ARCHIVE_RE = /https?:\/\/[a-z0-9][a-z0-9.-]*\.slack\.com\/archives\/([A-Z0-9]+)\/p(\d{10})(\d{6})(?:\?\S*?thread_ts=(\d+\.\d+))?/gi;
+
+function parseSlackArchiveUrls(text) {
+  const out = [];
+  const seen = new Set();
+  SLACK_ARCHIVE_RE.lastIndex = 0;
+  let m;
+  while ((m = SLACK_ARCHIVE_RE.exec(text)) !== null) {
+    const channel = m[1];
+    // Reply link (?thread_ts=..) → use the root ts; otherwise use p<ts>.
+    const ts = m[4] ? m[4] : `${m[2]}.${m[3]}`;
+    const key = `${channel}:${ts}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ channel, ts, url: m[0] });
+  }
+  return out;
+}
+
+// Read every referenced URL and return a "▼ Referenced thread …" block string, or ''.
+// Skips the very thread being answered (already provided as current-thread context).
+async function fetchReferencedThreads(text, currentChannelId, currentThreadTs) {
+  const refs = parseSlackArchiveUrls(text);
+  if (!refs.length) return '';
+  const blocks = [];
+  for (const ref of refs) {
+    if (ref.channel === currentChannelId && currentThreadTs && ref.ts === currentThreadTs) continue;
+    let transcript = '';
+    try {
+      transcript = await fetchThreadTranscript(ref.channel, ref.ts);
+    } catch (e) {
+      console.error('[Bot] fetchReferencedThreads error:', e.message);
+    }
+    blocks.push(transcript
+      ? `▼ Referenced thread (${ref.url})\n${transcript}`
+      : `▼ Referenced thread (${ref.url})\n(could not read — the bot may not be a member of that channel, or lacks channels:history/groups:history scope.)`);
+  }
+  return blocks.join('\n\n');
+}
+
 // ── PROJECTS_ROOT 直下の git リポジトリを動的スキャン ────────────────────────
 function discoverGitRepos() {
   let entries;
@@ -678,6 +727,14 @@ async function answerInChannel({ channelId, replyTs, text, workDir = BASE_DIR, t
     console.error('[Bot] fetchThreadTranscript error:', e.message);
   }
 
+  // Slack permalinks pasted in the message → read those threads too (Method 2)
+  let referencedThreads = '';
+  try {
+    referencedThreads = await fetchReferencedThreads(text, channelId, threadTs);
+  } catch (e) {
+    console.error('[Bot] fetchReferencedThreads error:', e.message);
+  }
+
   const claims = searchKLayer(text);
   let issues = [];
   if (['issue', 'bug', 'イシュー', 'バグ', 'task', 'github', '#'].some(k => text.toLowerCase().includes(k))) {
@@ -704,6 +761,9 @@ MANDATORY RULE — Task Number: If the user's message contains a 14-digit task n
   if (issues.length) prompt += '\n\nOpen Issues:\n' + issues.map(i => `• #${i.number} ${i.title}`).join('\n');
   if (threadTranscript) {
     prompt += `\n\n── Full current Slack thread (chronological, "speaker: message") ──\n${threadTranscript}\n── end of thread ──\n\nThe thread above is what the user means by "this thread / this conversation / this Slack message". When asked to summarize the thread, explain who said what, or check the surrounding context, you MUST answer based on the content above. Never reply that there is no conversation history.`;
+  }
+  if (referencedThreads) {
+    prompt += `\n\n── Other Slack thread(s) the user referenced by URL ──\n${referencedThreads}\n── end of referenced thread(s) ──\n\nIf the user pasted a Slack link, the block above is that link's thread content. Base any summary, comparison, or answer about it strictly on this content.`;
   }
   prompt += `\n\nQuestion: ${text}\nAnswer:`;
 

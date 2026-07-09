@@ -34,6 +34,13 @@ This bot runs in **Socket Mode** (no public Request URL needed).
 > with it, they show real display names. Used together with `conversations.replies`
 > (thread fetch) + `users.info` (name resolution).
 
+> **About reading other threads by URL** (Method 2): if a message contains a Slack
+> permalink (`https://<ws>.slack.com/archives/<channel>/p<ts>`), the bot reads that
+> channel/thread via `conversations.replies` and adds it to the answer's context.
+> It uses the same `channels:history` / `groups:history` scopes above (no extra scope),
+> but **the bot must be a member of the referenced channel** (`/invite @botname`).
+> If it is not a member or lacks the scope, it says "could not read" and continues.
+
 > After adding/changing scopes you **must Reinstall** the app (see §5).
 
 ---
