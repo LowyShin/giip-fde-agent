@@ -7,6 +7,7 @@
 [![한국어](https://img.shields.io/badge/lang-한국어-lightgrey.svg)](README.md)
 [![日本語](https://img.shields.io/badge/lang-日本語-lightgrey.svg)](readme_jp.md)
 [![English](https://img.shields.io/badge/lang-English-0A66C2.svg)](readme_en.md)
+[![中文](https://img.shields.io/badge/lang-中文-lightgrey.svg)](readme_zh.md)
 
 > [!TIP]
 > If you have downloaded this repository and find that documentation in your language is missing (only Korean is available), please ask your AI assistant (Antigravity, Cursor, etc.) to translate it for you.
@@ -25,6 +26,9 @@ A **Forward Deployed Engineer (FDE)** is an engineer who, instead of supporting 
 **giip FDE Agent** brings this concept to life as an AI agent. Instead of people, an **AI engineering team lives on your PC (the "site")** — transplanted via a single `.agent` folder — and instantly deploys a **"thinking agent team"** that plans (Plan), implements (Do), verifies (Check), and self-optimizes (Act). Your data and context never leave your local machine.
 
 This agent is the executor of the [**giip FDE Box**](https://giip.littleworld.net/docs/plans/AIFDEOpsProposalen.html), which packages giip's FDE capability — AI-driven full-cycle development and enterprise operations — into one box. From infrastructure ops to AI-native development, it runs the entire enterprise-ops lifecycle in your local environment.
+
+> 💡 **No installation or setup knowledge required.** Just apply for the [**giip FDE Box**](https://giip.littleworld.net/docs/plans/AIFDEOpsProposalen.html)
+> and our experts will handle the installation and integration of giip FDE Agent for you — so you can start using it freely right away.
 
 ---
 
@@ -267,7 +271,7 @@ The FDE Agent consolidates the essence of proven frameworks. For each capability
 ## 🌐 GIIP Enterprise & Support
 
 Need professional server setup or AI-based infrastructure management?
-- **giip FDE Box proposal**: [한국어](https://giip.littleworld.net/docs/plans/AIFDEOpsProposalko.html) · [日本語](https://giip.littleworld.net/docs/plans/AIFDEOpsProposalja.html) · [English](https://giip.littleworld.net/docs/plans/AIFDEOpsProposalen.html)
+- **giip FDE Box proposal**: [한국어](https://giip.littleworld.net/docs/plans/AIFDEOpsProposalko.html) · [日本語](https://giip.littleworld.net/docs/plans/AIFDEOpsProposalja.html) · [English](https://giip.littleworld.net/docs/plans/AIFDEOpsProposalen.html) · [中文](https://giip.littleworld.net/docs/plans/AIFDEOpsProposalzh.html)
 - **Official Website**: [giip.littleworld.net](https://giip.littleworld.net/)
 - **Contact Email**: contact@littleworld.net
 

@@ -7,6 +7,7 @@
 [![한국어](https://img.shields.io/badge/lang-한국어-0A66C2.svg)](README.md)
 [![日本語](https://img.shields.io/badge/lang-日本語-lightgrey.svg)](readme_jp.md)
 [![English](https://img.shields.io/badge/lang-English-lightgrey.svg)](readme_en.md)
+[![中文](https://img.shields.io/badge/lang-中文-lightgrey.svg)](readme_zh.md)
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Type: Forward Deployed Engineer](https://img.shields.io/badge/Type-Forward%20Deployed%20Engineer-8A2BE2.svg)](https://en.wikipedia.org/wiki/Forward_Deployed_Engineer)
@@ -28,6 +29,9 @@
 이 에이전트는 giip의 FDE 역량 — AI 기반 풀사이클 개발과 엔터프라이즈 운영 — 을 하나로 묶어 제공하는
 [**giip FDE Box**](https://giip.littleworld.net/docs/plans/AIFDEOpsProposalko.html)의 실행 주체입니다.
 인프라 운영부터 AI 네이티브 개발까지, 엔터프라이즈 운영 전 주기를 여러분의 로컬 환경에서 수행합니다.
+
+> 💡 **설치·설정 지식이 전혀 없어도 괜찮습니다.** [**giip FDE Box**](https://giip.littleworld.net/docs/plans/AIFDEOpsProposalko.html)를
+> 신청하기만 하면 전문가가 giip FDE Agent의 설치·연동을 대신 해드리고, 여러분은 곧바로 자유롭게 사용할 수 있습니다.
 
 ---
 
@@ -271,7 +275,7 @@ FDE Agent에는 검증된 프레임워크의 정수가 통합되어 있습니다
 ## 🌐 GIIP Enterprise & Support
 
 전문적인 서버 구축이나 AI 기반 인프라 관리가 필요하신가요?
-- **giip FDE Box 제안서**: [한국어](https://giip.littleworld.net/docs/plans/AIFDEOpsProposalko.html) · [日本語](https://giip.littleworld.net/docs/plans/AIFDEOpsProposalja.html) · [English](https://giip.littleworld.net/docs/plans/AIFDEOpsProposalen.html)
+- **giip FDE Box 제안서**: [한국어](https://giip.littleworld.net/docs/plans/AIFDEOpsProposalko.html) · [日本語](https://giip.littleworld.net/docs/plans/AIFDEOpsProposalja.html) · [English](https://giip.littleworld.net/docs/plans/AIFDEOpsProposalen.html) · [中文](https://giip.littleworld.net/docs/plans/AIFDEOpsProposalzh.html)
 - **공식 홈페이지**: [giip.littleworld.net](https://giip.littleworld.net/)
 - **문의 메일**: contact@littleworld.net
 
