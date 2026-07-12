@@ -790,6 +790,13 @@ async function handleDM({ channelId, ts, threadTs, text, conversations, workDir 
   const replyTs = threadTs || undefined;
   const cmd = text.trim().toLowerCase();
 
+  // ── giip 커맨드 (giip api|issue|account) — DM 은 특히 account set(SK) 에 안전 ──
+  try {
+    const { handleGiipCommand } = require('./giip-commands');
+    const gc = await handleGiipCommand(text.trim(), channelId);
+    if (gc.handled) { await postMessage(channelId, gc.text, replyTs); return; }
+  } catch (e) { console.error('[Bot] giip command error:', e.message); }
+
   if (cmd === '!help') {
     await postMessage(channelId, [
       '*giipclaude AI — DM コマンド一覧*',
@@ -797,6 +804,17 @@ async function handleDM({ channelId, ts, threadTs, text, conversations, workDir 
       '• `!issues refresh` — Issue 強制更新',
       '• `!klayer <キーワード>` — K-Layer 知識検索',
       '• `!reset` — 会話履歴リセット',
+      '',
+      '*giip issue 連携:*',
+      '• `giip account set <login_id> <sk> [csn]` — チャンネル連携（DM推奨・SK含むので channel では避ける）',
+      '• `giip account show` — 現在の連携アカウント表示',
+      '• `giip issue list [status]` — イシュー一覧',
+      '• `giip issue get <isn>` — イシュー詳細',
+      '• `giip issue new "<title>"` — イシュー新規作成',
+      '• `giip issue done|review|progress <isn>` — ステータス変更',
+      '• `giip issue comment <isn> <text>` — コメント追加',
+      '• `giip api <Verb> [jsondata]` — 汎用 giip API 呼び出し',
+      '',
       'チャンネルで `@ボット名 要求内容` と書くと Task ワークフローが始まります。',
     ].join('\n'), replyTs);
     return;
@@ -945,6 +963,13 @@ async function startTaskExecution(pendingKey, pendingTask, channelId, replyTs, t
         );
         await postLong(channelId, checkAllRepoStatus(), replyTs);
       }
+
+      // ── giip issue 통일(rule 40): 완료 시 코멘트 + REVIEW 전이(best-effort). ──
+      try {
+        const gt = require('./giip-task');
+        const cmt = githubUrl ? `✅ 작업 완료\n결과: ${githubUrl}` : '✅ 작업 완료(로컬, git push 실패)';
+        await gt.maybeFinish(channelId, pendingTask.isn, 'REVIEW', cmt);
+      } catch (e) { console.error('[Bot] giip finish 훅 오류:', e.message); }
     },
     onError: async (err, resultFile) => {
       const ts2 = loadJSON(TASK_STATE_FILE, {});
@@ -960,6 +985,12 @@ async function startTaskExecution(pendingKey, pendingTask, channelId, replyTs, t
         `❌ *작업 에러* (\`${pendingTask.taskId}\`): ${err.message}${githubUrl ? `\n📄 에러 로그: ${githubUrl}` : ''}`,
         replyTs
       );
+
+      // ── giip issue 통일(rule 40): 에러 시 코멘트 + REVIEW 전이(best-effort). ──
+      try {
+        const gt = require('./giip-task');
+        await gt.maybeFinish(channelId, pendingTask.isn, 'REVIEW', `❌ 작업 에러: ${err.message}${githubUrl ? `\n로그: ${githubUrl}` : ''}`);
+      } catch (e) { console.error('[Bot] giip finish 훅 오류:', e.message); }
     },
   }, workDir);
 }
@@ -973,6 +1004,13 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
   // バッククォート・全角スペース等を除去してからコマンド判定
   const cmd = text.trim().replace(/`/g, '').replace(/\s+/g, ' ').toLowerCase();
   console.log(`[Bot] handleChannelMention cmd="${cmd}" convKey="${convKey}"`);
+
+  // ── giip 커맨드 (giip api|issue|account) ──
+  try {
+    const { handleGiipCommand } = require('./giip-commands');
+    const gc = await handleGiipCommand(text.trim(), channelId);
+    if (gc.handled) { await postMessage(channelId, gc.text, replyTs); return; }
+  } catch (e) { console.error('[Bot] giip command error:', e.message); }
 
   // ── 내장 명령어 ─────────────────────────────────────────────────────────────
   if (cmd === '!help') {
@@ -1002,6 +1040,16 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
       '    ‣ `<プロジェクト> <名> 실행` / `<プロジェクト> /<名>` / `<プロジェクト> <名>`',
       '    例) `giipprj wf errorproc` = `giipprj errorproc 실행` = `giipprj /errorproc` = `giipprj workflow errorproc`',
       '    ※ 「<名> 실행」「<名>」の形は実在ワークフロー名と完全一致した時のみ実行（誤爆防止）',
+      '',
+      '*giip issue 連携:*',
+      '• `giip account set <login_id> <sk> [csn]` — チャンネル連携（SK含むので DM 推奨）',
+      '• `giip account show` — 現在の連携アカウント表示',
+      '• `giip issue list [status]` — イシュー一覧',
+      '• `giip issue get <isn>` — イシュー詳細',
+      '• `giip issue new "<title>"` — イシュー新規作成',
+      '• `giip issue done|review|progress <isn>` — ステータス変更',
+      '• `giip issue comment <isn> <text>` — コメント追加',
+      '• `giip api <Verb> [jsondata]` — 汎用 giip API 呼び出し',
       '',
       '*情報:*',
       '• `!issues` — GitHub Issue 一覧',
@@ -1513,8 +1561,17 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
   saveJSON(TASK_STATE_FILE, taskState);
   tm.addToTasklist(taskId, taskTitle, taskSummary, taskRequestText);
 
+  // ── giip issue 통일(rule 40): 연결 시 issue 우선 등록(IN_PROGRESS). 실패/미연결 시 로컬 태스크만. ──
+  let giipIsn = null;
+  try {
+    const gt = require('./giip-task');
+    giipIsn = await gt.maybeCreateIssue(channelId, taskTitle, planContent);
+    if (giipIsn) { taskState.pending[convKey].isn = giipIsn; saveJSON(TASK_STATE_FILE, taskState); }
+  } catch (e) { console.error('[Bot] giip issue 등록 훅 오류:', e.message); }
+  const isnLine = giipIsn ? `\n🔗 giip issue #${giipIsn} (IN_PROGRESS)` : '';
+
   await postLong(channelId,
-    `📋 *Task 分析完了* (\`${taskId}\`)${closedNotice}\n\n${planContent}\n\n---\n*実行: \`go ${taskId}\` / キャンセル: \`cancel ${taskId}\`*`,
+    `📋 *Task 分析完了* (\`${taskId}\`)${isnLine}${closedNotice}\n\n${planContent}\n\n---\n*実行: \`go ${taskId}\` / キャンセル: \`cancel ${taskId}\`*`,
     replyTs
   );
 }

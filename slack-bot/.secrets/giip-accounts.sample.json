@@ -1,0 +1,15 @@
+{
+  "GIIP_API_BASE": "https://giipfaw.azurewebsites.net/api",
+  "default": {
+    "login_id": "YOUR_GIIP_LOGIN_ID",
+    "sk": "YOUR_GIIP_SECRET_KEY",
+    "csn": 0
+  },
+  "channels": {
+    "C0XXXXXXXXX": {
+      "login_id": "YOUR_GIIP_LOGIN_ID",
+      "sk": "YOUR_GIIP_SECRET_KEY",
+      "csn": 0
+    }
+  }
+}
