@@ -21,50 +21,13 @@ const { getIssues, refreshIssues, getCacheAge } = require('./github-issues');
 const tm = require('./task-manager');
 const { SocketModeClient } = require('@slack/socket-mode');
 
-// ── 設定 ─────────────────────────────────────────────────────────────────────
-const BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
-const CHANNEL_IDS = (process.env.SLACK_CHANNEL_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
-const SLACK_APP_TOKEN = process.env.SLACK_APP_TOKEN;
-
-const BOT_NAME        = process.env.BOT_NAME || 'giipclaude Bot'; // Slack 표시용 봇 이름 (BOT_NAME 환경변수로 변경 가능)
-// WORKSPACE_DIR: 기본 작업 폴더(.agent 위치 / git push 대상). 미설정 시 slack-bot 상위 폴더로 자동 결정.
-const BASE_DIR        = process.env.WORKSPACE_DIR ? path.resolve(process.env.WORKSPACE_DIR) : path.join(__dirname, '..');
-// PROJECTS_ROOT: 여러 프로젝트의 상위 폴더(프로젝트 프리픽스 전환용). 미설정 시 BASE_DIR의 상위 폴더.
-const PROJECTS_ROOT   = process.env.PROJECTS_ROOT || path.dirname(BASE_DIR);
-const AGENT_DIR       = path.join(BASE_DIR, '.agent');           // 기본 .agent (BASE_DIR/.agent)
-const HISTORY_FILE    = path.join(__dirname, '.conversations.json');
-const TASK_STATE_FILE = path.join(__dirname, '.task-state.json');
-const BOT_THREADS_FILE = path.join(__dirname, '.bot-threads.json');
-
-let BOT_USER_ID = null;
-
-// ── プロジェクトの .agent ディレクトリを解決 ─────────────────────────────────
-// workDir 内に .agent があればそれを使い、なければ BASE_DIR/.agent にフォールバック
-function getAgentDir(workDir) {
-  const d = path.join(workDir, '.agent');
-  return fs.existsSync(d) ? d : AGENT_DIR;
-}
-
-// ── プロジェクトプレフィックス検出 ────────────────────────────────────────────
-// メッセージの先頭がプロジェクト名（PROJECTS_ROOT 直下のフォルダ名）なら
-// そのフォルダを workDir として返し、プレフィックスを除去した本文を返す
-function parseProjectPrefix(text) {
-  const words = text.trim().split(/\s+/);
-  if (words.length < 1) return { workDir: BASE_DIR, cleanText: text };
-  // 助詞・接尾語を除去してプロジェクト名を抽出 (giipprj에서 → giipprj)
-  const raw = words[0];
-  const candidate = raw.toLowerCase().replace(/(에서|에서는|에서도|에서만|에게서|한테서|의|에|는|이|가|를|을|로|으로|와|과|도|만|까지|부터|처럼|라고|이라고|에서라도|에도)$/u, '');
-  const projectDir = path.join(PROJECTS_ROOT, candidate);
-  try {
-    if (fs.statSync(projectDir).isDirectory()) {
-      const suffix = raw.slice(candidate.length); // 除去した助詞部分
-      const rest = suffix ? [suffix, ...words.slice(1)] : words.slice(1);
-      console.log(`[Bot] プロジェクト切り替え: ${projectDir}`);
-      return { workDir: projectDir, cleanText: rest.join(' ').trim() || text };
-    }
-  } catch {}
-  return { workDir: BASE_DIR, cleanText: text };
-}
+// ── 設定 (config.js に切り出し) ───────────────────────────────────────────────
+const config = require('./config');
+const {
+  BOT_TOKEN, CHANNEL_IDS, SLACK_APP_TOKEN, BOT_NAME,
+  BASE_DIR, PROJECTS_ROOT, AGENT_DIR, HISTORY_FILE, TASK_STATE_FILE, BOT_THREADS_FILE,
+  getAgentDir, parseProjectPrefix,
+} = config;
 
 // ── JSON I/O ─────────────────────────────────────────────────────────────────
 function loadJSON(file, def) {
@@ -165,7 +128,7 @@ const _userNameCache = new Map();
 let _usersReadMissing = false; // users:read スコープ無し → users.info 呼び出しを打ち切る
 async function resolveUserName(userId) {
   if (!userId) return null;
-  if (BOT_USER_ID && userId === BOT_USER_ID) return BOT_NAME;
+  if (config.getBotUserId() && userId === config.getBotUserId()) return BOT_NAME;
   if (_userNameCache.has(userId)) return _userNameCache.get(userId);
   // users:read が無い環境では users.info が missing_scope になる。一度失敗したら
   // 以降は API を叩かず ID をそのまま話者ラベルにフォールバック（同一話者は同一IDで一貫）。
@@ -1587,7 +1550,7 @@ function isActiveTaskThread(channelId, threadTs) {
 // ── メッセージ1件を処理 ───────────────────────────────────────────────────────
 async function processMessage({ channelId, msg, isDM, conversations, threadTs }) {
   const effectiveThreadTs = threadTs || msg.thread_ts || null;
-  const mentionsBot = BOT_USER_ID && msg.text.includes(`<@${BOT_USER_ID}>`);
+  const mentionsBot = config.getBotUserId() && msg.text.includes(`<@${config.getBotUserId()}>`);
   const isTaskReply = isActiveTaskThread(channelId, effectiveThreadTs);
   const isEngagedThread = isBotEngagedThread(channelId, effectiveThreadTs);
 
@@ -1699,10 +1662,10 @@ async function main() {
 
   const auth = await slackGet('auth.test');
   if (!auth.ok) { console.error('[Bot] SLACK_BOT_TOKEN 無効:', auth.error); process.exit(1); }
-  BOT_USER_ID = auth.user_id;
+  config.setBotUserId(auth.user_id);
 
   console.log('[giipclaude Bot] 起動 — Socket Mode');
-  console.log(`[Bot] ID: ${BOT_USER_ID} (${auth.user}) PID: ${process.pid}`);
+  console.log(`[Bot] ID: ${config.getBotUserId()} (${auth.user}) PID: ${process.pid}`);
   console.log(`[Bot] 監視チャンネル: ${CHANNEL_IDS.join(', ') || '(DM のみ)'}`);
 
   killDuplicateBots();
@@ -1732,7 +1695,7 @@ async function main() {
   socketClient.on('message', async ({ event, ack }) => {
     await safeAck(ack);
     const isDM = event.channel_type === 'im';
-    const mentionsBot = BOT_USER_ID && (event.text || '').includes(`<@${BOT_USER_ID}>`);
+    const mentionsBot = config.getBotUserId() && (event.text || '').includes(`<@${config.getBotUserId()}>`);
     if (!isDM && mentionsBot) return; // app_mention ハンドラで処理済み — 重複スキップ
     console.log('[Bot] message:', event.channel_type, (event.text || '').slice(0, 60));
     await onSlackMessage(event, conversations);
