@@ -29,33 +29,8 @@ const {
   getAgentDir, parseProjectPrefix,
 } = config;
 
-// ── JSON I/O ─────────────────────────────────────────────────────────────────
-function loadJSON(file, def) {
-  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return def; }
-}
-function saveJSON(file, data) {
-  try { fs.writeFileSync(file, JSON.stringify(data, null, 2)); } catch {}
-}
-
-// ── ボットが返答したスレッドを追跡 ───────────────────────────────────────────
-function markThreadEngaged(channelId, threadTs) {
-  if (!threadTs) return;
-  const threads = loadJSON(BOT_THREADS_FILE, {});
-  const key = `${channelId}:${threadTs}`;
-  threads[key] = Date.now();
-  // 7日以上前のエントリを削除
-  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
-  for (const k of Object.keys(threads)) {
-    if (threads[k] < cutoff) delete threads[k];
-  }
-  saveJSON(BOT_THREADS_FILE, threads);
-}
-
-function isBotEngagedThread(channelId, threadTs) {
-  if (!threadTs) return false;
-  const threads = loadJSON(BOT_THREADS_FILE, {});
-  return !!threads[`${channelId}:${threadTs}`];
-}
+// ── JSON I/O・スレッド追跡 (state.js に切り出し) ─────────────────────────────
+const { loadJSON, saveJSON, markThreadEngaged, isBotEngagedThread } = require('./state');
 
 // ── Slack API ─────────────────────────────────────────────────────────────────
 function slackGet(method, params = {}) {
