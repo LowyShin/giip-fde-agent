@@ -2,8 +2,8 @@
  * giip-api.js — giip API 클라이언트(의존성 없음, 내장 https).
  * 설계: docs/DESIGN_slackbot_giip_issue_integration.md. 규칙: .agent/rules/39(AK 도출),40(생성 우선).
  *
- * 인증: 계정(login_id+sk) → AdminGetAK(giipApi 디스패처) 로 최신 AK 취득·캐시(20h, 401 시 강제 갱신).
- * 절대 사용자에게 AK 를 요청하지 않는다(rule 39). .env/.secrets 의 login_id+SK 로 도출.
+ * 인증: 전용 이슈 엔드포인트는 SK 를 그대로 x-api-key 로 쓴다(익명, 실측 REPORT_giip_issue_api_test_20260708).
+ * AK 도출(AdminGetAK) 안 함 — SK 를 AT(token) 자리에 넣으면 401(SK≠AT 혼동 금지, rule 39).
  */
 const https = require('https');
 const { URL } = require('url');
@@ -47,31 +47,14 @@ function form(params) {
     .join('&');
 }
 
-/** AdminGetAK: 계정(login_id+sk) → 최신 AK. giipApi 디스패처(text=AdminGetAK). */
-async function getAK(account, { force = false } = {}) {
-  const key = account.login_id;
-  const cached = akCache.get(key);
-  if (!force && cached && Date.now() - cached.fetchedAt < AK_TTL_MS) return cached;
-
-  const base = account.apiBase || accounts.apiBase();
-  const bodyStr = form({
-    text: 'AdminGetAK',
-    token: account.sk,
-    usertoken: account.sk,
-    jsondata: JSON.stringify({ uloginid: account.login_id }),
-  });
-  const res = await request('POST', `${base}/giipApi`, {
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: bodyStr,
-  });
-  const rows = Array.isArray(res.body) ? res.body : res.body ? [res.body] : [];
-  const row = rows[0] || {};
-  if (String(row.RstVal) !== '200' || !row.ak) {
-    throw new Error(`AdminGetAK 실패: ${row.Proc_MSG || res.raw || res.status}`);
-  }
-  const entry = { ak: row.ak, csn: row.csn, usn: row.usn, fetchedAt: Date.now() };
-  akCache.set(key, entry);
-  return entry;
+/**
+ * 인증 토큰 취득. rule 39 + 실측(REPORT_giip_issue_api_test_20260708):
+ * 전용 이슈 엔드포인트(/api/giipIssues 등)는 **SK 를 그대로 x-api-key 로** 인증한다(익명).
+ * AK 도출(AdminGetAK)은 불필요하며, SK 를 AdminGetAK 의 token(=AT 자리)으로 넣으면 401 이 난다
+ * (SK≠AT 혼동 금지). 따라서 네트워크 호출 없이 SK 를 그대로 반환한다.
+ */
+async function getAK(account) {
+  return { ak: account.sk, csn: account.csn ?? null, usn: null, fetchedAt: Date.now() };
 }
 
 /** giipIssues(전용함수) 호출. x-api-key=AK, 401 시 1회 강제 갱신 재시도. */
@@ -150,11 +133,11 @@ async function issueComment(account, isn, content) {
 /** 범용: 임의 giip API 를 giipApi 디스패처로 호출(text=Verb). */
 async function apiCall(account, verb, jsondata = null) {
   const base = account.apiBase || accounts.apiBase();
-  const ak = (await getAK(account)).ak;
-  const params = { text: verb, token: ak, usertoken: ak };
+  // SK 기반 디스패처(giipApiSk2). SK 를 x-api-key + token 으로 직접 인증(AK 도출 안 함).
+  const params = { text: verb, token: account.sk, usertoken: account.sk };
   if (jsondata) params.jsondata = typeof jsondata === 'string' ? jsondata : JSON.stringify(jsondata);
-  const res = await request('POST', `${base}/giipApi`, {
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  const res = await request('POST', `${base}/giipApiSk2`, {
+    headers: { 'x-api-key': account.sk, 'Content-Type': 'application/x-www-form-urlencoded' },
     body: form(params),
   });
   return res.body;
