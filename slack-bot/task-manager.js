@@ -316,6 +316,22 @@ function completeTaskFile(taskId, resultContent) {
   return destPath;
 }
 
+// go <番号> の後ろに付いた「追加指示」を Task ファイル末尾に追記する。
+//   Task ファイルの mutation は本モジュールに集約する(handlers は fs で直接書かず tm 経由)。
+//   note が空、または対象ファイルが無ければ何もせず false を返す。
+function appendTaskNote(taskId, note) {
+  if (!note) return false;
+  const candidates = [
+    path.join(TASKS_DIR, `${taskId}.md`),
+    path.join(TASKS_DIR, `task-${taskId}.md`),
+  ];
+  const taskFile = candidates.find(f => fs.existsSync(f));
+  if (!taskFile) return false;
+  fs.appendFileSync(taskFile, `\n\n## 추가 지시 (Slack, ${new Date().toISOString()})\n${note}\n`);
+  console.log(`[TaskManager] task ${taskId}: 追加指示 ${note.length}字 追記`);
+  return true;
+}
+
 // ── Phase 3: Git commit + push → GitHub URL 반환 ─────────────────────────────
 // doneTaskFile が指定された場合はそのファイルを優先的に stage し URL を返す
 function gitPushResult(taskId, taskTitle, resultFile, doneTaskFile = null) {
@@ -493,6 +509,7 @@ module.exports = {
   extractSummary,
   startExecution,
   completeTaskFile,
+  appendTaskNote,
   gitPushResult,
   addToTasklist,
   updateTasklistEntry,

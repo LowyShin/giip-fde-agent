@@ -702,19 +702,11 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
   const goWithId = cmd.match(/^(?:go|start|실행|시작|진행|実行|開始)\s+(\d{14})\b/);
   if (goWithId) {
     const targetId = goWithId[1];
-    // 追加指示は cmd(小文字化・空白圧縮済)ではなく原文 text から抽出（大小文字/改行/한글 保持）
+    // go <番号> の後ろに続くテキスト = その Task への「追加指示」。原文 text から抽出し
+    //   (大小文字/改行/한글 保持)、Task ファイルへの追記は tm.appendTaskNote に委譲する。
     const extraNote = text.trim()
       .replace(/^(?:go|start|실행|시작|진행|実行|開始)\s+\d{14}[ \t]*/i, '')
       .trim();
-    // 追加指示を Task .md に追記して、サブエージェントが実行時に必ず読むようにする
-    const appendNoteToTaskFile = (tf) => {
-      if (!extraNote || !tf) return false;
-      try {
-        fs.appendFileSync(tf, `\n\n## 추가 지시 (Slack, ${new Date().toISOString()})\n${extraNote}\n`);
-        console.log(`[Bot] go ${targetId}: 追加指示 ${extraNote.length}字 を ${tf} に追記`);
-        return true;
-      } catch (e) { console.error('[Bot] append note error:', e.message); return false; }
-    };
     const entry = Object.entries(taskState.pending || {}).find(([, t]) => t.taskId === targetId);
     if (!entry) {
       const runEntry = Object.entries(taskState.running || {}).find(([, t]) => t.taskId === targetId);
@@ -731,7 +723,7 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
         const pendingKeyNew = `${channelId}:${replyTs}`;
         taskState.pending[pendingKeyNew] = { taskId: targetId, taskTitle, taskFile: taskFileFallback, requestText: '' };
         saveJSON(TASK_STATE_FILE, taskState);
-        if (appendNoteToTaskFile(taskFileFallback)) {
+        if (extraNote && tm.appendTaskNote(targetId, extraNote)) {
           await postMessage(channelId, `📎 追加指示 (${extraNote.length}字) を Task \`${targetId}\` に反映しました。`, replyTs);
         }
         await startTaskExecution(pendingKeyNew, taskState.pending[pendingKeyNew], channelId, replyTs, taskState, workDir);
@@ -749,7 +741,7 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
       return;
     }
     const [pendingKey, pendingTask] = entry;
-    if (appendNoteToTaskFile(pendingTask.taskFile)) {
+    if (extraNote && tm.appendTaskNote(targetId, extraNote)) {
       await postMessage(channelId, `📎 追加指示 (${extraNote.length}字) を Task \`${targetId}\` に反映しました。`, replyTs);
     }
     await startTaskExecution(pendingKey, pendingTask, channelId, replyTs, taskState, workDir);
