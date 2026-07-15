@@ -696,10 +696,17 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
     return;
   }
 
-  // ── go <Task番号> — スレッド不問で指定 Task を実行 ──────────────────────
-  const goWithId = cmd.match(/^(?:go|start|실행|시작|진행|実行|開始)\s+(\d{14})$/);
+  // ── go <Task番号> [追加指示] — スレッド不問で指定 Task を実行 ──────────────
+  //   末尾に $ を張らず、`go <番号>` の後ろに続くテキストを「追加指示」として許容する。
+  //   （旧: $ 固定 → コメント行を付けると bare go に落ちて Task 一覧が出るバグ）
+  const goWithId = cmd.match(/^(?:go|start|실행|시작|진행|実行|開始)\s+(\d{14})\b/);
   if (goWithId) {
     const targetId = goWithId[1];
+    // go <番号> の後ろに続くテキスト = その Task への「追加指示」。原文 text から抽出し
+    //   (大小文字/改行/한글 保持)、Task ファイルへの追記は tm.appendTaskNote に委譲する。
+    const extraNote = text.trim()
+      .replace(/^(?:go|start|실행|시작|진행|実行|開始)\s+\d{14}[ \t]*/i, '')
+      .trim();
     const entry = Object.entries(taskState.pending || {}).find(([, t]) => t.taskId === targetId);
     if (!entry) {
       const runEntry = Object.entries(taskState.running || {}).find(([, t]) => t.taskId === targetId);
@@ -716,6 +723,9 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
         const pendingKeyNew = `${channelId}:${replyTs}`;
         taskState.pending[pendingKeyNew] = { taskId: targetId, taskTitle, taskFile: taskFileFallback, requestText: '' };
         saveJSON(TASK_STATE_FILE, taskState);
+        if (extraNote && tm.appendTaskNote(targetId, extraNote)) {
+          await postMessage(channelId, `📎 追加指示 (${extraNote.length}字) を Task \`${targetId}\` に反映しました。`, replyTs);
+        }
         await startTaskExecution(pendingKeyNew, taskState.pending[pendingKeyNew], channelId, replyTs, taskState, workDir);
       } else {
         const doneFile   = path.join(AGENT_DIR, 'tasks', 'done',   `${targetId}.md`);
@@ -731,6 +741,9 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
       return;
     }
     const [pendingKey, pendingTask] = entry;
+    if (extraNote && tm.appendTaskNote(targetId, extraNote)) {
+      await postMessage(channelId, `📎 追加指示 (${extraNote.length}字) を Task \`${targetId}\` に反映しました。`, replyTs);
+    }
     await startTaskExecution(pendingKey, pendingTask, channelId, replyTs, taskState, workDir);
     return;
   }
