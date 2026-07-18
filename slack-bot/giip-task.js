@@ -7,8 +7,9 @@
 const accounts = require('./giip-accounts');
 const giip = require('./giip-api');
 
-/** 태스크 생성 시: 연결되어 있으면 issue 생성(IN_PROGRESS) → isn. 아니면 null(로컬 폴백). */
-async function maybeCreateIssue(channelId, title, content) {
+/** 태스크 생성 시: 연결되어 있으면 issue 생성(IN_PROGRESS) → isn. 아니면 null(로컬 폴백).
+ *  csn: 프로젝트명 기반 매핑(config.resolveProjectCsn) 결과. null 이면 account 기본 csn 로 폴백. */
+async function maybeCreateIssue(channelId, title, content, csn = null) {
   const acct = accounts.resolve(channelId);
   if (!acct) return null;
   try {
@@ -16,6 +17,7 @@ async function maybeCreateIssue(channelId, title, content) {
       title: (title || '(무제)').slice(0, 200),
       content: (content || title || '').slice(0, 8000),
       status: 'IN_PROGRESS',
+      csn,
     });
     return r && r.isn ? Number(r.isn) : null;
   } catch (e) {
@@ -36,3 +38,4 @@ async function maybeFinish(channelId, isn, status, comment) {
 }
 
 module.exports = { maybeCreateIssue, maybeFinish };
+

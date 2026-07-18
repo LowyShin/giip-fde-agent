@@ -110,6 +110,30 @@ If `PROJECTS_ROOT` contains multiple projects, prefix the request with the proje
 ```
 → Switches working directory to `PROJECTS_ROOT/myapp` for this request
 
+### Per-project giip CSN routing
+
+Register a giip issue under a specific project's **CSN** by prefixing with the project name:
+
+```
+@giipclaude myapp issue 등록 <내용>
+```
+→ Registers a giip issue with the CSN mapped to `myapp` in `project-csn.json`
+(falls back to the account's default CSN if the project is not mapped).
+
+Manage the mapping from Slack (no restart needed — `project-csn.json` is re-read each call):
+
+| Command | Action |
+| --- | --- |
+| `giip project set <projectName> <csn>` | Add/update a name→CSN mapping |
+| `giip project list` | List all mappings |
+| `giip project del <projectName>` | Remove a mapping |
+
+The name is lowercased on save. A project name works even without a matching
+`PROJECTS_ROOT/<name>` folder — if it is in `project-csn.json`, the CSN still routes
+(working directory then safely stays at `BASE_DIR`). Implemented in `config.js`
+(`resolveProjectCsn` / `setProjectCsn` / `listProjectCsn` / `deleteProjectCsn`) and
+`giip-commands.js` (`giip project`).
+
 ### Q&A
 
 ```
