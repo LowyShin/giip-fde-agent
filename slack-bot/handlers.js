@@ -333,7 +333,7 @@ async function startTaskExecution(pendingKey, pendingTask, channelId, replyTs, t
 }
 
 // ── チャンネル Mention 処理 (Task ワークフロー) ───────────────────────────────
-async function handleChannelMention({ channelId, ts, threadTs, text, workDir = BASE_DIR }) {
+async function handleChannelMention({ channelId, ts, threadTs, text, workDir = BASE_DIR, projectName = null }) {
   const convKey = `${channelId}:${threadTs || ts}`;
   const replyTs = threadTs || ts;
   const taskState = loadJSON(TASK_STATE_FILE, { pending: {}, running: {} });
@@ -342,12 +342,51 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
   const cmd = text.trim().replace(/`/g, '').replace(/\s+/g, ' ').toLowerCase();
   console.log(`[Bot] handleChannelMention cmd="${cmd}" convKey="${convKey}"`);
 
-  // ── giip 커맨드 (giip api|issue|account) ──
+  // ── giip 커맨드 (giip api|issue|account|project) ──
   try {
     const { handleGiipCommand } = require('./giip-commands');
     const gc = await handleGiipCommand(text.trim(), channelId);
     if (gc.handled) { await postMessage(channelId, gc.text, replyTs); return; }
   } catch (e) { console.error('[Bot] giip command error:', e.message); }
+
+  // ── "issue 등록 <내용>" — 分類器を通さず明示的に giip issue として登録 ──────
+  //   利用形: `<プロジェクト名> issue 등록 <内容>` / `issue 등록 <内容>`
+  //   (プロジェクト名は parseProjectPrefix で workDir/projectName に解決済み → text は接頭辞除去済み)
+  //   csn は project-csn.json のマッピング(projectName)で決定。未登録なら account 既定 csn にフォールバック。
+  //   区切り(空白 / コロン / 文字列末)を必須にして「issue 등록됐어?」等の質問誤爆を防ぐ
+  //   (JS の \b は ASCII 専用でハングル境界を検出できないため明示的に区切りを要求)。
+  const issueTrigger = /^(?:issue|이슈|イシュー)\s*(?:등록|登録|register)(?:\s+|\s*[:：]\s*|$)/i;
+  if (issueTrigger.test(text.trim())) {
+    const body = text.trim().replace(issueTrigger, '').trim();
+    if (!body) {
+      await postMessage(channelId, '사용법: `<프로젝트> issue 등록 <내용>` — 내용을 그대로 giip issue 로 등록합니다.', replyTs);
+      return;
+    }
+    const title = body.split(/\r?\n/)[0].slice(0, 200).trim() || '(무제)';
+    try {
+      const giipAccounts = require('./giip-accounts');
+      const giip = require('./giip-api');
+      const acct = giipAccounts.resolve(channelId);
+      if (!acct) {
+        await postMessage(channelId,
+          '⚠️ giip 계정 미설정입니다. `giip account set <login_id> <sk> [csn]` 로 먼저 등록하세요(SK 포함이라 DM 권장).',
+          replyTs);
+        return;
+      }
+      const csn = config.resolveProjectCsn(projectName || workDir);
+      const r = await giip.issueCreate(acct, { title, content: body.slice(0, 8000), status: 'PENDING', csn });
+      const isn = r && r.isn ? Number(r.isn) : null;
+      await postMessage(channelId,
+        isn
+          ? `✅ giip issue #${isn} 등록 완료 (PENDING · csn=${csn ?? acct.csn ?? '-'})\n• 제목: ${title}`
+          : '⚠️ issue 등록 응답에 isn 이 없습니다. 계정/CSN 설정을 확인하세요.',
+        replyTs);
+    } catch (e) {
+      console.error('[Bot] issue 등록 실패:', e.message);
+      await postMessage(channelId, `❌ issue 등록 실패: ${e.message}`, replyTs);
+    }
+    return;
+  }
 
   // ── 내장 명령어 ─────────────────────────────────────────────────────────────
   if (cmd === '!help') {
@@ -902,7 +941,8 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
   let giipIsn = null;
   try {
     const gt = require('./giip-task');
-    giipIsn = await gt.maybeCreateIssue(channelId, taskTitle, planContent);
+    // csn 은 처음 언급한 프로젝트명(projectName, 폴더 없어도 해석) 기준(project-csn.json). 없으면 account.csn 폴백.
+    giipIsn = await gt.maybeCreateIssue(channelId, taskTitle, planContent, config.resolveProjectCsn(projectName || workDir));
     if (giipIsn) { taskState.pending[convKey].isn = giipIsn; saveJSON(TASK_STATE_FILE, taskState); }
   } catch (e) { console.error('[Bot] giip issue 등록 훅 오류:', e.message); }
   const isnLine = giipIsn ? `\n🔗 giip issue #${giipIsn} (IN_PROGRESS)` : '';
@@ -943,7 +983,7 @@ async function processMessage({ channelId, msg, isDM, conversations, threadTs })
     .trim();
 
   // プロジェクトプレフィックス検出: "giipprj 何か" → giipprj フォルダに切り替え
-  const { workDir, cleanText } = parseProjectPrefix(rawCleanText);
+  const { workDir, cleanText, projectName } = parseProjectPrefix(rawCleanText);
 
   const hasFiles = msg.files && msg.files.length > 0;
   if (hasFiles && !cleanText) {
@@ -957,7 +997,7 @@ async function processMessage({ channelId, msg, isDM, conversations, threadTs })
   if (isDM) {
     await handleDM({ channelId, ts: msg.ts, threadTs: effectiveThreadTs, text: cleanText, conversations, workDir });
   } else if (mentionsBot || isTaskReply || isEngagedThread) {
-    await handleChannelMention({ channelId, ts: msg.ts, threadTs: effectiveThreadTs, text: cleanText, workDir });
+    await handleChannelMention({ channelId, ts: msg.ts, threadTs: effectiveThreadTs, text: cleanText, workDir, projectName });
   }
 }
 

@@ -6,6 +6,7 @@
  */
 const accounts = require('./giip-accounts');
 const giip = require('./giip-api');
+const config = require('./config');
 
 function code(obj, max = 1800) {
   return '```\n' + JSON.stringify(obj, null, 2).slice(0, max) + '\n```';
@@ -46,6 +47,40 @@ async function handleGiipCommand(rawText, channelId) {
       handled: true,
       text: '사용법: `giip account set <login_id> <sk> [csn]` | `set-default <login_id> <sk> [csn]` | `show`',
     };
+  }
+
+  // ── giip project ... — 프로젝트명 ↔ csn 매핑 관리(project-csn.json, 재시작 불필요) ──
+  //   giip 계정과 무관하므로 account 확인 게이트보다 먼저 처리한다.
+  //   `<프로젝트명> issue 등록 <내용>` 이 어떤 csn 으로 등록되는지를 여기서 관리.
+  if (sub === 'project' || sub === 'proj' || sub === 'csn') {
+    const pm = rest.match(/^(set|add|del|delete|rm|remove|list|ls|show)?\s*([\s\S]*)$/i);
+    const action = (pm && pm[1] ? pm[1].toLowerCase() : 'list');
+    const pargs = pm ? (pm[2] || '').trim() : '';
+    const USAGE = '사용법: `giip project set <프로젝트명> <csn>` | `giip project list` | `giip project del <프로젝트명>`';
+    try {
+      if (action === 'set' || action === 'add') {
+        const sm = pargs.match(/^(\S+)\s+(-?\d+)$/);
+        if (!sm) return { handled: true, text: USAGE };
+        const { name, csn } = config.setProjectCsn(sm[1], sm[2]);
+        return {
+          handled: true,
+          text: `✅ 프로젝트 CSN 매핑 저장: \`${name}\` → csn ${csn}\n이제 \`${name} issue 등록 <내용>\` 은 csn ${csn} 로 등록됩니다(봇 재시작 불필요).`,
+        };
+      }
+      if (action === 'del' || action === 'delete' || action === 'rm' || action === 'remove') {
+        const name = pargs.split(/\s+/)[0];
+        if (!name) return { handled: true, text: USAGE };
+        const ok = config.deleteProjectCsn(name);
+        return { handled: true, text: ok ? `✅ 매핑 삭제: \`${name.toLowerCase()}\`` : `⚠️ \`${name.toLowerCase()}\` 매핑이 없습니다.` };
+      }
+      // list / ls / show / (인자 없음)
+      const map = config.listProjectCsn();
+      const keys = Object.keys(map);
+      const body = keys.length ? keys.map((k) => `• \`${k}\` → csn ${map[k]}`).join('\n') : '(등록된 매핑 없음)';
+      return { handled: true, text: `📋 프로젝트 → CSN 매핑 (project-csn.json)\n${body}\n\n${USAGE}` };
+    } catch (e) {
+      return { handled: true, text: `❌ ${e.message}\n${USAGE}` };
+    }
   }
 
   const acct = accounts.resolve(channelId);
