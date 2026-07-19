@@ -59,3 +59,11 @@ This document lists the keywords that trigger specific skills in multiple langua
 | KO | 설계, 스펙 |
 | JA | 設計, スペック |
 | ZH | 设计, 规格 |
+
+### Skill Authoring (skill-creator)
+| Language | Keywords |
+|----------|----------|
+| EN | create skill, make a skill, new skill, edit skill, improve skill, skill eval, optimize description |
+| KO | 스킬 만들기, 스킬 생성, 새 스킬, 스킬 수정, 스킬 개선, 스킬 평가 |
+| JA | スキル作成, スキルを作る, 新しいスキル, スキル改善, スキル評価 |
+| ZH | 创建技能, 制作技能, 新技能, 优化技能, 技能评估 |

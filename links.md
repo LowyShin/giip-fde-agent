@@ -28,6 +28,9 @@
 ### [gameworkerkim/vibe-investing](https://github.com/gameworkerkim/vibe-investing/blob/main/Awesome%20vibe%20invest.MD)
 - **설명**: AI/LLM 기반 투자·트레이딩 레포를 객관 평가(강점/약점/적합 사용자)와 공통 함정 체크리스트 중심으로 정리한 큐레이션입니다.
 
+### [anthropics/skills — skill-creator](https://github.com/anthropics/skills/blob/main/skills/skill-creator/SKILL.md)
+- **설명**: Anthropic 공식 "스킬을 만드는 스킬". SKILL.md 작성 원칙(설명=트리거·언더트리거 방지의 다소 "pushy"한 description, 프로그레시브 디스클로저, 본문 500줄 이내, `scripts/`·`references/`·`assets/` 번들 리소스 구조)부터 eval 기반 반복 개선과 설명 최적화까지 표준 절차를 제공합니다. **본 레포 `.agent/skills/skill-creator/`에 이식 완료**(업스트림 추적: `.agent/config/update_urls.json`의 `anthropics-skills`).
+
 ### [microsoft/SkillOpt](https://github.com/microsoft/SkillOpt)
 - **설명**: 에이전트의 가중치를 미세조정하지 않고, 자연어 지침 파일(SKILL.md) 자체를 '학습 가능한 매개변수'로 취급하여 에포크, 배치 크기, 텍스트 편집 예산 및 검증 게이트를 통해 최적화하는 텍스트 공간 에이전트 스킬 최적화 프레임워크입니다.
 
