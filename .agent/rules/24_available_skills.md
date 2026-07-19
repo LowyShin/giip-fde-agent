@@ -54,6 +54,15 @@ This document summarizes the available skills and commands in the GIIP Agent sys
 
 > **규칙**: 파일 탐색 시 `grep`, `ls`, `find`, `rg`, `tree` 보다 **Jikji를 먼저** 사용합니다.
 
+### Skill Authoring & Optimization (스킬 저작·최적화)
+| Skill | Description |
+|-------|-------------|
+| `skill-creator` | 새 스킬을 설계·작성하고 eval로 성능을 측정하며 기존 스킬을 반복 개선. SKILL.md 작성 규범(description=트리거, 프로그레시브 디스클로저, 본문 500줄 이내, `scripts`/`references`/`assets` 번들 구조)의 정본 |
+| `skillopt` / `/aioptimize` | 실행 trace(reward<0.8)를 바탕으로 SKILL.md 프롬프트를 바운디드 편집·검증 게이트로 자동 최적화 |
+| `skill-stocktake` | 설치된 스킬 인벤토리를 점검하고 중복·노후 스킬을 정리 |
+
+> **원칙(출처: [anthropics/skills skill-creator](https://github.com/anthropics/skills/blob/main/skills/skill-creator/SKILL.md))**: 스킬을 새로 만들거나 크게 고칠 때는 `skill-creator`를 먼저 사용한다. 특히 `description`은 "무엇을 하는가"와 "언제 트리거되는가"를 모두 담고, Claude의 **언더트리거 경향을 상쇄하도록 다소 pushy하게** 작성한다. 업스트림 추적은 `.agent/config/update_urls.json`의 `anthropics-skills`.
+
 ### K-Layer Knowledge System
 | Skill | Description |
 |-------|-------------|
