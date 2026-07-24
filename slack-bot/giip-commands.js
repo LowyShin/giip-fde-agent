@@ -83,6 +83,50 @@ async function handleGiipCommand(rawText, channelId) {
     }
   }
 
+  // ── giip channel ... — 채널 → 기본 프로젝트 고정 매핑(channel-project.json, 재시작 불필요) ──
+  //   「이 채널의 발화는 모두 <project> 로 처리」. giip 계정과 무관하므로 account 게이트보다 먼저 처리.
+  //   채널ID 생략 시 현재 채널에 적용. Rule 32 우선순위: 명시적 접두어 > 채널 고정.
+  if (sub === 'channel' || sub === 'ch') {
+    const cm = rest.match(/^(set|del|delete|rm|remove|list|ls|show)?\s*([\s\S]*)$/i);
+    const action = (cm && cm[1] ? cm[1].toLowerCase() : 'list');
+    const cargs = cm ? (cm[2] || '').trim() : '';
+    const USAGE = '사용법: `giip channel set <프로젝트명> [채널ID]` | `giip channel list` | `giip channel del [채널ID]`';
+    try {
+      if (action === 'set') {
+        // `set <프로젝트명> [채널ID]` — 채널ID 생략 시 현재 채널.
+        const sm = cargs.match(/^(\S+)(?:\s+(\S+))?$/);
+        if (!sm) return { handled: true, text: USAGE };
+        const project = sm[1];
+        const target = sm[2] || channelId;
+        if (!target) return { handled: true, text: '채널ID를 확인할 수 없습니다. `giip channel set <프로젝트명> <채널ID>` 로 명시하세요.' };
+        const { channelId: cid, project: pj } = config.setChannelProject(target, project);
+        const csn = config.resolveProjectCsn(pj);
+        return {
+          handled: true,
+          text: `✅ 채널 고정 매핑 저장: \`${cid}\` → \`${pj}\`${csn != null ? ` (csn ${csn})` : ' (project-csn.json 미등록 → account 기본 csn)'}\n이제 이 채널의 접두어 없는 메시지는 모두 \`${pj}\` 로 처리됩니다(봇 재시작 불필요). 명시적 프로젝트 접두어는 계속 우선합니다.`,
+        };
+      }
+      if (action === 'del' || action === 'delete' || action === 'rm' || action === 'remove') {
+        const target = cargs.split(/\s+/)[0] || channelId;
+        if (!target) return { handled: true, text: USAGE };
+        const ok = config.deleteChannelProject(target);
+        return { handled: true, text: ok ? `✅ 채널 매핑 삭제: \`${target}\`` : `⚠️ \`${target}\` 매핑이 없습니다.` };
+      }
+      // list / ls / show / (인자 없음)
+      const map = config.listChannelProject();
+      const keys = Object.keys(map);
+      const body = keys.length
+        ? keys.map((k) => {
+            const csn = config.resolveProjectCsn(map[k]);
+            return `• \`${k}\` → \`${map[k]}\`${csn != null ? ` (csn ${csn})` : ''}${k === channelId ? ' ← 현재 채널' : ''}`;
+          }).join('\n')
+        : '(등록된 매핑 없음)';
+      return { handled: true, text: `📌 채널 → 기본 프로젝트 매핑 (channel-project.json)\n${body}\n\n${USAGE}` };
+    } catch (e) {
+      return { handled: true, text: `❌ ${e.message}\n${USAGE}` };
+    }
+  }
+
   const acct = accounts.resolve(channelId);
   if (!acct) {
     return {

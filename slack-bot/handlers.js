@@ -996,7 +996,11 @@ async function processMessage({ channelId, msg, isDM, conversations, threadTs })
     .trim();
 
   // プロジェクトプレフィックス検出: "giipprj 何か" → giipprj フォルダに切り替え
-  const { workDir, cleanText, projectName } = parseProjectPrefix(rawCleanText);
+  //   さらにチャンネル固定マッピング(channel-project.json)を適用: 明示接頭辞が無ければ
+  //   このチャンネルの既定プロジェクトへ workDir/projectName を固定する。
+  //   優先順位: 明示接頭辞(Rule 32) > チャンネル固定。cleanText は不変。
+  const { workDir, cleanText, projectName } =
+    config.applyChannelPin(channelId, parseProjectPrefix(rawCleanText));
 
   const hasFiles = msg.files && msg.files.length > 0;
   if (hasFiles && !cleanText) {
