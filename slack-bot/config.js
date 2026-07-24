@@ -23,6 +23,7 @@ const HISTORY_FILE    = path.join(__dirname, '.conversations.json');
 const TASK_STATE_FILE = path.join(__dirname, '.task-state.json');
 const BOT_THREADS_FILE = path.join(__dirname, '.bot-threads.json');
 const PROJECT_CSN_FILE = path.join(__dirname, 'project-csn.json');
+const CHANNEL_PROJECT_FILE = path.join(__dirname, 'channel-project.json');
 
 // ── botUserId (main() で auth.test 後にセット、processMessage / socket handler で参照) ──
 let botUserId = null;
@@ -135,6 +136,86 @@ function deleteProjectCsn(name) {
   return false;
 }
 
+// ── チャンネル → 既定プロジェクト固定マッピング（channel-project.json 駆動） ──────
+// 「このチャンネルの発話はすべて <project> として扱う」を実現する。project-csn.json と同じく
+// 呼び出しごとに読み直す（再起動なしで反映）。giip csn とは独立に channelId → プロジェクト名を持つ。
+function loadChannelProjectMap() {
+  try {
+    const j = JSON.parse(fs.readFileSync(CHANNEL_PROJECT_FILE, 'utf8'));
+    return (j && j.map) || {};
+  } catch {
+    return {};
+  }
+}
+
+// channelId → プロジェクト名(小文字) or null。未登録なら null。
+function resolveChannelProject(channelId) {
+  if (!channelId) return null;
+  const v = loadChannelProjectMap()[channelId];
+  return v ? String(v).toLowerCase() : null;
+}
+
+// プロジェクト名 → workDir。PROJECTS_ROOT 直下に同名フォルダがあればそれ、無ければ BASE_DIR に
+// 安全フォールバック（存在しないフォルダを cwd にしない）。parseProjectPrefix のフォルダ解決と整合。
+function projectWorkDir(name) {
+  const candidate = String(name || '').trim().toLowerCase();
+  if (!candidate) return BASE_DIR;
+  const dir = path.join(PROJECTS_ROOT, candidate);
+  try { if (fs.statSync(dir).isDirectory()) return dir; } catch {}
+  return BASE_DIR;
+}
+
+// チャンネル固定マッピングを parseProjectPrefix の結果に適用する。
+//   優先順位（設計判断）: 明示的プロジェクト接頭辞 > チャンネル固定。
+//   メッセージ先頭に実フォルダ / project-csn.json 登録名の接頭辞があれば（parsed.projectName != null）
+//   それを尊重する（Rule 32 の絶対規則を維持）。接頭辞が無いときだけ、本来 BASE_DIR に
+//   潰れていた workDir/projectName をチャンネルの既定プロジェクトで埋める。cleanText は変更しない。
+function applyChannelPin(channelId, parsed) {
+  const p = parsed || { workDir: BASE_DIR, cleanText: '', projectName: null };
+  if (p.projectName) return p; // 明示接頭辞が優先
+  const pinned = resolveChannelProject(channelId);
+  if (!pinned) return p;
+  return { ...p, workDir: projectWorkDir(pinned), projectName: pinned };
+}
+
+// ── channel-project.json の読み書き（Slack `giip channel` コマンドから利用） ────
+function readChannelProjectFile() {
+  try {
+    const j = JSON.parse(fs.readFileSync(CHANNEL_PROJECT_FILE, 'utf8'));
+    return (j && typeof j === 'object') ? j : {};
+  } catch {
+    return {};
+  }
+}
+function writeChannelProjectFile(obj) {
+  fs.writeFileSync(CHANNEL_PROJECT_FILE, JSON.stringify(obj, null, 2) + '\n', 'utf8');
+}
+function listChannelProject() { return loadChannelProjectMap(); }
+// channelId → プロジェクト名 を追加/更新。プロジェクト名は小文字化して保存。
+function setChannelProject(channelId, name) {
+  const key = String(channelId || '').trim();
+  const val = String(name || '').trim().toLowerCase();
+  if (!key) throw new Error('channelId 가 필요합니다.');
+  if (!val) throw new Error('프로젝트명이 필요합니다.');
+  const j = readChannelProjectFile();
+  if (!j.map || typeof j.map !== 'object') j.map = {};
+  j.map[key] = val;
+  writeChannelProjectFile(j);
+  return { channelId: key, project: val };
+}
+// channelId のマッピングを削除。存在して削除したら true、無ければ false。
+function deleteChannelProject(channelId) {
+  const key = String(channelId || '').trim();
+  if (!key) return false;
+  const j = readChannelProjectFile();
+  if (j.map && Object.prototype.hasOwnProperty.call(j.map, key)) {
+    delete j.map[key];
+    writeChannelProjectFile(j);
+    return true;
+  }
+  return false;
+}
+
 module.exports = {
   BOT_TOKEN,
   CHANNEL_IDS,
@@ -154,4 +235,10 @@ module.exports = {
   listProjectCsn,
   setProjectCsn,
   deleteProjectCsn,
+  resolveChannelProject,
+  projectWorkDir,
+  applyChannelPin,
+  listChannelProject,
+  setChannelProject,
+  deleteChannelProject,
 };
