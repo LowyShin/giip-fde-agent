@@ -15,9 +15,23 @@
  * 범위(giip #1972 item 1): startTaskExecution 태스크 생명주기(큐 등록/브랜치 실패 재시도/DB 이력 복원 안내,
  * renderRepoLines 수동필요/보류, 완료·보류·미반영·에러 헤드라인, 재개 안내) — 조건분기가 깊어 이전 세션이
  * 보류했던 마지막 in-scope 항목. ko 는 원본과 byte-for-byte 동일, 미등록/미번역/미상 언어는 ko 폴백.
- * 남은 하드코딩 문자열(하드코딩 일본어 !help/tasklist/taskmerge/analysis/image-only 및
- * startTaskExecution 내 이미 일본어인 라인(作業ブランチ作成/Task実行開始 등) — 한글 다국어화와 별개 결함)은
- * 이번 범위 밖 — 후속 giip issue 로 남긴다.
+ * 범위(giip #2118 — #1971/#1972 후속): "채널/프로젝트 언어 설정과 무관하게 무조건 일본어가 뜨던"
+ * 하드코딩 일본어 결함 중 자기완결적인 항목을 정리했다: startTaskExecution 의 브랜치 생성 성공/
+ * Task 실행 시작 알림(taskBranchCreated/taskExecStarted, item 1 마이그레이션에서 누락됐던 2건),
+ * handleChannelMention 의 실행 중 재입력 안내/유사 태스크 자동클로즈/분석 시작/분석 에러
+ * (taskInProgressNotice/autoClosedSimilar/analyzingMsg/analysisError), handleSimpleGitOp 의
+ * git push/pull 성공·실패 4종(gitPushOk/gitPushFail/gitPullOk/gitPullFail — 이 함수는 언어 해석
+ * 자체가 없었어서 새로 config.resolveLangForProject 를 추가), giip-commands.js 의 issue 제목
+ * 미입력 폴백(gcIssueUntitled). 이 항목들은 **ja 값 = 기존 하드코딩 일본어 문자열 그대로**(ja 채널
+ * 무변경), **ko/en = 신규 번역**이다 — 즉 미등록 프로젝트/기본(ko) 채널은 이관 전 무조건 일본어가
+ * 뜨던 것이 이관 후 한국어로 바뀐다(의도된 버그 수정, byte-for-byte 보존 대상이 애초에 한글이
+ * 아니었으므로 원칙 예외). 아울러 기존 taskBranchFailExhausted.ko 값 자체가 이미 한/일 혼용
+ * (`実行できません`/`で後ほど再実行してください` 잔존)이던 버그도 순수 한국어로 수정하고 ja 값은
+ * 그대로 유지했다.
+ *
+ * 남은 하드코딩 문자열(!help/tasklist/taskmerge 전체 텍스트, image-only 안내 등 — 이미 한/일
+ * 혼용된 대규모 텍스트 블록)은 이번에도 범위 밖 — 별도 세션에서 전체 재작성 필요(giip #2118 코멘트
+ * 참고, 후속 giip issue 로 남긴다).
  *
  * 설계 원칙 — 하위호환 최우선: 미등록 프로젝트, 미번역 key, 아직 안 채운 언어(zh-CN/zh-TW 등) →
  * 반드시 기존 한글 문자열 그대로 폴백한다. 각 항목의 `ko` 값은 원래 하드코딩돼 있던 문자열과
@@ -112,7 +126,7 @@ const MESSAGES = {
     taskUnknownHolder: () => '(불명)',
     taskQueuedBusy: ({ occId, taskId }) => `⏸️ 지금은 \`${occId}\` 이(가) 작업트리(git)를 점유 중입니다.\n\`${taskId}\` 을(를) *대기열에 등록*했습니다 — 점유 작업이 끝나면 *자동으로 기동*합니다 (다시 \`go\` 하지 않아도 됩니다).`,
     taskBranchFailRetry: ({ n, max, error, taskId }) => `⏸️ *브랜치 생성 실패* (자동 재시도 ${n}/${max}): ${error}\n\`${taskId}\` 을(를) *대기열에 등록*했습니다 — 잠시 후 *자동으로 재시도*합니다 (\`go\` 불요).`,
-    taskBranchFailExhausted: ({ max, error, taskId }) => `⏸️ *実行できません* (자동 재시도 ${max}회 소진): ${error}\n\`go ${taskId}\` で後ほど再実行してください。`,
+    taskBranchFailExhausted: ({ max, error, taskId }) => `⏸️ *실행할 수 없습니다* (자동 재시도 ${max}회 소진): ${error}\n\`go ${taskId}\` 로 나중에 다시 실행하세요.`,
     repoMoreSuffix: () => ' 외',
     repoManualNeeded: ({ repo, filesPart, reason }) => `⚠️ 수동 필요: ${repo}${filesPart} — ${reason}`,
     repoBlockedLine: ({ repo, fileTxt, prTxt, branch }) => `🚧 보류: ${repo} — 파일 [${fileTxt}] 이(가) 미머지 PR ${prTxt} 대상이라 새 PR 을 만들지 않았습니다(브랜치 \`${branch}\` 는 push 됨).`,
@@ -127,6 +141,20 @@ const MESSAGES = {
     noRepoChanged: () => '변경된 저장소가 없거나 push/PR 생성에 실패했습니다. 봇 로그의 git/gh 오류를 확인하세요.',
     taskErrorHeadline: ({ taskId, isnPart, message }) => `❌ *작업 에러* (\`${taskId}\`)${isnPart}: ${message}`,
     partialResultLabel: () => '🔀 부분 결과:',
+    // [giip #2118] 하드코딩 일본어 결함 정리 — ko/en 은 신규 번역(기본 채널 동작이 바뀜, 의도된 수정)
+    taskBranchCreated: ({ branch, base, fetchedSuffix }) => `🌿 작업 브랜치 생성: \`${branch}\`\n• base: \`${base}\`${fetchedSuffix}`,
+    branchFetchedOk: () => ' (origin 최신 fetch 완료)',
+    branchFetchedFail: () => ' (⚠️ fetch 실패 — 로컬 base 기준)',
+    taskExecStarted: ({ taskId, taskTitle }) => `⚙️ *태스크 실행 시작*: \`${taskId}\`\n• ${taskTitle}\n\n_서브에이전트가 작업 중입니다. 완료되면 PR URL 을 알려드립니다._`,
+    taskInProgressNotice: ({ taskId }) => `⚙️ \`${taskId}\` 작업이 진행 중입니다. 완료되는 대로 결과를 알려드립니다.`,
+    autoClosedSimilar: ({ lines }) => `\n\n⚠️ 동일한 내용의 이전 태스크를 자동으로 종료했습니다:\n${lines}`,
+    analyzingMsg: () => '🔍 작업 내용을 분석 중입니다...',
+    analysisError: ({ message }) => `분석 에러: ${message}`,
+    gitPushOk: () => '✅ git push 완료',
+    gitPushFail: ({ stderr }) => `❌ git push 실패\n\`\`\`${stderr}\`\`\``,
+    gitPullOk: () => '✅ git pull 완료',
+    gitPullFail: ({ stderr }) => `❌ git pull 실패\n\`\`\`${stderr}\`\`\``,
+    gcIssueUntitled: () => '(무제)',
   },
   en: {
     qnaAck: () => '💬 Got your question. Preparing an answer…',
@@ -229,6 +257,20 @@ const MESSAGES = {
     noRepoChanged: () => 'No repos changed, or push/PR creation failed. Check git/gh errors in the bot log.',
     taskErrorHeadline: ({ taskId, isnPart, message }) => `❌ *Task error* (\`${taskId}\`)${isnPart}: ${message}`,
     partialResultLabel: () => '🔀 Partial results:',
+    // [giip #2118]
+    taskBranchCreated: ({ branch, base, fetchedSuffix }) => `🌿 Working branch created: \`${branch}\`\n• base: \`${base}\`${fetchedSuffix}`,
+    branchFetchedOk: () => ' (fetched latest origin)',
+    branchFetchedFail: () => ' (⚠️ fetch failed — using local base)',
+    taskExecStarted: ({ taskId, taskTitle }) => `⚙️ *Task execution started*: \`${taskId}\`\n• ${taskTitle}\n\n_The sub-agent is working on it. I'll share the PR URL once it's done._`,
+    taskInProgressNotice: ({ taskId }) => `⚙️ \`${taskId}\` is still in progress. I'll let you know as soon as it's done.`,
+    autoClosedSimilar: ({ lines }) => `\n\n⚠️ Automatically closed previous task(s) with the same content:\n${lines}`,
+    analyzingMsg: () => '🔍 Analyzing the request...',
+    analysisError: ({ message }) => `Analysis error: ${message}`,
+    gitPushOk: () => '✅ git push complete',
+    gitPushFail: ({ stderr }) => `❌ git push failed\n\`\`\`${stderr}\`\`\``,
+    gitPullOk: () => '✅ git pull complete',
+    gitPullFail: ({ stderr }) => `❌ git pull failed\n\`\`\`${stderr}\`\`\``,
+    gcIssueUntitled: () => '(no title)',
   },
   ja: {
     qnaAck: () => '💬 質問を確認しました。回答を準備中です…',
@@ -331,6 +373,20 @@ const MESSAGES = {
     noRepoChanged: () => '変更されたリポジトリが無いか、push/PR 生成に失敗しました。ボットログの git/gh エラーを確認してください。',
     taskErrorHeadline: ({ taskId, isnPart, message }) => `❌ *作業エラー* (\`${taskId}\`)${isnPart}: ${message}`,
     partialResultLabel: () => '🔀 部分結果:',
+    // [giip #2118] ja 값은 이관 전 하드코딩 문자열과 byte-for-byte 동일(ja 채널 동작 무변경)
+    taskBranchCreated: ({ branch, base, fetchedSuffix }) => `🌿 作業ブランチ作成: \`${branch}\`\n• base: \`${base}\`${fetchedSuffix}`,
+    branchFetchedOk: () => ' (origin 最新 fetch 済)',
+    branchFetchedFail: () => ' (⚠️ fetch 失敗 — ローカル base 基準)',
+    taskExecStarted: ({ taskId, taskTitle }) => `⚙️ *Task 実行開始*: \`${taskId}\`\n• ${taskTitle}\n\n_サブエージェントが作業中です。完了したら PR URL をお知らせします。_`,
+    taskInProgressNotice: ({ taskId }) => `⚙️ \`${taskId}\` の作業が進行中です。完了次第、結果をお知らせします。`,
+    autoClosedSimilar: ({ lines }) => `\n\n⚠️ 同一内容の旧タスクを自動クローズしました:\n${lines}`,
+    analyzingMsg: () => '🔍 作業内容を分析中です...',
+    analysisError: ({ message }) => `分析エラー: ${message}`,
+    gitPushOk: () => '✅ git push 完了',
+    gitPushFail: ({ stderr }) => `❌ git push 失敗\n\`\`\`${stderr}\`\`\``,
+    gitPullOk: () => '✅ git pull 完了',
+    gitPullFail: ({ stderr }) => `❌ git pull 失敗\n\`\`\`${stderr}\`\`\``,
+    gcIssueUntitled: () => '(無題)',
   },
 };
 

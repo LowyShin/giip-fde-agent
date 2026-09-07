@@ -91,18 +91,21 @@ async function buildAllowlistReply(lang) {
 
 async function handleSimpleGitOp({ channelId, replyTs, text, workDir = BASE_DIR }) {
   if (!isPureGitOp(text)) return false;
+  // [giip #2118] 이 함수는 언어 해석 자체가 없어 4개 메시지가 무조건 일본어였다(하드코딩 일본어 결함).
+  const uiLang = config.resolveLangForProject(path.basename(workDir));
+  const uiT = require('./i18n-ui').t;
   const t = text.trim();
   if (/git\s+push/i.test(t)) {
     spawnSync('git', ['pull', '--rebase', 'origin'], { cwd: workDir, encoding: 'utf8', windowsHide: true });
     const res = spawnSync('git', ['push'], { cwd: workDir, encoding: 'utf8', windowsHide: true });
     const ok = res.status === 0;
-    await postMessage(channelId, ok ? '✅ git push 完了' : `❌ git push 失敗\n\`\`\`${(res.stderr || '').slice(0, 500)}\`\`\``, replyTs);
+    await postMessage(channelId, ok ? uiT(uiLang, 'gitPushOk') : uiT(uiLang, 'gitPushFail', { stderr: (res.stderr || '').slice(0, 500) }), replyTs);
     return true;
   }
   if (/git\s+pull/i.test(t)) {
     const res = spawnSync('git', ['pull', '--rebase', 'origin'], { cwd: workDir, encoding: 'utf8', windowsHide: true });
     const ok = res.status === 0;
-    await postMessage(channelId, ok ? '✅ git pull 完了' : `❌ git pull 失敗\n\`\`\`${(res.stderr || '').slice(0, 500)}\`\`\``, replyTs);
+    await postMessage(channelId, ok ? uiT(uiLang, 'gitPullOk') : uiT(uiLang, 'gitPullFail', { stderr: (res.stderr || '').slice(0, 500) }), replyTs);
     return true;
   }
   return false;
@@ -495,14 +498,17 @@ async function startTaskExecution(pendingKey, pendingTask, channelId, replyTs, t
   }
   const execCtx = branchCtx.ok ? branchCtx : null; // notRepo 時は ctx=null (PR 不可、従来通り実行)
   if (execCtx) {
+    // [giip #2118] item 1 마이그레이션(giip #1972)에서 누락됐던 2건 중 하나 — 하드코딩 일본어 결함.
+    const fetchedSuffix = execCtx.fetchedBase ? uiT(uiLang, 'branchFetchedOk') : uiT(uiLang, 'branchFetchedFail');
     await postMessage(channelId,
-      `🌿 作業ブランチ作成: \`${execCtx.branch}\`\n• base: \`${execCtx.base}\`${execCtx.fetchedBase ? ' (origin 最新 fetch 済)' : ' (⚠️ fetch 失敗 — ローカル base 基準)'}`,
+      uiT(uiLang, 'taskBranchCreated', { branch: execCtx.branch, base: execCtx.base, fetchedSuffix }),
       replyTs
     );
   }
 
+  // [giip #2118] item 1 마이그레이션(giip #1972)에서 누락됐던 나머지 하나.
   await postMessage(channelId,
-    `⚙️ *Task 実行開始*: \`${pendingTask.taskId}\`\n• ${pendingTask.taskTitle}\n\n_サブエージェントが作業中です。完了したら PR URL をお知らせします。_`,
+    uiT(uiLang, 'taskExecStarted', { taskId: pendingTask.taskId, taskTitle: pendingTask.taskTitle }),
     replyTs
   );
 
@@ -1411,8 +1417,9 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
   // ── 実行中チェック ────────────────────────────────────────────────────────
   const running = taskState.running[convKey];
   if (running) {
+    // [giip #2118] 하드코딩 일본어 결함 정리.
     await postMessage(channelId,
-      `⚙️ \`${running.taskId}\` の作業が進行中です。完了次第、結果をお知らせします。`,
+      uiT(uiLang, 'taskInProgressNotice', { taskId: running.taskId }),
       replyTs
     );
     return;
@@ -1447,10 +1454,11 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
       closedLines.push(`• \`${old.taskId}\` — ${old.title.slice(0, 50)}`);
     }
     saveJSON(TASK_STATE_FILE, taskState);
-    closedNotice = `\n\n⚠️ 同一内容の旧タスクを自動クローズしました:\n${closedLines.join('\n')}`;
+    // [giip #2118] 하드코딩 일본어 결함 정리.
+    closedNotice = uiT(uiLang, 'autoClosedSimilar', { lines: closedLines.join('\n') });
   }
 
-  await postMessage(channelId, '🔍 作業内容を分析中です...', replyTs);
+  await postMessage(channelId, uiT(uiLang, 'analyzingMsg'), replyTs);
 
   // 修正依頼（既存タスクID言及）の場合は親タスク文脈を本文に付加して分析・保存する
   const taskRequestText = text + refTaskContext;
@@ -1460,7 +1468,7 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
     ({ planContent, filesRead, classification, contextStats, fastPath } =
       tm.analyzeRequest(taskRequestText, null, workDir));
   } catch (err) {
-    await postMessage(channelId, `分析エラー: ${err.message}`, replyTs);
+    await postMessage(channelId, uiT(uiLang, 'analysisError', { message: err.message }), replyTs);
     return;
   }
   // giip-1063: 분석에서 결정한 작업 등급/Fast Path 여부를 태스크 파일에 남겨 실행 단계가 재사용한다.
