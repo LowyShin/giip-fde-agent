@@ -231,7 +231,7 @@ async function handleGiipCommand(rawText, channelId) {
     const arg = im ? (im[2] || '').trim() : '';
     try {
       if (action === 'new' || action === 'create') {
-        const title = arg.replace(/^["']|["']$/g, '').trim() || '(무제)';
+        const title = arg.replace(/^["']|["']$/g, '').trim() || uiT(uiLang, 'gcIssueUntitled'); // [giip #2118]
         const r = await giip.issueCreate(acct, { title, content: title, status: 'IN_PROGRESS' });
         return { handled: true, text: uiT(uiLang, 'gcIssueCreated', { isn: r.isn, title }) };
       }
