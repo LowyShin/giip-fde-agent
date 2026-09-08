@@ -835,6 +835,7 @@ test('등급별 최초/재개 상한값이 이슈 표와 일치한다', () => {
     assert.strictEqual(l.initialMaxChars, ini, `${cls} initial`);
     assert.strictEqual(l.resumeMaxChars, res, `${cls} resume`);
     assert.strictEqual(l.initialMaxTokensEstimated, Math.ceil(ini / 4));
+    assert.strictEqual(l.resumeMaxTokensEstimated, Math.ceil(res / 4));
   }
 });
 
@@ -853,6 +854,156 @@ test('거대 컨텍스트를 넣어도 등급별 상한을 1자도 넘지 않는
     });
     assert.ok(r.length <= l.resumeMaxChars, `${cls} resume=${r.length} > ${l.resumeMaxChars}`);
   }
+});
+
+test('한글 중심 최초 프롬프트가 토큰 상한을 지키며 고정 안전 절을 보존한다', () => {
+  const limits = modelConfig.promptLimits('standard');
+  const prompt = prompts.buildInitialExecutionPrompt({
+    taskClass: 'standard',
+    taskContent: `# TASK: 다국어 토큰 예산\n\n${'한글 태스크 설명. '.repeat(10000)}`,
+    contextText: '한글 컨텍스트 규칙. '.repeat(10000),
+    taskId: 'giip-token-initial',
+    branch: 'bot/task-giip-token-initial',
+    attempt: 1,
+    now: '2026-09-08T00:00:00Z',
+  });
+  assert.ok(estimateTokens(prompt) <= limits.initialMaxTokensEstimated,
+    `tokens=${estimateTokens(prompt)} > ${limits.initialMaxTokensEstimated}`);
+  assert.ok(prompt.length <= limits.initialMaxChars);
+  assert.ok(prompt.includes('=== 안전 규칙 (고정) ==='), '안전 규칙이 잘리면 안 된다');
+  assert.ok(prompt.includes('=== 실행 프로토콜 (고정) ==='), '실행 프로토콜이 잘리면 안 된다');
+  assert.ok(prompt.includes('=== 동적 상태 ==='), '동적 상태가 잘리면 안 된다');
+});
+
+test('한글 중심 재개 프롬프트가 토큰·60% 상한을 지키며 재개 고정 절을 보존한다', () => {
+  const limits = modelConfig.promptLimits('standard');
+  const initialPromptChars = 48000;
+  const prompt = prompts.buildResumeExecutionPrompt({
+    taskClass: 'standard',
+    taskContent: `# TASK: 다국어 토큰 예산\n\n${'한글 태스크 설명. '.repeat(10000)}`,
+    taskId: 'giip-token-resume',
+    branch: 'bot/task-giip-token-resume',
+    attempt: 2,
+    now: '2026-09-08T00:10:00Z',
+    completedSteps: ['한글 구현 단계 완료'],
+    pendingSteps: ['한글 회귀 테스트 실행'],
+    filesChanged: ['slack-bot/prompt-templates.js'],
+    diffSummary: '한글 변경 요약. '.repeat(10000),
+    errorSummary: '한글 오류 요약. '.repeat(10000),
+    resumeContextText: '한글 재개 컨텍스트. '.repeat(10000),
+    initialPromptChars,
+  });
+  assert.ok(estimateTokens(prompt) <= limits.resumeMaxTokensEstimated,
+    `tokens=${estimateTokens(prompt)} > ${limits.resumeMaxTokensEstimated}`);
+  assert.ok(prompt.length <= limits.resumeMaxChars);
+  assert.ok(prompt.length <= Math.floor(initialPromptChars * limits.resumeMaxRatio));
+  assert.ok(prompt.includes('=== 재개 전용 안전 규칙 (고정) ==='), '재개 안전 규칙이 잘리면 안 된다');
+  assert.ok(prompt.includes('=== 재개 실행 프로토콜 (고정) ==='), '재개 프로토콜이 잘리면 안 된다');
+  assert.ok(prompt.includes('=== 동적 상태 ==='), '동적 상태가 잘리면 안 된다');
+});
+
+test('과대 동적 값이 있어도 최초 프롬프트 예산과 필드 라벨을 보존한다', () => {
+  const limits = modelConfig.promptLimits('trivial');
+  const huge = '동'.repeat(50000);
+  const prompt = prompts.buildInitialExecutionPrompt({
+    taskClass: 'trivial', taskContent: '작은 태스크',
+    taskId: huge, branch: huge, resultFile: huge,
+    progressEventCommand: huge, isn: huge, addCommentScript: huge,
+    now: huge,
+  });
+  assert.ok(prompt.length <= limits.initialMaxChars,
+    `chars=${prompt.length} > ${limits.initialMaxChars}`);
+  assert.ok(estimateTokens(prompt) <= limits.initialMaxTokensEstimated,
+    `tokens=${estimateTokens(prompt)} > ${limits.initialMaxTokensEstimated}`);
+  assert.ok(prompt.includes('=== 동적 상태 ==='));
+  for (const label of ['task_id:', 'current_branch:', 'now:', 'result_report_path:',
+                       'progress_event_command:', 'giip_isn:', 'progress_comment_command:']) {
+    assert.ok(prompt.includes(label), `${label} 라벨이 사라졌다`);
+  }
+});
+
+test('과대 동적 값이 있어도 재개 프롬프트 예산과 필드 라벨을 보존한다', () => {
+  const limits = modelConfig.promptLimits('trivial');
+  const huge = '動'.repeat(50000);
+  const prompt = prompts.buildResumeExecutionPrompt({
+    taskClass: 'trivial', taskContent: '작은 태스크',
+    taskId: huge, branch: huge, resultFile: huge,
+    progressEventCommand: huge, isn: huge, addCommentScript: huge,
+    taskFilePath: huge, now: huge,
+  });
+  assert.ok(prompt.length <= limits.resumeMaxChars,
+    `chars=${prompt.length} > ${limits.resumeMaxChars}`);
+  assert.ok(estimateTokens(prompt) <= limits.resumeMaxTokensEstimated,
+    `tokens=${estimateTokens(prompt)} > ${limits.resumeMaxTokensEstimated}`);
+  assert.ok(prompt.includes('=== 동적 상태 ==='));
+  for (const label of ['task_id:', 'current_branch:', 'now:', 'result_report_path:',
+                       'progress_event_command:', 'giip_isn:', 'progress_comment_command:',
+                       'task_spec_file:']) {
+    assert.ok(prompt.includes(label), `${label} 라벨이 사라졌다`);
+  }
+});
+
+test('과대 프로젝트 메타데이터가 최초 프롬프트 토큰 상한을 우회하지 못한다', () => {
+  const limits = modelConfig.promptLimits('trivial');
+  const huge = '프로젝트'.repeat(50000);
+  const prompt = prompts.buildInitialExecutionPrompt({
+    taskClass: 'trivial', taskContent: '작은 태스크',
+    projectName: huge, baseDir: huge, baseBranch: huge, langName: huge,
+  });
+  assert.ok(prompt.length <= limits.initialMaxChars,
+    `chars=${prompt.length} > ${limits.initialMaxChars}`);
+  assert.ok(estimateTokens(prompt) <= limits.initialMaxTokensEstimated,
+    `tokens=${estimateTokens(prompt)} > ${limits.initialMaxTokensEstimated}`);
+  assert.ok(prompt.includes('=== 프로젝트 정보 ==='));
+  for (const label of ['project:', 'working_directory:', 'base_branch:', 'response_language:']) {
+    assert.ok(prompt.includes(label), `${label} 라벨이 사라졌다`);
+  }
+});
+
+test('과대 미완료 단계가 재개 프롬프트 토큰 상한을 우회하지 못한다', () => {
+  const limits = modelConfig.promptLimits('trivial');
+  const prompt = prompts.buildResumeExecutionPrompt({
+    taskClass: 'trivial', taskContent: '작은 태스크',
+    pendingSteps: ['다음 단계 '.repeat(50000)],
+  });
+  assert.ok(prompt.length <= limits.resumeMaxChars,
+    `chars=${prompt.length} > ${limits.resumeMaxChars}`);
+  assert.ok(estimateTokens(prompt) <= limits.resumeMaxTokensEstimated,
+    `tokens=${estimateTokens(prompt)} > ${limits.resumeMaxTokensEstimated}`);
+  assert.ok(prompt.includes('=== 미완료 단계 (여기부터 이어서) ==='));
+  assert.ok(prompt.includes('=== 동적 상태 ==='));
+});
+
+test('정상 진행 명령은 그대로 유지하고 과대 명령은 실행 불가 진단으로 대체한다', () => {
+  const normalProgress = 'node tools/progress-event.js --task t --type decision';
+  const normalComment = 'pwsh -File "/repo/add-comment.ps1" -isn 123 -content "<본문>" -issuetype note -author "slack-bot"';
+  const normal = prompts.buildInitialExecutionPrompt({
+    taskContent: 'x', progressEventCommand: normalProgress,
+    isn: '123', addCommentScript: '/repo/add-comment.ps1',
+  });
+  assert.ok(normal.includes(`progress_event_command: ${normalProgress}`));
+  assert.ok(normal.includes(`progress_comment_command: ${normalComment}`));
+
+  const oversized = `node tools/progress-event.js --summary ${'한'.repeat(50000)}`;
+  const orig = console.warn;
+  let warned = '';
+  console.warn = (...args) => { warned += args.join(' '); };
+  let bounded;
+  try {
+    bounded = prompts.buildInitialExecutionPrompt({
+      taskClass: 'trivial', taskContent: 'x', progressEventCommand: oversized,
+      isn: '123', addCommentScript: `/repo/${'한'.repeat(50000)}.ps1`,
+    });
+  } finally {
+    console.warn = orig;
+  }
+  const eventLine = bounded.split('\n').find(line => line.startsWith('progress_event_command:'));
+  const commentLine = bounded.split('\n').find(line => line.startsWith('progress_comment_command:'));
+  assert.ok(/명령 생략/.test(eventLine), eventLine);
+  assert.ok(/명령 생략/.test(commentLine), commentLine);
+  assert.ok(!eventLine.includes('node tools/progress-event.js'), '잘린 실행 명령을 내보내면 안 된다');
+  assert.ok(!commentLine.includes('pwsh -File'), '잘린 실행 명령을 내보내면 안 된다');
+  assert.ok(/명령.*상한 초과/.test(warned), `과대 명령 경고가 없다: ${warned}`);
 });
 
 test('등급별 컨텍스트 총량 한도가 적용된다(48,000자 일괄 적용 폐지)', () => {

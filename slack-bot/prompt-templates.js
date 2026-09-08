@@ -21,6 +21,7 @@
  */
 
 const modelConfig = require('./model-config');
+const { estimateTokens, truncateToTokens } = require('./token-budget');
 
 const PROMPT_VERSION = 'fde-cost-v2';
 
@@ -217,22 +218,57 @@ function joinParts(parts) {
   return parts.filter(p => p.text && String(p.text).trim()).map(p => p.text).join('');
 }
 
-function fitParts(parts, budget, trimOrder) {
+const OMIT_MARKER = '\n…(예산 제한으로 생략)';
+
+function clipPartText(text, charAllowance, tokenAllowance) {
+  let clipped = truncateToTokens(text, tokenAllowance, OMIT_MARKER).text;
+  if (clipped.length <= charAllowance) return clipped;
+
+  const marker = OMIT_MARKER.slice(0, charAllowance);
+  let end = Math.max(0, charAllowance - marker.length);
+  if (end > 0 && /[\uD800-\uDBFF]/.test(clipped.charAt(end - 1))) end -= 1;
+  return `${clipped.slice(0, end)}${marker}`;
+}
+
+function trimPartToBudgets(parts, part, charBudget, tokenBudget) {
+  const original = part.text;
+  part.text = '';
+  const without = joinParts(parts);
+  const charAllowance = Math.max(0, charBudget - without.length);
+  // estimateTokens() rounds up, so leave one token between separately estimated strings.
+  let tokenAllowance = Math.max(0, tokenBudget - estimateTokens(without) - 1);
+  if (charAllowance <= 0 || tokenAllowance <= 0) return;
+
+  part.text = clipPartText(original, charAllowance, tokenAllowance);
+
+  // Rounding at the boundary can still add one estimated token after concatenation.
+  while (tokenAllowance > 0 && estimateTokens(joinParts(parts)) > tokenBudget) {
+    tokenAllowance -= 1;
+    part.text = clipPartText(original, charAllowance, tokenAllowance);
+  }
+}
+
+function fitParts(parts, charBudget, trimOrder, tokenBudget) {
   let out = joinParts(parts);
-  if (out.length <= budget) return { text: out, trimmed: [] };
+  const maxTokens = Number.isFinite(Number(tokenBudget)) && Number(tokenBudget) > 0
+    ? Math.floor(Number(tokenBudget))
+    : Math.ceil(charBudget / 4);
+  const withinBudget = text => text.length <= charBudget && estimateTokens(text) <= maxTokens;
+  if (withinBudget(out)) return { text: out, trimmed: [], overflow: null };
   const trimmed = [];
   for (const name of trimOrder) {
-    if (out.length <= budget) break;
+    if (withinBudget(out)) break;
     const p = parts.find(x => x.name === name && x.text && x.text.length > 0);
     if (!p) continue;
-    const over = out.length - budget;
-    if (p.text.length <= over + 60) { p.text = ''; }
-    else { p.text = `${p.text.slice(0, p.text.length - over - 40)}\n…(길이 제한으로 생략)`; }
+    trimPartToBudgets(parts, p, charBudget, maxTokens);
     trimmed.push(name);
     out = joinParts(parts);
   }
-  if (out.length > budget) out = `${out.slice(0, budget - 30)}\n…(프롬프트 상한 초과分 생략)`;
-  return { text: out, trimmed };
+  const overflow = withinBudget(out) ? null : {
+    chars: Math.max(0, out.length - charBudget),
+    tokens: Math.max(0, estimateTokens(out) - maxTokens),
+  };
+  return { text: out, trimmed, overflow };
 }
 
 // ── 최초 실행 프롬프트 (4.3) ─────────────────────────────────────────────────
@@ -271,10 +307,10 @@ function buildInitialExecutionPrompt(p = {}) {
 
   // 5: 프로젝트 정보
   push('project', section('=== 프로젝트 정보 ===', [
-    `project: ${p.projectName || '(unknown)'}`,
-    `working_directory: ${p.baseDir || ''}`,
-    `base_branch: ${p.baseBranch || ''}`,
-    `response_language: ${p.langName || 'Korean'} (always respond in this language)`,
+    `project: ${promptValue(p.projectName || '(unknown)')}`,
+    `working_directory: ${promptValue(p.baseDir)}`,
+    `base_branch: ${promptValue(p.baseBranch)}`,
+    `response_language: ${promptValue(p.langName || 'Korean')} (always respond in this language)`,
   ].join('\n')));
 
   // 6: 태스크 내용
@@ -292,30 +328,53 @@ function buildInitialExecutionPrompt(p = {}) {
 
   push('tail', '\n\n지금 바로 작업을 시작하세요.');
 
-  const budget = (p.limits && p.limits.initialMaxChars)
-    || modelConfig.promptLimits(p.taskClass).initialMaxChars;
-  const { text, trimmed } = fitParts(parts, budget,
-    ['context', 'klayer', 'task', 'context_reasons']);
+  const limits = { ...modelConfig.promptLimits(p.taskClass), ...(p.limits || {}) };
+  const budget = limits.initialMaxChars;
+  const tokenBudget = limits.initialMaxTokensEstimated;
+  const { text, trimmed, overflow } = fitParts(parts, budget,
+    ['context', 'klayer', 'task', 'context_reasons', 'resume_legacy'], tokenBudget);
   if (trimmed.length) {
-    console.warn(`[prompt] 최초 프롬프트가 ${p.taskClass || 'standard'} 상한(${budget}자)을 넘어 축약: ${trimmed.join(', ')}`);
+    console.warn(`[prompt] 최초 프롬프트를 ${budget}자/${tokenBudget}토큰 예산에 맞춰 축약: ${trimmed.join(', ')}`);
+  }
+  if (overflow) {
+    console.warn(`[prompt] 고정 최초 프롬프트가 예산 초과(문자 +${overflow.chars}, 토큰 +${overflow.tokens}); 안전 절은 보존함`);
   }
   return text;
 }
 
+const PROMPT_VALUE_MAX_TOKENS = 64;
+const COMMAND_VALUE_MAX_TOKENS = 160;
+const LIST_ITEM_MAX_TOKENS = 32;
+
+function promptValue(value, maxTokens = PROMPT_VALUE_MAX_TOKENS) {
+  const normalized = String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
+  return truncateToTokens(normalized, maxTokens, '…(값 생략)').text;
+}
+
+function commandValue(value, fieldName) {
+  const command = String(value == null ? '' : value);
+  if (estimateTokens(command) <= COMMAND_VALUE_MAX_TOKENS) return command;
+  console.warn(`[prompt] ${fieldName} 명령이 ${COMMAND_VALUE_MAX_TOKENS}토큰 상한 초과 — 실행 명령을 생략함`);
+  return `(명령 생략: ${COMMAND_VALUE_MAX_TOKENS}토큰 상한 초과 — 런타임 설정 확인 필요)`;
+}
+
 function dynamicState(p) {
   const dyn = [
-    `task_id: ${p.taskId || ''}`,
-    `task_class: ${p.taskClass || 'standard'}`,
-    `current_branch: ${p.branch || ''}`,
-    `attempt: ${p.attempt || 1}`,
-    `now: ${p.now || new Date().toISOString()}`,
-    `result_report_path: ${p.resultFile || ''}`,
+    `task_id: ${promptValue(p.taskId)}`,
+    `task_class: ${promptValue(p.taskClass || 'standard')}`,
+    `current_branch: ${promptValue(p.branch)}`,
+    `attempt: ${promptValue(p.attempt || 1)}`,
+    `now: ${promptValue(p.now || new Date().toISOString())}`,
+    `result_report_path: ${promptValue(p.resultFile)}`,
   ];
-  if (p.progressEventCommand) dyn.push(`progress_event_command: ${p.progressEventCommand}`);
+  if (p.progressEventCommand) {
+    dyn.push(`progress_event_command: ${commandValue(p.progressEventCommand, 'progress_event_command')}`);
+  }
   if (p.isn) {
-    dyn.push(`giip_isn: ${p.isn}`);
+    dyn.push(`giip_isn: ${promptValue(p.isn)}`);
     if (p.addCommentScript) {
-      dyn.push(`progress_comment_command: pwsh -File "${p.addCommentScript}" -isn ${p.isn} -content "<본문>" -issuetype note -author "slack-bot"`);
+      const command = `pwsh -File "${p.addCommentScript}" -isn ${p.isn} -content "<본문>" -issuetype note -author "slack-bot"`;
+      dyn.push(`progress_comment_command: ${commandValue(command, 'progress_comment_command')}`);
     }
   }
   return dyn;
@@ -326,7 +385,8 @@ function listBlock(items, max, prefix = '  - ') {
   const list = (items || []).slice(0, max);
   if (!list.length) return '';
   const extra = (items || []).length > max ? `\n${prefix}…외 ${(items || []).length - max}건` : '';
-  return list.map(i => `${prefix}${typeof i === 'string' ? i : JSON.stringify(i)}`).join('\n') + extra;
+  return list.map(i => `${prefix}${promptValue(
+    typeof i === 'string' ? i : JSON.stringify(i), LIST_ITEM_MAX_TOKENS)}`).join('\n') + extra;
 }
 
 /**
@@ -404,13 +464,14 @@ function buildResumeExecutionPrompt(p = {}) {
   push('dynamic', section('=== 동적 상태 ===', [
     ...dynamicState(p),
     `prompt_type: resume`,
-    p.taskFilePath ? `task_spec_file: ${p.taskFilePath} (필요할 때만 직접 읽어라)` : '',
+    p.taskFilePath ? `task_spec_file: ${promptValue(p.taskFilePath)} (필요할 때만 직접 읽어라)` : '',
   ].filter(Boolean).join('\n')));
 
   push('tail', '\n\n미완료 단계부터 즉시 이어서 작업하세요.');
 
-  const limits = p.limits || modelConfig.promptLimits(p.taskClass);
+  const limits = { ...modelConfig.promptLimits(p.taskClass), ...(p.limits || {}) };
   let budget = limits.resumeMaxChars;
+  const tokenBudget = limits.resumeMaxTokensEstimated;
   const initialChars = Number(p.initialPromptChars) || 0;
   if (initialChars > 0) {
     // 60% 규칙(2.2). 다만 고정 역할·안전규칙·프로토콜이 잘려나갈 정도로 작아지지는 않게 바닥을 둔다.
@@ -419,9 +480,13 @@ function buildResumeExecutionPrompt(p = {}) {
     budget = Math.max(MIN_RESUME_PROMPT_CHARS,
       Math.min(budget, Math.floor(initialChars * limits.resumeMaxRatio)));
   }
-  const { text, trimmed } = fitParts(parts, budget, RESUME_TRIM_ORDER);
+  const { text, trimmed, overflow } = fitParts(parts, budget,
+    ['resume_context_reasons', ...RESUME_TRIM_ORDER], tokenBudget);
   if (trimmed.length) {
-    console.log(`[prompt] 재개 프롬프트를 ${budget}자 예산에 맞춰 축약: ${trimmed.join(', ')}`);
+    console.log(`[prompt] 재개 프롬프트를 ${budget}자/${tokenBudget}토큰 예산에 맞춰 축약: ${trimmed.join(', ')}`);
+  }
+  if (overflow) {
+    console.warn(`[prompt] 고정 재개 프롬프트가 예산 초과(문자 +${overflow.chars}, 토큰 +${overflow.tokens}); 안전 절은 보존함`);
   }
   return text;
 }
