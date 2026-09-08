@@ -33,6 +33,7 @@ const prompts = require(path.join(SB, 'prompt-templates'));
 const checkpoint = require(path.join(SB, 'retry-checkpoint'));
 const costTracker = require(path.join(SB, 'cost-tracker'));
 const batchPlanner = require(path.join(SB, 'batch-planner'));
+const { estimateTokens, truncateToTokens } = require(path.join(SB, 'token-budget'));
 const { maskString, maskDeep } = require(path.join(SB, 'secret-mask'));
 
 let passed = 0;
@@ -1227,6 +1228,31 @@ test('slack-bot-minimax 는 이번 최적화 대상이 아니다(별개 프로�
   const txt = fs.readFileSync(envEx, 'utf8');
   assert.ok(/GITHUB_REPO=LowyShin\/smartorder-works/.test(txt),
     'slack-bot-minimax 가 다른 프로젝트(smartorder-works)를 향한다는 근거가 사라졌다');
+});
+
+// ── 토큰 예산 ──────────────────────────────────────────────────────────────
+section('토큰 예산 (다국어 보수 추정)');
+
+test('ASCII 400자는 100토큰으로 추정한다', () => {
+  assert.strictEqual(estimateTokens('a'.repeat(400)), 100);
+});
+
+test('한글 100자는 최소 100토큰으로 추정한다', () => {
+  assert.ok(estimateTokens('가'.repeat(100)) >= 100);
+});
+
+test('절단 결과는 예산과 Unicode 경계를 지키고 절단 여부를 알린다', () => {
+  const result = truncateToTokens('😀한글과 ASCII text '.repeat(20), 20, '…');
+  assert.strictEqual(result.truncated, true);
+  assert.ok(estimateTokens(result.text) <= 20, `tokens=${estimateTokens(result.text)}`);
+  assert.ok(!/[\uD800-\uDBFF]$/.test(result.text), 'high surrogate로 끝나면 안 된다');
+  assert.ok(!/^[\uDC00-\uDFFF]/.test(result.text), 'low surrogate로 시작하면 안 된다');
+});
+
+test('빈 문자열과 0 이하 예산을 안전하게 처리한다', () => {
+  assert.deepStrictEqual(truncateToTokens('', 20, '…'), { text: '', truncated: false });
+  assert.deepStrictEqual(truncateToTokens('abc', 0, '…'), { text: '', truncated: true });
+  assert.deepStrictEqual(truncateToTokens('abc', -1, '…'), { text: '', truncated: true });
 });
 
 // ── 결과 ────────────────────────────────────────────────────────────────────
