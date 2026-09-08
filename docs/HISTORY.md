@@ -53,3 +53,11 @@ This file tracks the history of tasks and changes performed by the GIIP Agent sy
 - 20260510 12:35:00: Fixed broken link in `docs/70-LowyOpinion/capacydiagram.md` and restored the missing `docs/02-design/DESIGN_20260415_KARPATHY_K_LAYER.md` document.
 - 20260513 13:52:00: Moved `51-features/wiki-sync` to `docs/51-features/wiki-sync` to align with the project's documentation numbering convention.
 - 20260516 13:58:00: Integrated `msitarzewski/agency-agents` repository. Added new roles (Workflow Architect, Korean Business Navigator) and skills (workflow-mapping, premium-ui-craft). Updated `update_urls.json` and workflow guidelines.
+- 20260701 (시각 미기록): **k-layer.js 키워드 업데이트 및 `BASE_DIR` 처리 개선.**
+- 20260703 (시각 미기록): **README를 FDE Agent 정체성 중심으로 재구성** — FDE 정의를 Palantir "Forward Deployed Engineer"로 정정하고 EN/JP 동기화.
+- 20260703 (시각 미기록): **QUICK_START 개선** — Claude 최우선 추천 + Slack 봇 연결 가이드 추가.
+- 20260703 (시각 미기록): **범용 워크플로 규칙 3종 추가** — `33` repo-URL 보고 / `34` edit-approval / `35` commit-push-per-task. → [`.agent/rules/`](../.agent/rules/)
+- 20260703 (시각 미기록): **slack-bot 다수 개선** — `taskmerge`(미완료 중복 태스크 통합), 처리 타임아웃 5→20분, 태스크번호 포함 수정요청 라우팅 버그 수정, `wfrun`/`wflist` 워크플로 실행·목록 명령 추가, 결과 URL 유실 버그 수정.
+- 20260706 (시각 미기록): **What's New 롤링 페이지 신설** — README 최상단에 링크. 최근 7일 갱신을 이 페이지에서 확인, 유지 규칙은 [`36_whats_new_maintenance`](../.agent/rules/36_whats_new_maintenance.md).
+- 20260706 (시각 미기록): **paperthin 스킬 14종 이식 + 외부 레포 목록 등록** — [LilMGenius/paperthin](https://github.com/LilMGenius/paperthin)(MIT)의 "clean & true" 저수준 스킬(re0·shower·factchk·ssotchk·hate 등)을 `.agent/skills/`에 이식하고, `links.md` 및 `ai-repositories-index`(KR/EN/JP)에 등록. → [`.agent/skills/PAPERTHIN_NOTICE.md`](../.agent/skills/PAPERTHIN_NOTICE.md)
+- 20260706 (시각 미기록): **keep-codex-fast 외부 레포 목록 등록** — [vibeforge1111/keep-codex-fast](https://github.com/vibeforge1111/keep-codex-fast)(MIT, Codex 성능 유지 스킬)를 `links.md`·`ai-repositories-index`에 등록. 스킬은 기존 이식 완료(`codex-maintenance` 워크플로 포함).
