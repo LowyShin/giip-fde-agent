@@ -52,6 +52,10 @@ AI 에이전트 시스템과 연동하거나 활용할 수 있는 외부 유용�
 ### [jikji](https://github.com/NomaDamas/jikji) ([도구 소개](../../docs/04-tools/jikji.md))
 - **한줄 소개**: AI 에이전트가 로컬 파일을 탐색할 때 토큰 소비를 최대 86배 절약하는 비파괴적 파일 탐색 레이어로, `grep`/`find` 대신 먼저 사용합니다.
 
+### [oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent)
+- **한줄 소개**: OpenCode/Codex CLI용 68k+ star TypeScript 플러그인 프레임워크로, 멀티 에이전트 디스패치·코드 리뷰 파이프라인·PDCA형 플래닝에 더해 Hashline(콘텐츠 해시 태깅 편집 도구)·Team Mode(tmux 시각화 + `team_*` 툴 패밀리)·LSP MCP 서버 연동 같은 자체 런타임 엔지니어링 기능을 제공합니다.
+- **적용 상태**: 멀티 에이전트 디스패치/코드 리뷰/PDCA 계열은 본 레포의 `dispatching-parallel-agents`, `code-review`, `receiving-code-review`/`requesting-code-review`, `pdca`, `systematic-debugging` 등 기존 스킬과 중복되어 미이식. Hashline/Team Mode/LSP MCP는 TypeScript 플러그인 런타임에 종속되어 있어 이 레포의 instruction-file 아키텍처로는 새 엔지니어링 인프라 구축 없이는 이식 불가 — 범위 제외. 독립 실행형이라 이식 가능한 두 가지만 신규 Skill로 이식: 내장 `ast-grep` 스킬 → `.agent/skills/ast-grep/` (구조적 코드 검색·리라이트), `/init-deep` 명령 → `.agent/skills/init-deep-context/` (계층형 AGENTS.md 생성 가이드)
+
 ## 🎨 디자인 및 문서화 도구
 
 ### [Open Design](https://github.com/nexu-io/open-design) ([소개 페이지](../../docs/50-technical/open-design-intro.md))
@@ -88,3 +92,4 @@ AI 에이전트 시스템과 연동하거나 활용할 수 있는 외부 유용�
 *작업 이력: 20260624: jikji 추가 (PR #24), moa 분석 리포트 링크 보완 (PR #26)*
 *작업 이력: 20260706: paperthin 추가 및 스킬 14종 `.agent/skills/` 이식*
 *작업 이력: 20260706: keep-codex-fast 유지관리 도구 섹션에 등록 (스킬은 기존 이식 완료)*
+*작업 이력: 20260910: oh-my-openagent 추가, 이식 가능한 항목 검토 후 `ast-grep`/`init-deep-context` 스킬 2종 신규 이식 (giip-fde-agent PR)*
