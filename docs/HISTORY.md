@@ -53,3 +53,6 @@ This file tracks the history of tasks and changes performed by the GIIP Agent sy
 - 20260510 12:35:00: Fixed broken link in `docs/70-LowyOpinion/capacydiagram.md` and restored the missing `docs/02-design/DESIGN_20260415_KARPATHY_K_LAYER.md` document.
 - 20260513 13:52:00: Moved `51-features/wiki-sync` to `docs/51-features/wiki-sync` to align with the project's documentation numbering convention.
 - 20260516 13:58:00: Integrated `msitarzewski/agency-agents` repository. Added new roles (Workflow Architect, Korean Business Navigator) and skills (workflow-mapping, premium-ui-craft). Updated `update_urls.json` and workflow guidelines.
+- 20260701: k-layer.js 키워드 업데이트 및 `BASE_DIR` 처리 개선.
+- 20260703: README를 FDE Agent 정체성 중심으로 재구성하고 EN/JP를 동기화. QUICK_START, 범용 워크플로 규칙, Slack 봇의 taskmerge·타임아웃·수정요청 라우팅·워크플로 명령·결과 URL 처리를 개선.
+- 20260706: What's New 롤링 페이지를 신설하고, `paperthin` 스킬 14종과 `keep-codex-fast` 외부 저장소 정보를 등록.
