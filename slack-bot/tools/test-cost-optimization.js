@@ -33,6 +33,7 @@ const prompts = require(path.join(SB, 'prompt-templates'));
 const checkpoint = require(path.join(SB, 'retry-checkpoint'));
 const costTracker = require(path.join(SB, 'cost-tracker'));
 const batchPlanner = require(path.join(SB, 'batch-planner'));
+const taskVerifier = require(path.join(SB, 'task-verifier'));
 const { maskString, maskDeep } = require(path.join(SB, 'secret-mask'));
 
 let passed = 0;
@@ -1193,6 +1194,91 @@ test('실행 프롬프트에 진행 이벤트 기록 규칙이 들어간다(5.5)
   assert.ok(p.includes('진행 이벤트 기록'));
   for (const t of progress.EVENT_TYPES) assert.ok(p.includes(t), `${t} 안내가 없다`);
   assert.ok(p.includes('progress_event_command'), '동적 상태에 실제 명령이 있어야 한다');
+});
+
+// ── 완료 검증 게이트 ────────────────────────────────────────────────────────
+section('완료 검증 게이트');
+
+function completionInput(overrides = {}) {
+  return Object.assign({
+    sourceFiles: ['src/example.js'],
+    totalSourceChanges: 1,
+    testResults: [{ command: 'npm test', status: 'passed' }],
+    blocked: [],
+    resultFileExists: true,
+  }, overrides);
+}
+
+test('결과 파일이 없으면 완료를 거부한다', () => {
+  const verdict = taskVerifier.verifyCompletion(completionInput({ resultFileExists: false }));
+  assert.strictEqual(verdict.ok, false);
+  assert.strictEqual(verdict.code, 'missing_result_file');
+});
+
+test('미해결 blocked 항목이 하나라도 있으면 완료를 거부한다', () => {
+  const verdict = taskVerifier.verifyCompletion(completionInput({ blocked: ['배포 권한 확인 필요'] }));
+  assert.strictEqual(verdict.ok, false);
+  assert.strictEqual(verdict.code, 'unresolved_blocked');
+});
+
+test('소스 변경이 있는데 테스트 결과가 없으면 완료를 거부한다', () => {
+  const verdict = taskVerifier.verifyCompletion(completionInput({ testResults: [] }));
+  assert.strictEqual(verdict.ok, false);
+  assert.strictEqual(verdict.code, 'missing_passing_test');
+});
+
+test('같은 명령의 이전 실패 뒤 최신 성공이 있으면 완료한다', () => {
+  const verdict = taskVerifier.verifyCompletion(completionInput({
+    testResults: [
+      { command: 'npm test', status: 'failed' },
+      { command: 'npm test', status: 'success' },
+    ],
+  }));
+  assert.strictEqual(verdict.ok, true, verdict.reason);
+  assert.strictEqual(verdict.details.latestTestResults.length, 1);
+  assert.strictEqual(verdict.details.latestTestResults[0].status, 'success');
+});
+
+test('같은 명령의 이전 성공 뒤 최신 실패 또는 오류가 있으면 완료를 거부한다', () => {
+  for (const status of ['fail', 'failed', 'error', 'errored']) {
+    const verdict = taskVerifier.verifyCompletion(completionInput({
+      testResults: [
+        { command: 'npm test', status: 'ok' },
+        { command: 'npm test', status },
+      ],
+    }));
+    assert.strictEqual(verdict.ok, false, `status=${status}`);
+    assert.strictEqual(verdict.code, 'latest_test_failed');
+  }
+});
+
+test('통과 상태 별칭을 모두 인정한다', () => {
+  for (const status of ['pass', 'passed', 'success', 'succeeded', 'ok']) {
+    const verdict = taskVerifier.verifyCompletion(completionInput({
+      testResults: [{ command: 'npm test', status }],
+    }));
+    assert.strictEqual(verdict.ok, true, `status=${status}: ${verdict.reason}`);
+  }
+});
+
+test('소스 변경이 없으면 테스트 기록 없이 완료할 수 있다', () => {
+  const verdict = taskVerifier.verifyCompletion(completionInput({
+    sourceFiles: [],
+    totalSourceChanges: 0,
+    testResults: [],
+  }));
+  assert.strictEqual(verdict.ok, true, verdict.reason);
+});
+
+test('파일 목록 또는 실제 변경 수 중 하나라도 소스 변경을 나타내면 통과 테스트가 필요하다', () => {
+  const byList = taskVerifier.verifyCompletion(completionInput({
+    sourceFiles: ['src/untracked.js'], totalSourceChanges: 0, testResults: [],
+  }));
+  const byCount = taskVerifier.verifyCompletion(completionInput({
+    sourceFiles: [], totalSourceChanges: 2, testResults: [],
+  }));
+  assert.strictEqual(byList.code, 'missing_passing_test');
+  assert.strictEqual(byCount.code, 'missing_passing_test');
 });
 
 // ── 회귀: 기존 Slack/PR 흐름 ────────────────────────────────────────────────
