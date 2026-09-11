@@ -72,6 +72,26 @@ MiniMax가 한도 소진되면 OpenClaw 자체 라우팅이 fallbacks 순서대�
 (`slack-bot-minimax`처럼 별도 쿨다운 로직을 우리가 짤 필요 없음 — OpenClaw가 provider 단위로
 이미 처리한다).
 
+## GIIP lssn 자동등록 + 상태보고 (giip #2349)
+
+`slack-bot`/`slack-bot-minimax`는 자체 Node 런타임(index.js) 안에서 기동 시 lssn 을 자동등록하고
+메시지 처리 지점마다 상태를 보고한다(각 폴더 `lssn-agent.js`). 이 openclaw 변형은 외부 게이트웨이를
+그대로 구동할 뿐 우리가 훅을 넣을 런타임 코드가 없고, 위 §"왜 이 폴더가 별도인가"대로 OpenClaw 본체
+소스는 건드리지 않는다. 그래서 "매 메시지 처리마다"의 세밀한 보고는 이 변형에서는 제공하지 않으며,
+대신 게이트웨이와 나란히 띄우는 **companion 스크립트 `lssn-heartbeat.js`** 로 기동 시 1회 등록 +
+주기적(기본 60초) 생존/대기 상태 보고를 제공한다.
+
+```bash
+# 환경변수로 이 배포의 SK/CSN 을 주입(하드코딩 금지). tool-slug 기본값은 'openclaw'.
+GIIP_SK=<이 배포의 SK> GIIP_CSN=<csn> node lssn-heartbeat.js        # 60초 주기로 상시 실행
+GIIP_SK=<...> HEARTBEAT_SEC=0 node lssn-heartbeat.js                # 등록만 1회 하고 종료(cron 용)
+```
+
+- OS 서비스로 상시 구동하려면 `openclaw gateway start` 와 동일한 방식(schtasks/launchd/systemd)으로
+  이 스크립트를 함께 등록한다. best-effort 설계라 등록/보고 실패는 로그만 남기고 게이트웨이 동작에
+  영향을 주지 않는다.
+- API 규약은 https://giip.littleworld.net/ko/guides/giip-agent-api 참조.
+
 ## 참고
 
 - MiniMax Anthropic 호환 엔드포인트: https://platform.minimax.io/docs/api-reference/text-anthropic-api
