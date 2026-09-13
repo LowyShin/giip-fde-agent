@@ -66,7 +66,15 @@ async function maybeCreateIssue(channelId, title, content, csn = null) {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const r = await giip.issueCreate(acct, body);
-      return { isn: r && r.isn ? Number(r.isn) : null, error: null };
+      const isn = r && r.isn ? Number(r.isn) : null;
+      if (isn) {
+        // [giip #2417] 사용자가 slack으로 직접 요청해 생성한 이슈는 [USER-REQUEST] 마커를 자동 첨부
+        // (봇 자동 생성 이슈와 구분 — 코멘트 순위로 사용자 직접 요청이 항상 먼저 처리됨)
+        try { await giip.issueComment(acct, isn, '[USER-REQUEST]'); }
+        catch (e) { console.error(`[giip-task] [USER-REQUEST] 마커 실패(isn=${isn}): ${e.message}`); }
+        return { isn, error: null };
+      }
+      return { isn: null, error: null };
     } catch (e) {
       lastErr = e;
       if (attempt === 0 && isRetryableIssueError(e)) {
