@@ -82,6 +82,9 @@ $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
 $Root         = Split-Path -Parent $MyInvocation.MyCommand.Path
+# giip #2465: 이슈 처리 세션 안전 규칙(.agent/rules/41_issue_session_safety_index.md)이 있는 레포 루트.
+# $Root 는 <레포>/scripts/gissue 이므로 두 단계 위가 레포 루트다. 프롬프트의 {AGENT_REPO} 로 치환된다.
+$AgentRepo    = Split-Path -Parent (Split-Path -Parent $Root)
 $MapFile      = Join-Path $Root 'csn-projects.json'
 $LogDir       = Join-Path $Root 'logs'
 $ClaudeModel  = 'claude-opus-4-8'
@@ -181,6 +184,23 @@ function Invoke-GissuePrGateSweep($csn, $workdir) {
 $PromptTemplate = @'
 너는 GIIP issue 자동 처리 에이전트다. CSN {CSN} 전용이며, 모든 작업은 프로젝트 폴더 {PROJECT} 안에서만 수행한다.
 사용자 확인/컨펌 절차는 전부 생략하고 끝까지 자율 실행한다. 처리할 이슈가 없으면 아무 작업도 하지 말고 즉시 조용히 종료한다(불필요하게 계속 탐색·대기하지 말 것).
+
+[안전 규칙 로드] — 이슈 처리에 착수하기 전에 반드시 먼저 수행한다 (giip #2465, 2026-09-14 신설):
+  아래 색인 파일을 읽고, 이번 처리에 해당하는 규칙 파일(같은 디렉터리의 42_~50_)을 이어서 읽는다.
+    {AGENT_REPO}\.agent\rules\41_issue_session_safety_index.md
+  코멘트/상태전이 규정은 같은 디렉터리의 PROTOCOL_PROGRESS_COMMENT.md 를 따른다.
+  이 블록은 프롬프트 전체에서 "단 한 번만" 존재한다 — 아래 [0]~[H] 각 단계는 이 블록을 복제하지 말고
+  "위 [안전 규칙 로드] 그대로 따른다"로 참조만 한다(giip #2425: 같은 안전 문단이 [C]/[D] 두 곳에
+  복붙돼 한쪽만 수정된 사고. 상세는 규칙 48_single_source_safety_predicate.md).
+  특히 아래 4가지는 이 세션과, 이 세션이 만드는 모든 위임 프롬프트에 예외 없이 적용한다
+  (상세·근거는 규칙 43_delegation_safety_block.md):
+    - 공유 체크아웃을 직접 고치지 말고 전용 worktree 에서 작업한다(브랜치명 재사용 금지, 경로는 슬래시).
+    - worktree 안에서 pnpm/npm/yarn install 을 하지 않는다(이미 install 된 체크아웃의 node_modules 를
+      `cmd /c mklink /J` 정션으로 링크한다).
+    - `--no-verify` 로 커밋 훅을 우회하지 않는다. 훅이 실패하면 원인을 고친다.
+    - 자기 worktree 를 스스로 정리(git worktree remove 등)하지 않는다. 경로만 보고한다.
+  색인 파일이 그 경로에 없으면(이식 누락) 그 사실을 처리 중인 이슈에 note 코멘트로 남기고, 위 4가지는
+  이 블록에 적힌 대로 그대로 적용한 뒤 계속 진행한다(규칙 파일 부재를 이유로 처리를 중단하지 않는다).
 
 giip issue API로 CSN {CSN} 의 이슈만 조회한다. 조회 스크립트에는 반드시 --csn {CSN} 을 넘겨 조회 단계에서 다른 CSN 이슈가 새어들지 않게 한다(이 스코핑 없이 전체 CSN 을 조회하면 이 폴더가 아닌 다른 CSN 이슈를 잘못 처리한다):
   - PENDING:  node "{GISSUE_TOOLS}\list-issues.js" --csn {CSN} --status PENDING
@@ -855,7 +875,7 @@ foreach ($csn in $map.PSObject.Properties.Name) {
         Remove-Item $lock -Force; Write-Log $csn "stale lock 제거($([int]$age.TotalHours)h)"
     }
 
-    $prompt = $PromptTemplate.Replace('{CSN}', $csn).Replace('{PROJECT}', $workdir).Replace('{GISSUE_TOOLS}', $Root)
+    $prompt = $PromptTemplate.Replace('{CSN}', $csn).Replace('{PROJECT}', $workdir).Replace('{GISSUE_TOOLS}', $Root).Replace('{AGENT_REPO}', $AgentRepo)
 
     if ($DryRun) {
         $engineNote = if ($env:MINIMAX_API_KEY) { "MiniMax($MiniMaxModel) 우선, 폴백 claude($ClaudeModel)" } else { "claude($ClaudeModel)" }
