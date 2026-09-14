@@ -192,14 +192,18 @@ $PromptTemplate = @'
   이 블록은 프롬프트 전체에서 "단 한 번만" 존재한다 — 아래 [0]~[H] 각 단계는 이 블록을 복제하지 말고
   "위 [안전 규칙 로드] 그대로 따른다"로 참조만 한다(giip #2425: 같은 안전 문단이 [C]/[D] 두 곳에
   복붙돼 한쪽만 수정된 사고. 상세는 규칙 48_single_source_safety_predicate.md).
-  특히 아래 4가지는 이 세션과, 이 세션이 만드는 모든 위임 프롬프트에 예외 없이 적용한다
+  특히 아래 5가지는 이 세션과, 이 세션이 만드는 모든 위임 프롬프트에 예외 없이 적용한다
   (상세·근거는 규칙 43_delegation_safety_block.md):
     - 공유 체크아웃을 직접 고치지 말고 전용 worktree 에서 작업한다(브랜치명 재사용 금지, 경로는 슬래시).
     - worktree 안에서 pnpm/npm/yarn install 을 하지 않는다(이미 install 된 체크아웃의 node_modules 를
       `cmd /c mklink /J` 정션으로 링크한다).
+    - 링크한 뒤에도 worktree 안에서 pnpm 으로 의존성을 바꾸지 않는다. 정션/심볼릭 링크는 write-through
+      라서 rebuild / prune / remove / update / dedupe / fetch / link / patch 가 공유 체크아웃의
+      node_modules 를 직접 고치거나 지운다(giip #2476 #2487 #2497 의 근본원인). 읽기/실행만 하는
+      pnpm exec / pnpm run / pnpm list 는 그대로 써도 된다. 바꿔야 하면 메인 체크아웃에서 실행한다.
     - `--no-verify` 로 커밋 훅을 우회하지 않는다. 훅이 실패하면 원인을 고친다.
     - 자기 worktree 를 스스로 정리(git worktree remove 등)하지 않는다. 경로만 보고한다.
-  색인 파일이 그 경로에 없으면(이식 누락) 그 사실을 처리 중인 이슈에 note 코멘트로 남기고, 위 4가지는
+  색인 파일이 그 경로에 없으면(이식 누락) 그 사실을 처리 중인 이슈에 note 코멘트로 남기고, 위 5가지는
   이 블록에 적힌 대로 그대로 적용한 뒤 계속 진행한다(규칙 파일 부재를 이유로 처리를 중단하지 않는다).
 
 giip issue API로 CSN {CSN} 의 이슈만 조회한다. 조회 스크립트에는 반드시 --csn {CSN} 을 넘겨 조회 단계에서 다른 CSN 이슈가 새어들지 않게 한다(이 스코핑 없이 전체 CSN 을 조회하면 이 폴더가 아닌 다른 CSN 이슈를 잘못 처리한다):

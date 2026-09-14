@@ -264,7 +264,7 @@ GitHub에서 머지했지만, 그 PR을 병합한 세션이 로컬 `lowyworkenv`
 | 규칙 | 한 줄 요약 | 근거 giip |
 |---|---|---|
 | 42 완료 판정은 실행 결과로만 | 등록/머지는 근거가 아니다. `LastTaskResult=0`도 아니다 | #2415 #2425 #2429 #2431 #2436 |
-| 43 위임 안전 블록 | worktree 격리 / install 금지+`mklink /J` / `--no-verify` 금지 / 자기 worktree 정리 금지 | #2390~#2397 #2432 #2442 |
+| 43 위임 안전 블록 | worktree 격리 / install 금지+`mklink /J` / 링크 후에도 worktree 안 pnpm 의존성 변경 금지(write-through) / `--no-verify` 금지 / 자기 worktree 정리 금지 | #2390~#2397 #2432 #2442 #2476 #2487 #2497 |
 | 44 `[NO-PR-REASON]` | PR이 성립 불가한 이슈의 탈출구 | #2415 #2425 |
 | 45 3회 캡 이후 `NEEDS_DECISION` | 4분기 재판정, 예·아니오 질문 1개 | #2415 #2425 |
 | 46 타 CSN 쓰기 금지 | 읽기는 되고 쓰기는 안 된다 | #1053 #1079 |

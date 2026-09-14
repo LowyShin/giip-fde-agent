@@ -1,8 +1,9 @@
 # 43. 위임 안전 블록 (Delegation Safety Block)
 
-> **HARD RULE** — 서브에이전트에게 커밋/push/PR 을 시키는 **모든** 위임 프롬프트에 아래 4개 문구를
+> **HARD RULE** — 서브에이전트에게 커밋/push/PR 을 시키는 **모든** 위임 프롬프트에 아래 5개 문구를
 > 그대로 넣는다. 하나라도 빠지면 실측된 사고가 재발한다.
-> 근거 giip: #2390~#2397(worktree install 낭비) #2432 #2445 #2463(작업 중 worktree 삭제) #2442(훅 강제).
+> 근거 giip: #2390~#2397(worktree install 낭비) #2432 #2445 #2463(작업 중 worktree 삭제) #2442(훅 강제)
+> #2476 #2487 #2497(정션 write-through 로 공유 node_modules 손상).
 
 ## 왜 "위임 프롬프트에 넣는다"가 규칙인가
 
@@ -22,6 +23,10 @@
   끝난 체크아웃의 node_modules 를 정션으로 링크한다:
   cmd /c mklink /J "<worktree>\node_modules" "<이미 install 된 체크아웃>\node_modules"
   (Windows 기준. POSIX 환경이면 `ln -s` 로 대체한다. 관리자 권한은 필요 없다.)
+- **링크한 뒤에도 worktree 안에서 pnpm 으로 의존성을 바꾸지 말 것.** 정션/심볼릭 링크는 write-through
+  라서, worktree 에서 돌린 pnpm rebuild / prune / remove / update / dedupe / fetch / link / patch 가
+  **공유 체크아웃의 node_modules 를 직접 고치거나 지운다.** 읽기/실행만 하는 pnpm exec / pnpm run /
+  pnpm list 는 그대로 써도 된다. 의존성을 정말 바꿔야 하면 **메인 체크아웃에서** 실행한다.
 - **`--no-verify` 금지**: 커밋 훅을 자체 판단으로 우회하지 말 것. 훅이 실패하면 원인을 고친다.
 - **자기 worktree 정리(git worktree remove 등)는 시도하지 말 것.** 종료 후 경로만 보고한다.
 ```
@@ -41,6 +46,42 @@ worktree 마다 `pnpm install` 을 다시 돌려 디스크와 시간이 소모�
 
 > 부수 주의: pnpm 의 `node_modules` 는 심볼릭 링크 구조다. `find -maxdepth 1` 류로 들여다보고
 > "비어 있다"고 오진하지 말 것.
+
+### 2-1) 링크한 뒤에도 worktree 안에서 pnpm 으로 의존성을 바꾸지 않는다 (giip #2476 #2487 #2497)
+
+**링크했다고 안전해진 것이 아니다.** 정션(`mklink /J`)이나 심볼릭 링크는 바로가기가 아니라
+파일시스템 레벨의 진짜 디렉터리 링크라, pnpm 이 그 너머의 **공유 체크아웃에 직접 쓴다**(write-through).
+worktree 에서 실행해도 pnpm 이 만지는 것은 worktree 의 사본이 아니라 모두가 공유하는 본체다.
+
+가장 위험한 것은 **조용히 망가진다는 점**이다. `pnpm rebuild` 는 경고 한 줄 없이 rc=0 으로 끝나면서
+공유 `node_modules/.modules.yaml` 의 `virtualStoreDir` 를 worktree 경로로 덮어쓴다. 그 순간부터
+pnpm **자신의** 안전장치(`ERR_PNPM_UNEXPECTED_VIRTUAL_STORE`)가 무력화되고, 다음에 누가
+`pnpm remove` 나 `pnpm install` 을 돌리면 공유 `node_modules` 가 통째로 recreate 되면서 `.bin` shim 과
+패키지가 날아간다.
+
+이것이 giip #2476(스토어/가상스토어 손상)과 giip #2487(`.bin` shim 33개 → 3개)의 **공통 근본원인**이다.
+두 번 다 사후에 `.bin` 이 비어서야 발견됐다.
+
+2026-09-14 실측(giip #2497, pnpm 10.33.2 / Windows / 임시 레포+임시 정션으로 재현):
+
+| 구분 | 명령 |
+|---|---|
+| 위험 (공유 node_modules 실제 변경/삭제 확인) | `install` `i` `ci` `add` `rebuild` `prune` `remove` `rm` `update` `up` `dedupe` `fetch` `link` `unlink` `patch` `import` `deploy` |
+| 안전 (무변화 확인) | `--version` `exec` `run` `test` `list` `why` `outdated` `licenses list` `root` `bin` `dlx` |
+
+> `dedupe` / `fetch` / `link` 가 공유 node_modules 전체 purge 를 "시도"만 하고 멈춘 것은 대화형 TTY 가
+> 없어서다(`ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY`). **`CI=true` 환경에서는 중단되지 않고
+> 실제로 지운다.** 스케줄러/CI 컨텍스트에는 `CI` 가 흔히 있으므로 "no-TTY 라서 안전하다"에 기대면 안 된다.
+
+정직하게 덧붙이면, 최초 가설이던 "`pnpm exec` / `pnpm run` 이 write-through 한다"는 **재현되지 않았다**
+(의존성 일치 / package.json 드리프트 / `verify-deps-before-run=true` 세 조건 모두 무변화).
+그래서 exec·run 은 금지 목록에 넣지 않았다 — 넣었다면 `pnpm exec tsc --noEmit` 같은 읽기 전용 작업이
+막혔을 것이다.
+
+> lowyworkenv 에는 이것을 기계적으로 막는 PreToolUse 훅
+> (`.claude/hooks/check-worktree-install.sh`)과 드리프트 탐지 스크립트
+> (`scripts/check-pnpm-store-drift.mjs`)가 있다. 상세 정본은 그쪽
+> `.agent/rules/58_worktree_pnpm_write_through.md`.
 
 ### 3) `--no-verify` 금지
 훅은 이 환경에서 **실제로 지켜진 유일한 강제 수단**이다(giip #2442 — 규칙을 만든 세션 본인이 자기
