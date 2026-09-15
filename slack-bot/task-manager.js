@@ -313,7 +313,11 @@ function buildFastPathPlan(requestText, cls) {
 function analyzeRequest(requestText, taskId, baseDir = BASE_DIR) {
   ensureDirs();
 
-  const claims = searchKLayer(requestText);
+  const claims = searchKLayer(requestText, {
+    workspaceDir: baseDir,
+    project: path.basename(baseDir),
+    csn: config.resolveProjectCsn(baseDir),
+  });
   const projectName = path.basename(baseDir);
 
   // 1) 카탈로그(본문 미로딩) + 사전 정적 분류(모델 호출 0회)
@@ -560,7 +564,11 @@ function startExecution(taskId, taskFilePath, { onComplete, onError, isn = null 
   }
   console.log(`[TaskManager] task ${taskId}: 실행 컨텍스트 ${ctxRead.filesRead.length}개 파일 / ${ctxRead.stats.chars}자 (${contextSource})`);
 
-  const claims = searchKLayer(taskContent);
+  const claims = searchKLayer(taskContent, {
+    workspaceDir: baseDir,
+    project: path.basename(baseDir),
+    csn: config.resolveProjectCsn(baseDir),
+  });
 
   // ctx が渡されていれば prepareTaskBranch 済みの専用ブランチ。無ければ現在ブランチ(後方互換)。
   const currentBranch = (ctx && ctx.branch) || getCurrentBranch(baseDir);
