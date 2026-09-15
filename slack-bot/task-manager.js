@@ -21,6 +21,7 @@ const costTracker = require('./cost-tracker');
 // giip-1068 비용 최적화 2차
 const progressEvents = require('./progress-events');
 const resumeCtx = require('./resume-context-builder');
+const taskEvidence = require('./task-evidence');
 
 const BASE_DIR = path.join(__dirname, '..');
 // giip-1063/1068: 비용 로그와 checkpoint 는 같은 중앙 runtime root 를 쓴다(7).
@@ -745,6 +746,8 @@ function startExecution(taskId, taskFilePath, { onComplete, onError, isn = null 
       stdio: ['pipe', 'pipe', 'pipe'], // stdin 으로 프롬프트 전달(ENAMETOOLONG 회피)
       env,
     });
+    try { taskEvidence.recordStarted(taskId, { attempt: attemptNo, provider }, RUNTIME_BASE_DIR); }
+    catch (e) { console.error('[TaskManager] evidence start failed:', e.message); }
     proc.stdin.on('error', () => {}); // 자식이 먼저 종료하면 EPIPE — 무시
     proc.stdin.end(executionPrompt);
 
@@ -754,6 +757,8 @@ function startExecution(taskId, taskFilePath, { onComplete, onError, isn = null 
     proc.stderr.on('data', d => { stderr += d; });
 
     proc.on('close', (code) => {
+      try { taskEvidence.recordExit(taskId, code, { attempt: attemptNo }, RUNTIME_BASE_DIR); }
+      catch (e) { console.error('[TaskManager] evidence exit failed:', e.message); }
       const combinedOut = `${stdout}\n${stderr}`;
       const usage = costTracker.parseUsageFromOutput(combinedOut);
       // 6.2: 태스크/결과/런타임 파일을 제외한 "실제" 소스 변경만 센다.
@@ -847,7 +852,11 @@ function startExecution(taskId, taskFilePath, { onComplete, onError, isn = null 
       }
     });
 
-    proc.on('error', (err) => onError(err, null));
+    proc.on('error', (err) => {
+      try { taskEvidence.recordExit(taskId, null, { attempt: attemptNo }, RUNTIME_BASE_DIR); }
+      catch (e) { console.error('[TaskManager] evidence error failed:', e.message); }
+      onError(err, null);
+    });
     return proc;
   }
 
@@ -1734,6 +1743,8 @@ function extractSummary(planContent) {
 }
 
 function addToTasklist(taskId, title, summary, requestText) {
+  try { taskEvidence.recordPrepared(taskId, RUNTIME_BASE_DIR); }
+  catch (e) { console.error('[TaskManager] evidence prepare failed:', e.message); }
   const list = loadTasklist();
   list.push({
     taskId,
@@ -1760,7 +1771,12 @@ function updateTasklistEntry(taskId, updates) {
 // status: 'pending' | 'running' | 'completed' | 'cancelled' | null(全件)
 function getTasklistByStatus(status = null) {
   const list = loadTasklist();
-  return status ? list.filter(t => t.status === status) : list;
+  const selected = status ? list.filter(t => t.status === status) : list;
+  return selected.map(t => {
+    let receipt = null;
+    try { receipt = taskEvidence.read(t.taskId, RUNTIME_BASE_DIR); } catch {}
+    return { ...t, verification_state: receipt ? receipt.verification_state : 'unknown' };
+  });
 }
 
 // ステータス絵文字
