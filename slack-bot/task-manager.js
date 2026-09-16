@@ -22,6 +22,8 @@ const costTracker = require('./cost-tracker');
 const progressEvents = require('./progress-events');
 const resumeCtx = require('./resume-context-builder');
 const taskEvidence = require('./task-evidence');
+const instructionLedger = require('./instruction-ledger');
+const receipt = require('./execution-receipt');
 
 const BASE_DIR = path.join(__dirname, '..');
 // giip-1063/1068: 비용 로그와 checkpoint 는 같은 중앙 runtime root 를 쓴다(7).
@@ -392,7 +394,7 @@ function createTaskFile(taskId, requestText, planContent, filesRead = [], meta =
 task_id: ${taskId}
 status: pending
 requested_at: ${new Date().toISOString()}
-request: "${requestText.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"
+request: ${JSON.stringify(requestText)}
 task_class: ${meta.taskClass || 'standard'}
 risk_class: ${meta.riskClass || 'none'}
 operation: ${meta.operation || 'write'}
@@ -548,11 +550,18 @@ function startExecution(taskId, taskFilePath, { onComplete, onError, isn = null 
   let selected = ctxBuilder.parseContextFiles(taskContent);
   let contextSource = selected.length ? 'task-metadata' : 'minimal-default';
   if (!selected.length) selected = ctxBuilder.minimalDefaultContext(baseDir, BASE_DIR);
-  const ctxRead = ctxBuilder.readSelectedContext(selected, baseDir, {
-    workspaceDir: BASE_DIR,
-    queryText: taskContent,
-    limits: modelConfig.contextLimits(taskClass),
-  });
+  let ctxRead, bindingInstructions;
+  try {
+    bindingInstructions = instructionLedger.render(taskContent);
+    ctxRead = ctxBuilder.readSelectedContext(selected, baseDir, {
+      workspaceDir: BASE_DIR,
+      queryText: taskContent,
+      limits: modelConfig.contextLimits(taskClass),
+    });
+  } catch (err) {
+    if (onError) setImmediate(() => onError(err, null));
+    return;
+  }
   if (!ctxRead.filesRead.length && contextSource === 'task-metadata') {
     // 선택 목록이 손상돼 하나도 못 읽은 경우에만 최소 기본으로 대체
     const fb = ctxBuilder.readSelectedContext(
@@ -574,6 +583,15 @@ function startExecution(taskId, taskFilePath, { onComplete, onError, isn = null 
   // ctx が渡されていれば prepareTaskBranch 済みの専用ブランチ。無ければ現在ブランチ(後方互換)。
   const currentBranch = (ctx && ctx.branch) || getCurrentBranch(baseDir);
   const baseBranch = (ctx && ctx.base) || getBaseBranch(baseDir);
+  try {
+    receipt.begin(RUNTIME_BASE_DIR, taskId, {
+      project: path.basename(baseDir), branch: currentBranch, taskContent,
+      bindingInstructions, contextFiles: ctxRead.filesRead,
+    });
+  } catch (err) {
+    if (onError) setImmediate(() => onError(err, null));
+    return;
+  }
 
   console.log(`[TaskManager] task ${taskId}: class=${taskClass}${fastPath ? ' (fast path)' : ''}`
     + `${classification.operation ? ` op=${classification.operation} risk=${classification.risk_class}` : ''}`
@@ -608,6 +626,7 @@ function startExecution(taskId, taskFilePath, { onComplete, onError, isn = null 
     ...commonPromptFields,
     fastPath,
     contextText: ctxRead.context,
+    bindingInstructions,
     contextFiles: ctxRead.filesRead.map(f => ({ path: f.path, reason: f.reason })),
     taskContent,
     kLayerClaims: claims,
@@ -635,6 +654,7 @@ function startExecution(taskId, taskFilePath, { onComplete, onError, isn = null 
       ...commonPromptFields,
       attempt: attemptNo,
       taskSummary,
+      bindingInstructions,
       taskFilePath: path.relative(BASE_DIR, taskFilePath).replace(/\\/g, '/'),
       completedSteps: cp.completed_steps || [],
       pendingSteps: cp.pending_steps || [],
@@ -843,6 +863,11 @@ function startExecution(taskId, taskFilePath, { onComplete, onError, isn = null 
           stderr ? `\n## Errors\n${stderr.slice(0, 500)}` : '',
         ].join('\n'));
       }
+      try {
+        receipt.finish(RUNTIME_BASE_DIR, taskId, {
+          exitCode: code, sourceFiles: srcChanged.sourceFiles, resultFile,
+        });
+      } catch (err) { console.error(`[TaskManager] receipt 저장 실패: ${err.message}`); }
 
       if (code === 0) {
         checkpoint.recordSuccess(RUNTIME_BASE_DIR, taskId, { attempt: attemptNo, provider, model: modelName, cwd: baseDir });
@@ -855,6 +880,7 @@ function startExecution(taskId, taskFilePath, { onComplete, onError, isn = null 
     proc.on('error', (err) => {
       try { taskEvidence.recordExit(taskId, null, { attempt: attemptNo }, RUNTIME_BASE_DIR); }
       catch (e) { console.error('[TaskManager] evidence error failed:', e.message); }
+      try { receipt.finish(RUNTIME_BASE_DIR, taskId, { exitCode: null, sourceFiles: [], resultFile }); } catch {}
       onError(err, null);
     });
     return proc;
