@@ -335,8 +335,42 @@ remote로만 연결된, 완전히 독립적인 워킹트리).
 
 ## 14) 연결 문서
 
+- **보조 시간별 스케줄러 5종 + 태스크 등록 게이트**: `./aux-hourly-schedulers.md` (§15 참고)
 - 이슈 처리 세션 안전 규칙 색인: `../../.agent/rules/41_issue_session_safety_index.md`
 - 진행 코멘트/상태전이 코멘트 프로토콜: `../../.agent/rules/PROTOCOL_PROGRESS_COMMENT.md`
 - KPI 표준: `./ai-native-kpi.md`
 - 장애/롤백 플레이북: `./incident-rollback-playbook.md`
 - 원본 운영 인스턴스 제어법(이 PC 전용): `lowyworkenv/scripts/gissue/SCHEDULER_CONTROL.md`
+
+## 15) 보조 시간별 스케줄러 (giip #2645)
+
+이 문서가 다루는 메인 태스크 외에, **별도 러너 + 별도 Task Scheduler 항목**으로 분리 등록되는 보조
+스케줄러가 이 레포에 함께 들어 있습니다. 정본은 `./aux-hourly-schedulers.md` 이며, 목록만 옮깁니다.
+
+| 기본 태스크 이름 | 주기 | 러너 | 등록기 |
+|---|---|---|---|
+| `GIIP_StalePending_Hourly` | 매시 :07 | `scripts/gissue/run-list-stale-pending.ps1` | `register-stale-pending-task.ps1` |
+| `GIIP_StaleReview_Hourly` | 매시 :07 | `scripts/gissue/run-list-stale-review.ps1` | `register-stale-review-task.ps1` |
+| `GIIP_AuditReviewPrs_Hourly` | 매시 :07 | `scripts/gissue/run-audit-review-prs.ps1` | `register-audit-review-prs-task.ps1` |
+| `GIIP_GateEscalation_Hourly` | 매시 :07 | `scripts/gissue/run-gate-escalation-recheck.ps1` | `register-gate-escalation-task.ps1` |
+| `GIIP_SlackbotRestart_Hourly` | 매시 :37 | `scripts/gissue/run-slackbot-restart-check.ps1` | `register-slackbot-restart-task.ps1` |
+
+이 보조 스케줄러들과 함께 다음 두 가지가 이 레포에 들어왔습니다. §13 배포 절차를 마친 뒤 필요에
+따라 추가로 등록합니다(메인 태스크만으로도 동작하며, 보조는 선택입니다).
+
+- **태스크 등록 3중 게이트** — `scripts/gissue/task-target-guard.ps1` + `check-ps1-parse.ps1`:
+  대상 `.ps1` 의 존재 / 구문·BOM / **임시 worktree 경로가 아님** 을 `Register-ScheduledTask` 직전에
+  검사해, 하나라도 실패하면 등록하지 않습니다. `register-hourly-issue-scheduler.ps1` 도 앞으로 같은
+  게이트를 쓰도록 맞추면 이 문서 §8/§9 의 "등록 성공 메시지는 근거가 아니다" 가 기계적으로 보장됩니다.
+- **태스크 주기 게이트** — `scripts/gissue/task-cadence-guard.ps1` (+ 회귀 테스트
+  `scripts/gissue/tests/test-task-cadence-guard.ps1`): 이름이 `_Hourly` 인데 트리거에 `PT1H` 반복이
+  없어 **하루 1회만 돌던** 사고를 등록 전에 막습니다.
+
+또한 이 레포의 모든 `.ps1` 은 **UTF-8 with BOM** 으로 저장합니다 — BOM 이 없으면 Windows PowerShell
+5.1 이 시스템 ANSI 코드페이지로 읽어, 검사만 통과하고 실행에서 죽습니다(근거·실측은
+`./aux-hourly-schedulers.md` §2).
+
+```powershell
+# 레포 전체 .ps1 의 구문 + BOM 일괄 검사
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\check-ps1-parse.ps1 -All
+```

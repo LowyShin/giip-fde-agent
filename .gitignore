@@ -26,3 +26,5 @@ slack-bot/.secrets/*
 scripts/gissue/csn-projects.json
 scripts/gissue/logs/
 scripts/gissue/*.lock
+# 보조 :07 스케줄러(giip #2645)의 실행 산출물 — 실행 로그 + 회차별 결과 JSON(머신 로컬, 커밋 금지)
+scripts/gissue/audit-results/
