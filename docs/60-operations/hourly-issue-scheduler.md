@@ -46,6 +46,17 @@ powershell.exe -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass `
   브랜치(main/master)와 다르면(예: dev-first 원칙으로 `dev`가 상시 작업 브랜치인 프로젝트) 반드시
   지정합니다 — 안 그러면 busy-check가 이를 매번 "다른 프로세스가 쓰는 중"으로 오판해 30분 대기 후
   강제 언블록(stash+base 체크아웃)을 매 `:07`마다 반복합니다(실측 확인·재현).
+  **최상위(csn 바깥) 선택 키 3개**(giip #2645 — 러너에서 이 PC 전용 절대경로를 제거하면서 배포별
+  설정으로 외부화한 값들입니다. 전부 생략 가능하고, 생략하면 해당 기능만 조용히 비활성됩니다):
+    - `forcedUnblockExcludeRepoNames`: 강제 언블록(병합 여부 불확실해도 stash+base 복귀) 대상에서
+      제외할 nested 레포 **폴더명** 배열. 성역 레포가 있는 배포에서 지정합니다. 병합이 "확인된"
+      안전한 자동 해제(`[AUTO-UNBLOCK]`)는 이 예외와 무관하게 계속 적용됩니다.
+    - `guardRepos`: Phase -2 nested-repo 무결성 가드(giip #1365) 대상 배열
+      (`{ path, expectedRemoteSuffix, requiredFiles[], requiredPsDir, validateDbConfig }`).
+      `path`가 상대경로면 레포 루트 기준입니다. 미설정이면 검증 대상 없음으로 건너뜁니다.
+    - `heartbeat`: 스케줄러 자신의 liveness/실행이력 발행 설정
+      (`{ lssn, hostname, skFile }` — `skFile`은 `sk = "..."` 형식의 agent cfg 경로).
+      미설정이면 heartbeat/실행이력 발행을 하지 않습니다(스케줄러 본연 동작에는 영향 없음).
 - **giip issue API 접근용 SK(Secret Key)**: CSN별 계정 SK가 필요합니다(`slack-bot/.secrets/
   giip-accounts.json`의 `channels[*].sk`를 CSN으로 매칭해 조회, `.sample.json`을 복사해 준비). 이
   파일은 git 비추적 시크릿이므로 배포 대상마다 별도로 준비해야 합니다.
@@ -57,7 +68,13 @@ powershell.exe -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass `
 - **giip issue 조회/코멘트/상태변경 도구(이 레포에 기본 내장, DB 직접 접근 불필요)**:
   `scripts/gissue/list-issues.js`(CSN+상태별 이슈 목록 조회, giipfaw API 경유)와
   `scripts/gissue/get-issue.sh --comment-file`/`--status`(단건 조회/코멘트/상태전이)를 그대로 쓰면
-  됩니다. CSN 교차오염 방지 게이트(giip #1053/#1079)가 내장돼 있어 별도 조치가 필요 없습니다.
+  됩니다. 러너 자신이 쓰는 **우선순위 큐**는 `list-issues.js --csn <N> --queue --json` 한 번으로
+  얻습니다(giip #2645) — PENDING / READY≥60분 / IN_PROGRESS≥60분(라벨 `STALE_IN_PROGRESS`) /
+  REVIEW·TESTED(최신 코멘트가 `[ACTIONFLOW-TEST]`로 시작하면 제외)를 합쳐
+  `qprio → is_user_req DESC → has_comment ASC → elapsedMin DESC` 순으로 정렬해 돌려줍니다.
+  이는 lowyworkenv 운영 러너가 giipdb 직접접속(단일 T-SQL, giip #1472/#1560/#1564/#1651)으로 뽑던
+  큐와 **같은 정렬 계약**을 API로 재현한 것입니다. 후속 이슈 자동 등록(시간박스 초과 시)은
+  `scripts/gissue/register-issue.js`가 담당합니다. CSN 교차오염 방지 게이트(giip #1053/#1079)가 내장돼 있어 별도 조치가 필요 없습니다.
   한글/이모지가 섞인 코멘트 본문은 반드시 UTF-8 파일로 저장한 뒤 파일 경로(`--comment-file`)로
   전달해야 합니다(커맨드라인 리터럴 직접 전달은 headless 실행 체인에서 시스템 기본 코드페이지로
   mojibake가 나는 사고가 재현 확인됨, giip #1030). 이 두 도구가 없는 프로젝트(예: `giipprj`처럼
@@ -322,6 +339,26 @@ GitHub에서 머지했지만, 그 PR을 병합한 세션이 로컬 `lowyworkenv`
      복제하면, 다음 이식 대상은 규칙 없이 도는 러너를 받게 된다.
 5. `-DryRun -OnlyCsn <csn>`으로 먼저 실행해 워크디렉터리 인식·SK 해석·busy-check(BUSY 오판 없음)·엔진
    선택, 그리고 **프롬프트의 `{AGENT_REPO}` 치환 결과**(§12-4)까지 로그로 확인한다(실제 claude 미기동).
+
+   **2~3단계를 건너뛰고 5단계를 먼저 실행해도 예외 스택트레이스가 나오지 않는다**(giip #2645):
+   러너가 시작 직후 `Phase -3` 전제조건 preflight 를 돌려, 빠진 것을 행동지시로 알려준다.
+
+   | 상태 | 러너의 반응 | 종료코드 |
+   |---|---|---|
+   | `csn-projects.json` 없음 | `[PREFLIGHT-FAIL]` + 복사할 명령·채울 항목·재실행 명령·이 절 링크 | 2 |
+   | JSON 문법 오류 | `[PREFLIGHT-FAIL]` + 실패 사유 + 문법 힌트 | 2 |
+   | `.example` 를 복사만 하고 값 미기입 | `[PREFLIGHT-FAIL]` + **어느 항목이 왜 잘못됐는지 항목별로** 제시 | 2 |
+   | 일부 CSN 항목만 잘못됨 | `[PREFLIGHT-WARN]` + 그 항목만 건너뛰고 나머지는 정상 처리 | 0 |
+   | `giip-accounts.json` 없음 | `[PREFLIGHT-WARN]` + 복사 명령(이슈 관련 단계는 전부 SKIP 됨) | 0 |
+   | `node` / `bash` / `gh` 미설치 | `[PREFLIGHT-WARN]` + 각 도구의 용도 | 0 |
+
+   설계 근거: 이 절의 5단계가 신규 PC 사용자의 **첫 명령**이다. 여기서 .NET 예외가 나오면
+   "클론만으로 동일 작업 가능"이라는 이 배포의 전제가 깨진다. 따라서 **신규 clone 에 없는 것을 읽는
+   모든 지점은 (a) 치명적이면 행동지시 + 비0 종료, (b) 아니면 행동지시 WARN 후 계속**이어야 한다 —
+   조용한 예외/스택트레이스는 둘 다 아니다. 러너를 고칠 때 이 원칙을 깨지 말 것.
+
+   검증도 같은 조건에서 해야 한다: "내 작업 폴더에서 돌아갔다"는 신규 clone 검증이 아니다.
+   **gitignore 대상 설정 파일이 하나도 없는 상태**와 **채운 상태** 두 가지를 모두 돌려 확인한다.
 6. 문제 없으면 `register-hourly-issue-scheduler.ps1 -Action Register -RepoRoot <이 clone 경로>`로
    Windows 스케줄러에 등록한다(태스크 이름은 배포 대상마다 고유하게 `-TaskName`으로 지정).
 7. 등록 후 **한 사이클을 실제로 돌려** 세션 착수 코멘트의 로드 목록에 규칙 파일이 나타나는지

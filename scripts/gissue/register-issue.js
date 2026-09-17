@@ -50,7 +50,7 @@ function readStdin() {
 async function main() {
   const a = parseArgs(process.argv);
   if (a.help) {
-    console.log('usage: node register-issue.js --title "<제목>" (--content-file <경로> | --content "<본문>" | stdin) [--csn N]');
+    console.log('usage: node register-issue.js --title "<제목>" (--content-file <경로> | --content "<본문>" | stdin) [--csn N] [--status PENDING] [--user-request]');
     process.exit(0);
   }
 
@@ -70,6 +70,10 @@ async function main() {
     const r = await giip.issueCreate(acct, { title, content: content.slice(0, 8000), status: a.status, csn });
     const isn = r && r.isn ? Number(r.isn) : null;
     if (!isn) { console.error('❌ 등록 응답에 isn 이 없습니다:', JSON.stringify(r)); process.exit(1); }
+    // [출력 계약 — giip #2645] 아래 "giip issue #<isn>" 형식은 run-gissue-claude.ps1 의 이슈 1건
+    // 시간박스 초과 경로(giip #1565)가 정규식 `giip issue #(\d+)` 으로 새 isn 을 뽑아내는 계약이다.
+    // 문구를 바꾸면 후속 이슈 번호를 못 읽어 "(등록 실패 또는 응답 파싱 실패)" 로 기록되므로,
+    // 바꿀 때는 그 호출부도 같이 고칠 것.
     console.log(`✅ giip issue #${isn} 등록 완료 (status=${a.status}, csn=${csn})`);
     console.log(`   제목: ${title}`);
     console.log(`   보기: https://giipfaw.azurewebsites.net (admin/giip-issues/${isn})`);
