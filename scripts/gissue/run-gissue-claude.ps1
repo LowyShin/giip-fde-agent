@@ -185,6 +185,71 @@ function Test-GissuePathSafe($path) {
     if (-not $path) { return $false }
     try { return (Test-Path -LiteralPath $path) } catch { return $false }
 }
+
+# ── bash 실행파일 해석 — 이 파일에서 bash 경로를 정하는 **유일한** 함수 (giip #2645) ──────────
+#
+# 왜 필요한가 (실측, 2026-09-17):
+#   PATH 에 `bash` 가 없는 것이 **Git for Windows 기본 설치의 정상 상태**다. 설치 프로그램은
+#   `<Git>\cmd`(= git.exe / gh 연동용)만 PATH 에 올리고, `bash.exe` 는 `<Git>\bin` 과
+#   `<Git>\usr\bin` 에 둔다. 따라서 `powershell -File` 로 기동되는 이 러너(= Windows 작업
+#   스케줄러가 부르는 바로 그 경로)에서는 `Get-Command bash` 가 **실패하는 것이 정상**이다.
+#   이전 판은 `usr\bin` 한 곳만 보고 없으면 맨 이름 'bash' 로 떨어졌는데, 그 폴백이 곧
+#   "PATH 에 없는 이름"이라 폴백 역할을 전혀 못 했다.
+#
+# 왜 함수 1개인가:
+#   규칙 48(안전 판정 공용 함수 1개) / KNOW-027. 같은 판정을 호출부마다 복붙하면 한쪽만 고쳐진다.
+#   실제로 이 파일에는 해석된 경로 변수($BashExe)가 이미 있었는데도 두 호출부가 맨 `bash` 를
+#   쓰고 있었고, 그 두 곳은 `2>&1 | Out-Null` 로 출력을 버려 **실패해도 흔적이 남지 않았다**.
+#   bash 경로가 필요한 모든 곳은 반드시 이 함수(또는 이 함수가 채운 변수)를 쓴다.
+#
+# 반환: 해석된 절대경로(문자열). 어떤 후보도 못 찾으면 $null — 호출부가 행동지시를 낼 수 있게
+#       맨 이름 'bash' 로 내려보내지 **않는다**(그 값은 실행 시점에 조용히 실패하기 때문).
+$script:GissueBashExeResolved = $null
+$script:GissueBashExeTried = $false
+function Resolve-GissueBashExe {
+    if ($script:GissueBashExeTried) { return $script:GissueBashExeResolved }
+    $script:GissueBashExeTried = $true
+
+    $candidates = New-Object System.Collections.Generic.List[string]
+
+    # (1) PATH 에 실제로 올라와 있으면 그것을 최우선으로 쓴다(사용자가 의도적으로 넣은 경우).
+    try {
+        $onPath = Get-Command bash -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($onPath -and $onPath.Source) { $candidates.Add($onPath.Source) }
+    } catch {}
+
+    # (2) git.exe 위치에서 역산 — Git 설치 위치가 어디든(C:\Git, scoop, winget) 따라간다.
+    #     <Git>\cmd\git.exe → <Git> → <Git>\bin\bash.exe / <Git>\usr\bin\bash.exe
+    try {
+        $gitCmd = Get-Command git -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($gitCmd -and $gitCmd.Source) {
+            $gitDir = Split-Path -Parent $gitCmd.Source           # <Git>\cmd  또는 <Git>\bin
+            $gitRoot = Split-Path -Parent $gitDir                  # <Git>
+            foreach ($rel in @('bin\bash.exe', 'usr\bin\bash.exe')) {
+                if ($gitRoot) { $candidates.Add((Join-Path $gitRoot $rel)) }
+            }
+            # 한 단계 더 위(<Git>\mingw64\bin\git.exe 같은 배치 대비)
+            $gitRoot2 = Split-Path -Parent $gitRoot
+            foreach ($rel in @('bin\bash.exe', 'usr\bin\bash.exe')) {
+                if ($gitRoot2) { $candidates.Add((Join-Path $gitRoot2 $rel)) }
+            }
+        }
+    } catch {}
+
+    # (3) 알려진 기본 설치 위치 — Program Files / Program Files (x86) / 흔한 커스텀 경로.
+    foreach ($base in @($env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:LOCALAPPDATA, 'C:\Git', 'D:\Git')) {
+        if (-not $base) { continue }
+        foreach ($rel in @('Git\bin\bash.exe', 'Git\usr\bin\bash.exe', 'Programs\Git\bin\bash.exe', 'bin\bash.exe', 'usr\bin\bash.exe')) {
+            $candidates.Add((Join-Path $base $rel))
+        }
+    }
+
+    foreach ($c in $candidates) {
+        if (Test-GissuePathSafe $c) { $script:GissueBashExeResolved = $c; return $c }
+    }
+    return $null
+}
+
 # csn-projects.json 의 CSN 항목 1건이 실제로 처리 가능한 값인지(숫자 CSN + placeholder 아닌 workdir).
 # Phase -3 preflight 와 Phase 1 루프가 **같은 판정 함수**를 쓴다 — 판정을 복붙하면 한쪽만 고쳐지는
 # 사고가 재발한다(규칙 48 / KNOW-027).
@@ -474,7 +539,6 @@ if (-not (Test-Path -LiteralPath $GiipAccountsFile)) {
 #     의존한다. PATH 에 없으면 그 단계만 조용히 실패하므로, 시작 시 한 번 명시적으로 알린다.
 foreach ($dep in @(
     @{ Cmd = 'node'; Why = '이슈 목록·우선순위 큐 조회(list-issues.js), isn 상태 배치조회(lib/get-isn-status.js)' },
-    @{ Cmd = 'bash'; Why = '이슈 단건 조회·코멘트·상태전이(get-issue.sh)' },
     @{ Cmd = 'gh';   Why = 'PR 조회/충돌·CI 수정([0]/[E] 단계), 병합 여부 확정 폴백' }
 )) {
     if (-not (Get-Command $dep.Cmd -ErrorAction SilentlyContinue)) {
@@ -484,6 +548,25 @@ foreach ($dep in @(
             "  설치 후 다시 실행하세요(정본 절차: docs/60-operations/hourly-issue-scheduler.md §4)."
         )
     }
+}
+# bash 는 PATH 존재 여부로 판정하지 않는다 — Git for Windows 는 `<Git>\cmd` 만 PATH 에 올리므로
+# "PATH 에 없음"이 정상이다. Resolve-GissueBashExe 가 git.exe 역산·기본 설치 위치까지 훑고,
+# **모든 후보가 실패했을 때만** 경고한다(giip #2645).
+$PreflightBashExe = Resolve-GissueBashExe
+if ($PreflightBashExe) {
+    Write-GissuePreflightBlock @("[PREFLIGHT] bash 해석됨: $PreflightBashExe")
+} else {
+    $script:PreflightWarned = $true
+    Write-GissuePreflightBlock @(
+        "[PREFLIGHT-WARN] bash 실행파일을 찾지 못했습니다 — 용도: 이슈 단건 조회·코멘트·상태전이(get-issue.sh)",
+        "  PATH, git.exe 위치 역산(<Git>\bin\bash.exe / <Git>\usr\bin\bash.exe), Program Files(+x86),",
+        "  LOCALAPPDATA\Programs\Git, C:\Git, D:\Git 을 전부 확인했지만 없었습니다.",
+        "  조치: Git for Windows 를 설치하세요 — https://git-scm.com/download/win",
+        "        (이미 설치돼 있는데 이 경고가 나오면 bash.exe 의 실제 경로를 확인해 주세요.)",
+        "  이 상태로 계속하면 다음이 동작하지 않습니다: 이슈 코멘트 게시 / 상태 전이(READY 되돌리기 포함)",
+        "  — 상태 전이가 실패하면 이슈가 IN_PROGRESS/REVIEW 에 박혀 큐가 정체됩니다.",
+        "  정본 절차: docs/60-operations/hourly-issue-scheduler.md §4"
+    )
 }
 if ($script:PreflightWarned) {
     Write-GissuePreflightBlock @("[PREFLIGHT] 위 경고를 해결하지 않아도 실행은 계속하지만, 해당 단계는 동작하지 않습니다.", "")
@@ -1646,14 +1729,21 @@ function Invoke-GissueUnmappedCsnGuard {
     return ,$found
 }
 
-$BashExe = "C:\Program Files\Git\usr\bin\bash.exe"
-if (-not (Test-Path -LiteralPath $BashExe)) { $BashExe = 'bash' }
+# bash 경로는 Resolve-GissueBashExe 가 **유일한 출처**다(giip #2645). 하드코딩/맨 이름 금지.
+# 해석 실패($null)면 Phase -3 preflight 가 이미 행동지시 경고를 냈다. 그 경우에도 여기서 맨 'bash'
+# 로 떨어뜨리지 않는다 — 호출부가 "해석 실패"를 구분해 로그에 남길 수 있어야 하기 때문이다.
+$BashExe = Resolve-GissueBashExe
 try {
     # -SkipPosting:$DryRun — 조회/판정은 -DryRun 에서도 그대로 돌리되(읽기전용이라 안전), 실제 코멘트
     # 게시만 건너뛴다. lowyworkenv 운영본은 -DryRun 에서도 실제로 게시하는데, 이 레포는 아무 PC 에나
     # 클론되어 -DryRun 으로 시험될 수 있으므로 시험 실행이 남의 이슈에 코멘트를 남기지 않게 한다.
-    Invoke-GissueUnmappedCsnGuard -MapFilePath $MapFile -BashExePath $BashExe `
-        -GetIssueScriptPath $GetIssueScript -LogFilePath $UnmappedCsnGuardLog -SkipPosting:$DryRun | Out-Null
+    if (-not $BashExe) {
+        # bash 해석 실패 — 조용히 넘어가지 않고 기록한다(preflight 경고와 짝이 되는 실행 시점 증거).
+        "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] [UNMAPPED-CSN-WARN] SKIP: bash 실행파일 해석 실패 — 이 가드는 get-issue.sh 가 필요합니다(giip #2645)." | Out-File -FilePath $UnmappedCsnGuardLog -Append -Encoding UTF8
+    } else {
+        Invoke-GissueUnmappedCsnGuard -MapFilePath $MapFile -BashExePath $BashExe `
+            -GetIssueScriptPath $GetIssueScript -LogFilePath $UnmappedCsnGuardLog -SkipPosting:$DryRun | Out-Null
+    }
 } catch {
     "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] [UNMAPPED-CSN-WARN] ERROR: 실행 자체가 예외로 실패: $($_.Exception.Message)" | Out-File -FilePath $UnmappedCsnGuardLog -Append -Encoding UTF8
 }
@@ -1906,7 +1996,7 @@ foreach ($csn in $map.PSObject.Properties.Name) {
               $restBranch, $repoMaintenancePrompt, $pendingIssuePrompt, $readyIssuePrompt, $staleIssuePrompt,
               $reviewIssuePrompt, $testedIssuePrompt, $runTimeoutMin, $registerIssueScript, $listIssuesScript,
               $issueEngineDeadlineMin, $issueEnginePollMin, $logDir, $csnSk, $runIdKey, $reviewRecheckCooldownHours,
-              $projectLang, $divergeFailAlertThreshold)
+              $projectLang, $divergeFailAlertThreshold, $bashExe)
         Set-Location -Path $workdir
         # [ENCODING][giip #1204 버그 B] Start-Job 은 별도 프로세스라 바깥 스코프의 콘솔 인코딩 설정이
         # 상속되지 않는다 — 한글 프롬프트를 stdin 파이프로 넘기기 전에 이 잡 스코프에서도 UTF-8 로 고정한다.
@@ -1935,6 +2025,41 @@ foreach ($csn in $map.PSObject.Properties.Name) {
                     Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
                 }
             } catch {}
+        }
+
+        # ── 이슈 상태를 READY 로 되돌린다 (giip #2645) ──────────────────────────────────────
+        #
+        # 왜 함수인가: 잡 스코프에서 `--status READY` 전이를 하는 곳이 2군데(강제 auto-unblock 후처리,
+        #   TIMEBOX 정리)인데, 이전 판은 양쪽이 각각 **맨 `bash`** 를 부르고 `2>&1 | Out-Null` 로
+        #   출력을 버렸다. `bash` 는 Git for Windows 기본 설치에서 PATH 에 없으므로(위
+        #   Resolve-GissueBashExe 주석 참고) 이 두 전이는 **이 PC 에서도 항상 실패**했고, 출력을
+        #   버린 탓에 로그에 아무 흔적도 남지 않았다. 상태 전이가 실패하면 그 이슈는
+        #   IN_PROGRESS/REVIEW 에 영구히 박혀 큐가 조용히 정체된다 — 절대 삼키면 안 되는 실패다.
+        #
+        # 계약: 성공 시 $true. 실패 시 $false 를 돌려주고 **반드시** 사유를 Write-Output 으로 남긴다
+        #       (잡 출력은 Receive-Job 을 거쳐 러너 로그로 들어간다).
+        function Set-GissueIssueStatusReady($bashExePath, $root, $isn, $csn, $context) {
+            if (-not $bashExePath) {
+                Write-Output "[STATUS-FAIL][$context] isn=$isn 을 READY 로 되돌리지 못했습니다 — bash 실행파일 해석 실패(giip #2645). 이 이슈는 현재 상태에 그대로 남습니다."
+                return $false
+            }
+            $getIssueSh = Join-Path $root 'get-issue.sh'
+            if (-not (Test-Path -LiteralPath $getIssueSh)) {
+                Write-Output "[STATUS-FAIL][$context] isn=$isn 을 READY 로 되돌리지 못했습니다 — get-issue.sh 없음($getIssueSh)."
+                return $false
+            }
+            try {
+                $out = & $bashExePath $getIssueSh $isn $csn --status READY 2>&1 | Out-String
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Output "[STATUS-OK][$context] isn=$isn → READY 전이 완료."
+                    return $true
+                }
+                Write-Output "[STATUS-FAIL][$context] isn=$isn → READY 전이 실패(exit=$LASTEXITCODE). 출력: $($out.Trim())"
+                return $false
+            } catch {
+                Write-Output "[STATUS-FAIL][$context] isn=$isn → READY 전이 중 예외: $($_.Exception.Message)"
+                return $false
+            }
         }
 
         # ── [giip #2047] MiniMax 산출물 CJK(중국어) 혼입 QA 게이트 ──────────────────────────
@@ -2475,10 +2600,12 @@ foreach ($csn in $map.PSObject.Properties.Name) {
                         } catch {}
                         $statusNote = ''
                         if ($prevStatus -eq 'IN_PROGRESS') {
-                            try {
-                                & bash "$root/get-issue.sh" $isn $csn --status READY 2>&1 | Out-Null
+                            # 실패를 삼키지 않는다 — 전이 결과에 따라 코멘트 문구도 사실대로 달라진다(giip #2645).
+                            if (Set-GissueIssueStatusReady $bashExe $root $isn $csn 'AUTO-UNBLOCK-FORCED') {
                                 $statusNote = " 상태를 IN_PROGRESS → READY 로 되돌려 다음 실행이 이어받게 했습니다."
-                            } catch {}
+                            } else {
+                                $statusNote = " **상태 전이에 실패해 이 이슈는 아직 IN_PROGRESS 입니다** — 다음 :07 이 STALE_IN_PROGRESS 로 회수할 때까지 방치되니, 급하면 수동으로 READY 로 되돌려주세요(러너 로그의 [STATUS-FAIL] 참고)."
+                            }
                         } elseif ($prevStatus) {
                             $statusNote = " 현재 상태($prevStatus)는 그대로 두었습니다(IN_PROGRESS 가 아니라 강제 상태 전이는 생략)."
                         }
@@ -2683,7 +2810,8 @@ ${function:Invoke-GissueEngine}
                     $timeboxNewIsnText = if ($timeboxNewIsn) { "#$timeboxNewIsn" } else { "(등록 실패 또는 응답 파싱 실패 — 로그: $timeboxRegOut)" }
                     $timeboxNote = "[TIMEBOX] 이슈 1건 처리 시간이 ${issueEngineDeadlineMin}분을 초과해 강제 정리했습니다. 후속 이슈 $timeboxNewIsnText 로 잔여 작업을 분리했습니다. (giip #1565)"
                     Add-GissueWatchdogComment $root $accountsFile $apiBase $issue.Isn $timeboxNote $csn
-                    & bash "$root/get-issue.sh" $issue.Isn $csn --status READY 2>&1 | Out-Null
+                    # 실패하면 이 이슈가 IN_PROGRESS 에 박힌다 — 반드시 로그에 남긴다(giip #2645).
+                    Set-GissueIssueStatusReady $bashExe $root $issue.Isn $csn 'TIMEBOX' | Out-Null
                 } catch {
                     Write-Output "[WARN] isn=$($issue.Isn) 시간 캡 초과 정리 중 오류($($_.Exception.Message)) — 다음 이슈로 진행"
                 }
@@ -2712,7 +2840,7 @@ ${function:Invoke-GissueEngine}
                     $restBranch, $repoMaintenancePromptSub, $pendingIssuePromptSub, $readyIssuePromptSub, $staleIssuePromptSub,
                     $reviewIssuePromptSub, $testedIssuePromptSub, $RunTimeoutMin, $RegisterIssueScript, $ListIssuesScript,
                     $IssueEngineDeadlineMin, $IssueEnginePollMin, $LogDir, $csnSk, $runIdKey, $ReviewRecheckCooldownHours,
-                    $projectLang, $DivergeFailAlertThreshold
+                    $projectLang, $DivergeFailAlertThreshold, $BashExe
     $runs += [pscustomobject]@{
         Csn = $csn; Job = $job; Lock = $lock; Done = $false; Workdir = $workdir
         Deadline = (Get-Date).AddMinutes($RunTimeoutMin)

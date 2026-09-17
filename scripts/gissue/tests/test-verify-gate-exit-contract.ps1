@@ -27,7 +27,10 @@
 param(
     [switch]$SkipLive,
     [int]$LiveIsn = 2338,      # verify 블록이 없는 실제 이슈 — 러너가 exit 2 를 내야 한다
-    [int]$LiveCsn = 33
+    # 0 = 이 배포의 csn-projects.json 에서 첫 번째 enabled CSN 을 자동으로 쓴다(아래 참고).
+    # 원본 PC 의 CSN(33)을 기본값으로 박아두면, 그 CSN 이 없는 배포에서는 clone 직후부터 반드시
+    # FAIL 한다 — "원래 실패하는 테스트"라는 학습은 진짜 실패를 놓치게 만든다(giip #2645).
+    [int]$LiveCsn = 0
 )
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -86,15 +89,44 @@ Assert-True ($a2.Stderr -notmatch 'Assertion failed') 'A-2b stderr 에 libuv ass
 
 # A-3 라이브 경로(fetch 이후 종료) → verify 블록이 없는 이슈에서 종료코드 2, assertion 없음.
 #     원인 A 는 "fetch 이후"에만 터지므로 이 케이스가 진짜 재현 테스트다.
+# -LiveCsn 0(기본값)이면 이 배포의 csn-projects.json 에서 첫 번째 enabled CSN 을 읽는다.
+# 정할 수 없으면(설정 파일 없음 = 신규 clone) 라이브 검증을 **건너뛰되 그 사실을 반드시 출력**한다 —
+# 조용히 통과시키면 그것도 가짜 녹색이다(giip #2645).
+$LiveSkipReason = ''
+if (-not $SkipLive -and $LiveCsn -le 0) {
+    $mapFile = Join-Path $GissueDir 'csn-projects.json'
+    if (Test-Path -LiteralPath $mapFile) {
+        try {
+            $map = Get-Content -LiteralPath $mapFile -Raw -Encoding UTF8 | ConvertFrom-Json
+            foreach ($p in @($map.csn.PSObject.Properties)) {
+                if ("$($p.Name)" -match '^\d+$' -and $p.Value.enabled) { $LiveCsn = [int]$p.Name; break }
+            }
+            if ($LiveCsn -le 0) { $LiveSkipReason = "csn-projects.json 에 enabled 인 CSN 항목이 없습니다" }
+        } catch {
+            $LiveSkipReason = "csn-projects.json 파싱 실패: $($_.Exception.Message)"
+        }
+    } else {
+        $LiveSkipReason = "csn-projects.json 이 없습니다(신규 clone 정상 상태) — 대상 CSN 을 정할 수 없습니다"
+    }
+}
+
 if ($SkipLive) {
     Write-Output "  NOTE  A-3 라이브 러너 실행 생략(-SkipLive)"
+} elseif ($LiveSkipReason) {
+    Write-Output "  SKIP  A-3 라이브 러너 실행 생략 — $LiveSkipReason."
+    Write-Output "        대상 CSN 을 직접 지정하려면: -LiveCsn <CSN>  (설정 후 재실행하면 이 케이스가 살아납니다)"
 } else {
     $a3 = Invoke-RunnerProcess @("$LiveIsn", "$LiveCsn")
     Assert-True ($a3.Stderr -notmatch 'Assertion failed') 'A-3 fetch 이후 종료에도 libuv assertion 없음' $a3.Stderr
-    if ($a3.Exit -eq 3 -and $a3.Stdout + $a3.Stderr -match '조회 실패') {
-        Write-Output "  NOTE  A-3b 이슈 조회 실패(네트워크/SK 미가용)로 종료코드 검증 생략 — assertion 검사는 통과했다."
+    # [giip #2645] 판정을 **종료코드**로 한다. 이전 판은 하위 도구의 메시지 문자열('조회 실패')에
+    # 결합돼 있었는데, verify-runner.mjs 는 SK 해석 실패를 '[ERROR] 예기치 못한 오류' + exit 3 으로
+    # 내보내므로 그 분기에 걸리지 않아 설정 불일치가 회귀(FAIL)로 둔갑했다.
+    # 종료코드 계약: 0=PASS / 1=FAIL / 2=verify 블록 없음 / 3=사용법·조회·SK 등 러너가 판정에 이르지 못함.
+    if ($a3.Exit -eq 3) {
+        Write-Output "  SKIP  A-3b 러너가 판정에 이르지 못함(exit 3 — 조회/SK/사용법). 종료코드 검증 생략, assertion 검사는 통과."
+        Write-Output "        러너 출력: $(("$($a3.Stdout) $($a3.Stderr)").Trim() -replace '\s+', ' ')"
     } else {
-        Assert-True ($a3.Exit -eq 2) "A-3b verify 블록 없는 이슈(isn=$LiveIsn) → 종료코드 2" "실제=$($a3.Exit) / $($a3.Stdout)"
+        Assert-True ($a3.Exit -eq 2) "A-3b verify 블록 없는 이슈(isn=$LiveIsn, csn=$LiveCsn) → 종료코드 2" "실제=$($a3.Exit) / $($a3.Stdout)"
     }
 }
 
