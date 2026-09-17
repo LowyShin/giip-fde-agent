@@ -1379,9 +1379,13 @@ try {
 # [giip #2471] 낡은 코드 가드. 위 닷소싱으로 정리 엔진이 이 프로세스 메모리에 고정됐다. 그 직후에 기준
 # 해시를 찍어두고, 이후 파괴적 작업 직전마다 "그 기준이 아직 유효한가"를 되묻는다. 실패해도 가드만
 # 비활성될 뿐 본 실행을 절대 막지 않는다(fail-open).
-if (Test-Path -LiteralPath $CodeFreshnessLib) {
+# 주의: worktree-safety.ps1 이 자기 안에서 code-freshness.ps1 을 이미 닷소싱한다. 그 경우 여기서
+# 다시 닷소싱하면 라이브러리의 $script: 상태가 초기화될 수 있으므로, 함수가 아직 없을 때만 로드한다.
+if (-not (Get-Command Initialize-GissueCodeFreshness -ErrorAction SilentlyContinue) -and (Test-Path -LiteralPath $CodeFreshnessLib)) {
+    try { . $CodeFreshnessLib } catch { Write-Output "[WARN][CODE-FRESHNESS] 로드 실패: $($_.Exception.Message)" }
+}
+if (Get-Command Initialize-GissueCodeFreshness -ErrorAction SilentlyContinue) {
     try {
-        . $CodeFreshnessLib
         Initialize-GissueCodeFreshness -RepoRoot $AgentRepo -Log { param($m) Write-Output "[CODE-FRESHNESS] $m" }
     } catch {
         Write-Output "[WARN][CODE-FRESHNESS] 초기화 실패(가드만 비활성, 본 실행은 계속): $($_.Exception.Message)"

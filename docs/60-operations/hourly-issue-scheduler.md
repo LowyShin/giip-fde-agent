@@ -339,6 +339,26 @@ GitHub에서 머지했지만, 그 PR을 병합한 세션이 로컬 `lowyworkenv`
      복제하면, 다음 이식 대상은 규칙 없이 도는 러너를 받게 된다.
 5. `-DryRun -OnlyCsn <csn>`으로 먼저 실행해 워크디렉터리 인식·SK 해석·busy-check(BUSY 오판 없음)·엔진
    선택, 그리고 **프롬프트의 `{AGENT_REPO}` 치환 결과**(§12-4)까지 로그로 확인한다(실제 claude 미기동).
+
+   **2~3단계를 건너뛰고 5단계를 먼저 실행해도 예외 스택트레이스가 나오지 않는다**(giip #2645):
+   러너가 시작 직후 `Phase -3` 전제조건 preflight 를 돌려, 빠진 것을 행동지시로 알려준다.
+
+   | 상태 | 러너의 반응 | 종료코드 |
+   |---|---|---|
+   | `csn-projects.json` 없음 | `[PREFLIGHT-FAIL]` + 복사할 명령·채울 항목·재실행 명령·이 절 링크 | 2 |
+   | JSON 문법 오류 | `[PREFLIGHT-FAIL]` + 실패 사유 + 문법 힌트 | 2 |
+   | `.example` 를 복사만 하고 값 미기입 | `[PREFLIGHT-FAIL]` + **어느 항목이 왜 잘못됐는지 항목별로** 제시 | 2 |
+   | 일부 CSN 항목만 잘못됨 | `[PREFLIGHT-WARN]` + 그 항목만 건너뛰고 나머지는 정상 처리 | 0 |
+   | `giip-accounts.json` 없음 | `[PREFLIGHT-WARN]` + 복사 명령(이슈 관련 단계는 전부 SKIP 됨) | 0 |
+   | `node` / `bash` / `gh` 미설치 | `[PREFLIGHT-WARN]` + 각 도구의 용도 | 0 |
+
+   설계 근거: 이 절의 5단계가 신규 PC 사용자의 **첫 명령**이다. 여기서 .NET 예외가 나오면
+   "클론만으로 동일 작업 가능"이라는 이 배포의 전제가 깨진다. 따라서 **신규 clone 에 없는 것을 읽는
+   모든 지점은 (a) 치명적이면 행동지시 + 비0 종료, (b) 아니면 행동지시 WARN 후 계속**이어야 한다 —
+   조용한 예외/스택트레이스는 둘 다 아니다. 러너를 고칠 때 이 원칙을 깨지 말 것.
+
+   검증도 같은 조건에서 해야 한다: "내 작업 폴더에서 돌아갔다"는 신규 clone 검증이 아니다.
+   **gitignore 대상 설정 파일이 하나도 없는 상태**와 **채운 상태** 두 가지를 모두 돌려 확인한다.
 6. 문제 없으면 `register-hourly-issue-scheduler.ps1 -Action Register -RepoRoot <이 clone 경로>`로
    Windows 스케줄러에 등록한다(태스크 이름은 배포 대상마다 고유하게 `-TaskName`으로 지정).
 7. 등록 후 **한 사이클을 실제로 돌려** 세션 착수 코멘트의 로드 목록에 규칙 파일이 나타나는지
@@ -350,10 +370,176 @@ GitHub에서 머지했지만, 그 PR을 병합한 세션이 로컬 `lowyworkenv`
 자주 쓰는 저장소라면, 스케줄러 전용 별도 clone을 workdir로 쓰는 것을 권장한다(원본 저장소와는 git
 remote로만 연결된, 완전히 독립적인 워킹트리).
 
+## 13-1) 감사·스윕·가드 스크립트와 공용 lib (giip #2645)
+
+`:07` 본체(`run-gissue-claude.ps1`)가 부르는 **무결성 가드 / PR 감사 / 스윕** 계열이 이 레포에
+들어와 있습니다. 아래는 그 목록과, 원본(`lowyworkenv`)과 **동작이 다른 지점**입니다 — 다른
+지점만 적습니다. 나머지는 원본과 동일하게 동작합니다.
+
+### 13-1-1) 무결성·안전 가드
+
+| 파일 | 역할 |
+| :-- | :-- |
+| `scripts/gissue/verify-nested-repo.ps1` | nested 체크아웃 무결성 6종 검사(경로 존재 / 유효 git 레포 / **bare 아님** / origin 접미사 일치 / `-RequiredFiles` 존재 / `-RequiredPsDir` 안 `*.ps1` 1개 이상). 마지막 줄은 항상 `RESULT: PASS` 또는 `RESULT: FAIL: <사유>…`, exit 0/1 |
+| `scripts/gissue/worktree-safety.ps1` | worktree 판정·삭제 엔진 정본(rule 55 절차 내장) |
+| `scripts/gissue/cleanup-worktrees.ps1` | 위 엔진의 CLI 진입점(`-RepoPath` / `-AllRepos` / `-OrphanScan` / `-RemnantScan`) |
+| `scripts/gissue/code-freshness.ps1` | "지금 메모리의 코드가 낡았는가" 가드. 낡았으면 파괴적 작업을 건너뛰고 다음 `:07` 에 넘긴다 |
+
+`verify-nested-repo.ps1` 은 **의도적으로 detect-and-halt 전용**입니다. 자동 재clone / 자동 복구를
+추가하지 마세요 — 애초에 "무언가 잘못된 레포를 자동으로 clone 했다"가 giip #1365 사고의 원인이고
+그 프로세스는 아직 특정되지 않았습니다. 복구는 사람이 판단합니다.
+
+`cleanup-worktrees.ps1` 의 orphan 정리는 **(a) git worktree 로 정식 등록되지 않았고 (b) 이슈가
+DONE 이거나 이슈 자체가 없고 (c) 24시간 이상 방치된** 것만 지웁니다. READY/PENDING/IN_PROGRESS/
+REVIEW/TESTED 이슈에 연결된 워크트리와 `git worktree list` 에 정식 등록된 워크트리는 **절대**
+건드리지 않습니다(사람이 그 안에서 작업 중일 수 있습니다). 배경은 §10 과 giip #1540 입니다.
+
+**실행 셸**: 이 레포의 배포 대상에는 PowerShell 7(`pwsh`)이 없을 수 있습니다. 문서 예시와 실제
+호출은 전부 `powershell -NoProfile -ExecutionPolicy Bypass -File "<경로>"`(Windows PowerShell 5.1)
+로 씁니다 — `pwsh` 로 부르면 `command not found` 로 **아무 일도 하지 않고** 끝납니다(giip #2559).
+
+**인코딩**: 이 레포의 `.ps1` 은 전부 **UTF-8 with BOM** 으로 저장합니다. PowerShell 5.1 은 BOM 이
+없는 파일을 시스템 ANSI 코드페이지로 읽습니다 — BOM 없는 `.ps1` 6개가 파서 검사를 "6개 전부 통과"
+받고도 `powershell -File` 실행에서는 파서 에러 7건으로 한 줄도 실행되지 않은 실측이 있습니다
+(giip #2590/#2591). BOM 3바이트를 붙이자 정상이 됐습니다.
+
+### 13-1-2) PR 감사·스윕
+
+| 파일 | 역할 |
+| :-- | :-- |
+| `scripts/gissue/review-done-audit.ps1` | REVIEW/DONE 완료위조 감사 + 상태전이 + 후속 이슈 생성 |
+| `scripts/gissue/pr-attribution-lib.ps1` / `pr-attribution-sweep.ps1` | 머지 PR 의 타-이슈 파일 혼입 귀속 판정·코멘트 |
+| `scripts/gissue/gissue-gate-tally-lib.ps1` | 게이트 되돌림 **전체 합산** 집계(에스컬레이션 판단용) |
+| `scripts/gissue/audit-review-prs.mjs` | REVIEW 이슈의 PR 존재 여부 감사(Node) |
+| `scripts/gissue/verify-runner.mjs` | 이슈 본문 ` ```verify ` 블록 실행기(exit 0=PASS/1=FAIL/2=블록없음/3=조회실패) |
+| `scripts/gissue/lib/pr-lookup.mjs`, `lib/pr-lookup-cli.mjs`, `lib/audit-repos.mjs` | PR 탐지/감사대상 레포 탐색 공용 lib |
+| `scripts/gissue/lib/check-comment-timestamp.js`, `lib/resolve-actor.js` | 코멘트 시각 검증, AI 행위자 자격증명 해석 |
+| `scripts/gissue/register-issue.js` | 후속 이슈 등록 |
+
+### 13-1-3) ⚠️ 원본과 다른 점 — 쓰기 경로가 API 하나뿐이라 생긴 차이
+
+이 레포에는 DB 직접접속 수단이 없습니다(§4 "혼용 이식은 금지"). 그래서 원본이
+`giipdb/mgmt/addIssueComment.ps1` / `updateIssueStatus.ps1` 로 하던 쓰기를 전부 API 로 바꿨습니다:
+
+- 코멘트 등록 → `scripts/gissue/lib/post-comment.js`(등록 → 즉시 재조회 → mojibake 검증 → 1회 재시도).
+  본문은 반드시 UTF-8 파일로 넘깁니다(giip #1030).
+- 상태 전이 → `PUT <ApiBaseUrl>/giipIssues` (status-only. 제목/본문은 SP 가 ISNULL 로 보존).
+- 따라서 `-MgmtDir` 파라미터는 `review-done-audit.ps1` / `pr-attribution-sweep.ps1` 에 **없습니다**.
+
+**그 결과 되돌림/감사 코멘트 판정이 author 기반에서 마커 기반으로 바뀌었습니다.** API 경로에서는
+author 를 클라이언트가 지정할 수 없고 서버(`pApiGiipIssueComment*byAK`)가 인증 주체의
+`tCorpUser.uname` 으로 강제합니다. `author -eq 'gissue-review-audit'` 같은 AND 조건을 그대로 두면
+이 레포에서는 **자기 과거 코멘트를 한 건도 못 찾아** 멱등성·loop guard·3회 캡·전체 합산
+에스컬레이션이 통째로 무력화되고 같은 이슈에 코멘트가 무한히 쌓입니다. 그래서 다음 판정은 전부
+마커 문자열만 봅니다(`pr-gate-sweep.ps1` 은 원래부터 그랬습니다):
+
+- `gissue-audit-lib.ps1`: `Test-AlreadyRevertedByMarker`, `Get-GateRevertAttemptCount`,
+  `Get-GateRevertHistorySummary`
+- `gissue-gate-tally-lib.ps1`: `Get-GateRevertTally`
+- `review-done-audit.ps1`: `Test-IsAuditComment`(author 일치 **또는** `[REVIEW-AUDIT:` 마커 포함)
+
+마커는 게이트마다 고유하고, `gissue-gate-tally-lib.ps1` 상단의 "카운팅 오염 방지" 규약이
+"이 파일이 만들어 내는 어떤 문자열에도 마커 원문을 넣지 않는다"를 보장하므로 마커 단독으로
+충분히 변별됩니다. **이 규약을 깨고 에스컬레이션 본문에 마커 원문을 넣으면 그 코멘트 자신이
+다음 회차 카운트를 부풀립니다.**
+
+### 13-1-4) 시크릿 파일 위치 — `GIIP_ACCOUNTS_FILE`
+
+`slack-bot/.secrets/giip-accounts.json` 은 git 비추적이라 **워크트리 체크아웃에는 없습니다**.
+원본은 이 PC 절대경로를 폴백으로 박아 뒀지만 이 레포는 그럴 수 없으므로, 환경변수
+`GIIP_ACCOUNTS_FILE` 로 그 파일 경로를 지정할 수 있게 했습니다(지정하면 그쪽이 우선).
+`lib/resolve-actor.js` 와 `audit-review-prs.mjs` 가 같은 규칙을 씁니다.
+
+```bash
+GIIP_ACCOUNTS_FILE=/path/to/giip-accounts.json node scripts/gissue/lib/resolve-actor.js --json
+```
+
+AK 자체는 이 레포에서 발급/조회할 수 없습니다(DB 전용). 절차는
+`scripts/gissue/AI_ACTOR_ACCOUNTS.md` §0-1 의 절별 가부 표를 보세요.
+
+### 13-1-5) PR 탐지 범위 — `audit-extra-repos.json` (giip #2504)
+
+어느 프로젝트 폴더 아래에도 clone 되지 않은 레포(예: `LowyShin/giipAgentLinux`)의 PR 은 워크디렉터리
+스캔으로는 절대 안 잡혀, PR-gate 가 "PR 없음"으로 REVIEW 를 되돌립니다. `audit-extra-repos.json`
+의 `slugs` 에 `OWNER/REPO` 를 적으면 로컬 clone 없이 `gh pr list --repo <slug>` 로 직접 조회합니다.
+
+**PowerShell(`Get-ExtraAuditRepoSlugs` in `gissue-audit-lib.ps1`)과 Node(`loadExtraRepoSlugs` in
+`lib/audit-repos.mjs`)가 반드시 같은 파일을 읽습니다 — 한쪽만 넓히면 같은 오탐이 계속 납니다**
+(giip #2464 의 교훈). 이 단일 출처 구조를 깨지 마세요.
+
+### 13-1-6) 감사 대상 workdir 지정 — `audit-review-prs.mjs --workdir`
+
+원본은 감사 대상 컨테이너 이름을 `giipprj` 로 하드코딩했습니다. 이 레포는 다음 우선순위로 찾습니다:
+
+1. `--workdir <경로>` (명시 지정)
+2. `csn-projects.json` 의 `csn[<--csn>].workdir`
+3. `<projects>/giipprj` (기존 배포 호환)
+
+```bash
+GIIP_ACCOUNTS_FILE=<...> node scripts/gissue/audit-review-prs.mjs --csn <csn> --json
+```
+
+### 13-1-7) 회귀 테스트 — 이식/수정 후 반드시 돌린다
+
+```powershell
+# PowerShell 테스트 8종
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\tests\test-repo-integrity-gate.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\tests\test-worktree-idle-guard.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\tests\test-stale-code-guard.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\tests\test-scope-gate-pr-identification.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\tests\test-pr-attribution-noop.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\tests\test-humanconfirm-signal.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\tests\test-verify-gate-exit-contract.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\tests\test-verify-runner-korean-encoding.ps1
+```
+
+```bash
+# Node 테스트
+node scripts/gissue/tests/test-pr-lookup.mjs
+```
+
+모두 exit 0 이어야 합니다. 각 테스트는 마지막 줄에 `결과: PASS=N FAIL=0` 형태의 집계를 냅니다.
+호스트 환경에 따라 일부 케이스는 `SKIP` 으로 표시될 수 있습니다(예: `bash` 미설치,
+`giipprj` 컨테이너 배치가 없는 PC) — SKIP 은 실패가 아니며 exit 0 을 유지합니다.
+
 ## 14) 연결 문서
 
+- **보조 시간별 스케줄러 5종 + 태스크 등록 게이트**: `./aux-hourly-schedulers.md` (§15 참고)
 - 이슈 처리 세션 안전 규칙 색인: `../../.agent/rules/41_issue_session_safety_index.md`
 - 진행 코멘트/상태전이 코멘트 프로토콜: `../../.agent/rules/PROTOCOL_PROGRESS_COMMENT.md`
 - KPI 표준: `./ai-native-kpi.md`
 - 장애/롤백 플레이북: `./incident-rollback-playbook.md`
 - 원본 운영 인스턴스 제어법(이 PC 전용): `lowyworkenv/scripts/gissue/SCHEDULER_CONTROL.md`
+
+## 15) 보조 시간별 스케줄러 (giip #2645)
+
+이 문서가 다루는 메인 태스크 외에, **별도 러너 + 별도 Task Scheduler 항목**으로 분리 등록되는 보조
+스케줄러가 이 레포에 함께 들어 있습니다. 정본은 `./aux-hourly-schedulers.md` 이며, 목록만 옮깁니다.
+
+| 기본 태스크 이름 | 주기 | 러너 | 등록기 |
+|---|---|---|---|
+| `GIIP_StalePending_Hourly` | 매시 :07 | `scripts/gissue/run-list-stale-pending.ps1` | `register-stale-pending-task.ps1` |
+| `GIIP_StaleReview_Hourly` | 매시 :07 | `scripts/gissue/run-list-stale-review.ps1` | `register-stale-review-task.ps1` |
+| `GIIP_AuditReviewPrs_Hourly` | 매시 :07 | `scripts/gissue/run-audit-review-prs.ps1` | `register-audit-review-prs-task.ps1` |
+| `GIIP_GateEscalation_Hourly` | 매시 :07 | `scripts/gissue/run-gate-escalation-recheck.ps1` | `register-gate-escalation-task.ps1` |
+| `GIIP_SlackbotRestart_Hourly` | 매시 :37 | `scripts/gissue/run-slackbot-restart-check.ps1` | `register-slackbot-restart-task.ps1` |
+
+이 보조 스케줄러들과 함께 다음 두 가지가 이 레포에 들어왔습니다. §13 배포 절차를 마친 뒤 필요에
+따라 추가로 등록합니다(메인 태스크만으로도 동작하며, 보조는 선택입니다).
+
+- **태스크 등록 3중 게이트** — `scripts/gissue/task-target-guard.ps1` + `check-ps1-parse.ps1`:
+  대상 `.ps1` 의 존재 / 구문·BOM / **임시 worktree 경로가 아님** 을 `Register-ScheduledTask` 직전에
+  검사해, 하나라도 실패하면 등록하지 않습니다. `register-hourly-issue-scheduler.ps1` 도 앞으로 같은
+  게이트를 쓰도록 맞추면 이 문서 §8/§9 의 "등록 성공 메시지는 근거가 아니다" 가 기계적으로 보장됩니다.
+- **태스크 주기 게이트** — `scripts/gissue/task-cadence-guard.ps1` (+ 회귀 테스트
+  `scripts/gissue/tests/test-task-cadence-guard.ps1`): 이름이 `_Hourly` 인데 트리거에 `PT1H` 반복이
+  없어 **하루 1회만 돌던** 사고를 등록 전에 막습니다.
+
+또한 이 레포의 모든 `.ps1` 은 **UTF-8 with BOM** 으로 저장합니다 — BOM 이 없으면 Windows PowerShell
+5.1 이 시스템 ANSI 코드페이지로 읽어, 검사만 통과하고 실행에서 죽습니다(근거·실측은
+`./aux-hourly-schedulers.md` §2).
+
+```powershell
+# 레포 전체 .ps1 의 구문 + BOM 일괄 검사
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\check-ps1-parse.ps1 -All
+```

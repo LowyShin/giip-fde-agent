@@ -1,0 +1,9 @@
+{
+  "_comment": "giip 이슈의 산출물 PR 이 올라가지만 어느 프로젝트 workdir 아래에도 체크아웃이 없는 레포 목록 (giip #2504). Get-NestedRepoPaths(PowerShell) / discoverAuditRepos(Node) 는 '워크디렉터리 자신 + 바로 아래 1단계 nested 레포 + lowyworkenv' 만 훑기 때문에, 이런 레포의 PR 은 어떤 탐지기로도 안 잡혀 (a) PR-gate 가 'PR 없음'으로 REVIEW 를 되돌리고 (b) 대시보드가 REVIEW_NO_PR 로 잘못 적재한다. 2026-09-14 실측: giip #2477 의 산출물 PR 은 LowyShin/giipAgentLinux #33(MERGED)인데 탐지 범위 밖이라 되돌려졌다. 여기 적은 항목은 로컬 체크아웃 없이 `gh pr list --repo <slug>` 로 직접 조회하므로 clone 이 필요 없다.",
+  "_howto": "새 레포를 추가할 때: slugs 배열에 GitHub 'OWNER/REPO' 를 추가한다. 대소문자는 GitHub 표기 그대로. 조회 권한이 없으면 그 항목은 조용히 0건으로 처리되고 다른 레포 판정에는 영향을 주지 않는다.",
+  "_scope": "이 목록은 CSN 별이 아니라 전역이다 — 항목이 늘면 모든 CSN 의 스윕이 그만큼 gh 조회를 더 한다. 실제로 giip 이슈 PR 이 올라가는 레포만 넣을 것.",
+  "slugs": [
+    "LowyShin/giipAgentLinux",
+    "LowyShin/giipAgentWin"
+  ]
+}
