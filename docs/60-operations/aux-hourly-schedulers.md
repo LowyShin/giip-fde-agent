@@ -140,6 +140,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\tests\test-ta
 메인 스케줄러(`./hourly-issue-scheduler.md` §4)와 같습니다 — `csn-projects.json`,
 `slack-bot/.secrets/giip-accounts.json`, node, git(bash 포함). **DB 직접접속은 쓰지 않습니다**(§6).
 
+⚠️ **"git 설치됨"과 "PowerShell 에서 `bash` 가 해석됨"은 다릅니다**(2026-09-17 실측). Git for
+Windows 는 보통 `C:\Program Files\Git\cmd`(=`git.exe`) 만 PATH 에 올리고 `bash.exe` 는
+`Git\bin` / `Git\usr\bin` 에 둡니다. 이 러너들은 `powershell -File` 로 기동되므로 그 상태에서는
+`bash` 를 찾지 못합니다. 시스템 PATH 에 `C:\Program Files\Git\bin` 을 추가하십시오
+(메인 러너는 이 상황을 `[PREFLIGHT-WARN] 'bash' 를 PATH 에서 찾지 못했습니다` 로 알려줍니다).
+
 ### 4-2) 등록 (멱등 — 다시 실행하면 갱신, 중복 생성 없음)
 **정상 체크아웃에서** 실행합니다(worktree 안이면 §2 게이트 3 이 막습니다).
 
@@ -184,7 +190,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\run-slackbot-
 ```powershell
 # 1) 러너 직접 실행 출력
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\run-list-stale-pending.ps1 -Csn 47
-# 2) 실행 로그 tail
+# 2) 실행 로그 tail — 파일명의 csn 번호는 **넘긴 -Csn 값** 그대로다.
+#    -Csn 을 생략(=0, 전체 CSN 순회)하고 돌렸다면 로그는 stale-pending-csn0.log 다(실측).
+#    반면 결과 JSON 은 실제 대상 CSN 별로 stale-pending-csn47-<타임스탬프>.json 로 떨어진다.
 Get-Content scripts\gissue\audit-results\stale-pending-csn47.log -Tail 20 -Encoding UTF8
 # 3) 실제 반복 주기 원문 (NextRunTime 이 내일로 잡혀 있으면 반복이 빠진 것)
 Get-ScheduledTask GIIP_StalePending_Hourly | ForEach-Object { $_.Triggers.Repetition }
