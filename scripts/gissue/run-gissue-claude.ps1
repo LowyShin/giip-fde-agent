@@ -127,7 +127,7 @@ $SweepScript      = Join-Path $Root 'pr-gate-sweep.ps1'
 $GiipAccountsFile = Join-Path $Root '..\..\slack-bot\.secrets\giip-accounts.json'  # CSN→SK (REVIEW 큐 조회용)
 $SlackBotDir      = Join-Path $Root '..\..\slack-bot'  # pm2 "MISSING" 워치독이 신규 기동할 때 쓰는 cwd (아래 Phase 0.5 참고)
 $LockMaxAgeHr = 2   # 이 시간보다 오래된 lock 은 stale 로 보고 자동 제거(3월 hang 재발 방지)
-$RunTimeoutMin = 90
+$RunTimeoutMin = 105  # giip #1572: 120→105 하향 (2026-08 실측)
 # 다른 프로세스가 workdir 를 점유 중이면(busy) 잡 내부에서 이 시간(분)까지만 폴링 대기하고, 넘으면 포기한다.
 # (2026-07-28 지시: 30분 초과 프로세스/대기는 무조건 중단+로깅 — giipv3 가 bot/task-giip-780 에
 #  30시간 넘게 물려 csn47 큐 전체가 마비된 사고 재발 방지. 과거 75분 대기는 "그냥 몇 시간이고 조용히 기다림"을

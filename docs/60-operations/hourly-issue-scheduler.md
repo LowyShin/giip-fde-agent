@@ -66,9 +66,10 @@ powershell.exe -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass `
   이슈 조회/쓰기 커맨드가 실제로 그 프로젝트에 존재하는 도구를 가리키는지 이식 후 반드시
   `-DryRun`으로 확인합니다(존재하지 않는 경로를 참조하면 매 실행이 그 단계에서 조용히 실패합니다).
 
-## 5) 상태머신 개요 (8단계)
+## 5) 상태머신 개요 (8단계) — giip #1472(2026-08-24) 이후 아키텍처
 
 매 :07 실행마다 아래 순서로 수행합니다(원본 프롬프트 템플릿의 `[0]`, `[A]`~`[H]` 대응):
+**#1472 이후 구조**: 저장소정비 세션 1회(`[0]`) + 이슈당 세션 N개(`[A]`~`[H]`), 프롬프트 템플릿 6종.
 
 | 단계 | 이름 | 한 줄 요약 |
 |---|---|---|
@@ -83,8 +84,7 @@ powershell.exe -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass `
 | [H] | 최근 코멘트 논리 재검증 | 최근 2시간 내 코멘트의 "검증 가능한 사실 주장"을 직접 재확인해, 틀렸으면 정정 코멘트+상태 복구 |
 
 각 단계 상세 규칙(선점/코멘트 프로토콜, 3회 defer 상한, PR 완료 게이트, Actionflow 테스트 게이트 등)은
-이 레포 `scripts/gissue/run-gissue-claude.ps1`의 `$PromptTemplate` 전문을 참고합니다(본문 복제
-금지 — 상세 로직이 자주 갱신되므로 이 문서는 개요만 유지). Actionflow 테스트 게이트는 프로젝트
+이 레포 `scripts/gissue/run-gissue-claude.ps1`의 프롬프트 템플릿들(giip #1472 이후 6종: 공통, [A]~[H] 각 단계별)을 참고합니다(본문 복제 금지 — 상세 로직이 자주 갱신되므로 이 문서는 개요만 유지). Actionflow 테스트 게이트는 프로젝트
 자체 Actionflow 스크립트가 있으면 그것을, 없으면(대부분의 배포) HTTP_CHECK을 직접 재현하는 방식으로
 자동 폴백합니다 — SQL_CHECK이 필요한데 DB 접근 수단이 없으면 자동 DONE 대신 REVIEW로 넘깁니다.
 
@@ -130,7 +130,7 @@ Windows Task Scheduler 등록/해제/확인 스크립트다. `-Action` 셋(기�
   - **Settings**: `AllowStartIfOnBatteries`+`DontStopIfGoingOnBatteries`(배터리 전원과 무관하게
     실행/지속), `StartWhenAvailable`(예정 시각에 PC가 꺼져 있었으면 켜지는 즉시 실행),
     `MultipleInstances Parallel`(여러 인스턴스 동시 실행 허용), `ExecutionTimeLimit`2시간(러너 자신의
-    `$RunTimeoutMin`=90분보다 넉넉하게 상한).
+    `$RunTimeoutMin`=105분(giip #1572: 120→105 하향)보다 넉넉하게 상한).
 
     **`MultipleInstances Parallel`로 바꾼 이유(giip #1562, 2026-08-26 실측 사고)**: 원래
     `IgnoreNew`였는데, csn 47(백로그 큼) 처리가 오래 걸려 16:07 인스턴스가 2시간 가까이 살아있는 동안
