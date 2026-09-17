@@ -85,22 +85,76 @@ powershell.exe -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass `
 
 ## 5) 상태머신 개요 (8단계)
 
-매 :07 실행마다 아래 순서로 수행합니다(원본 프롬프트 템플릿의 `[0]`, `[A]`~`[H]` 대응):
+### 5-1) 실행 구조 — "한 세션이 8단계를 순회"가 **아니다** (giip #1472, 2026-08-24 이후)
 
-| 단계 | 이름 | 한 줄 요약 |
+이 절은 예전에 "매 :07 실행마다 `[0]`,`[A]`~`[H]` 를 순서대로 수행합니다"라고 적혀 있었습니다.
+그것은 giip #1472 **이전** 구조입니다. 현재 구현은 다릅니다 — 아래가 실제 실행 구조입니다.
+
+```
+:07 태스크 1회
+ └─ CSN 마다 Start-Job 1개 (CSN 간 병렬. 이건 예전과 동일)
+     ├─ ① 저장소 정비 세션 — 그 CSN 저장소 전체 스코프로 **1회만** 기동
+     │      ([0] PR conflict / [E] PR CI 수정 / [F] orphan stash 구조 / [H] 최근 코멘트 재검증)
+     └─ ② 이슈별 세션 — 아래 단일 우선순위 큐를 돌며 **이슈 1건마다 별도 프로세스를 개별 기동**
+            PENDING / READY(≥1h) / STALE_IN_PROGRESS(≥1h) / REVIEW  ← 하나의 큐, 오래 대기한 순
+```
+
+바뀐 것은 **실행 구조**이고, 각 단계가 "무엇을 판단하는가"는 §5-2 표 그대로 유효합니다.
+
+- **단일 우선순위 큐**: 상태별로 따로 순회하지 않습니다. `Get-GissueIssueQueue`
+  (`run-gissue-claude.ps1`)가 네 상태를 한 큐로 합쳐 대기시간 내림차순으로 정렬합니다.
+  READY / STALE_IN_PROGRESS 는 **1시간 이상 경과분만** 큐에 들어갑니다.
+- **이슈마다 별도 프로세스**: 한 세션이 여러 이슈를 이어서 처리하지 않습니다. 이슈 1건 =
+  엔진 프로세스 1개이고, 그 이슈의 상태에 맞는 프롬프트 템플릿 1벌만 주입됩니다
+  (§5-3). 한 이슈가 망가져도 다음 이슈가 같은 컨텍스트를 물려받지 않습니다.
+- **엔진 선택은 이슈 상태별**(`Invoke-GissueEngine` — MiniMax 시도 후 실패 시 **같은 실행 안에서**
+  claude 로 폴백하는 재사용 함수):
+
+  | 큐 항목 상태 | 엔진 |
+  |---|---|
+  | 저장소 정비 세션 | MiniMax 우선 → 실패 시 claude 폴백 |
+  | PENDING / READY / STALE_IN_PROGRESS | MiniMax 우선 → 실패 시 claude 폴백 |
+  | **REVIEW** | **MiniMax 시도 없이 곧바로 claude**(사용자 지시 2026-08-23) |
+  | TESTED | claude 강제 (giip #1472) |
+
+  `MINIMAX_API_KEY`(env 또는 `slack-bot/.env`)가 **없으면** 전 구간이 claude 단독으로 동작합니다 —
+  에러가 아니라 설계된 축퇴 경로입니다. 신규 clone 은 `slack-bot/.env` 가 없으므로 기본이 이쪽입니다.
+- **시간 예산 초과분은 LLM 없이 미룹니다**: 잡 전체 예산(`$RunTimeoutMin`, §8)에서 **마지막 5분을
+  오버헤드 여유로 남기고**, 그 선을 넘으면 남은 큐 항목은 엔진을 기동하지 않고 스크립트가 직접
+  note 코멘트를 남긴 뒤 다음 `:07` 로 넘깁니다. 큐가 길어도 태스크가 통째로 잘리지 않게 하는 장치입니다.
+
+### 5-2) 8단계 — 각 단계가 무엇을 판단하는가
+
+"세션" 열이 그 단계가 **저장소 정비 세션**에 속하는지 **이슈별 세션**에 속하는지를 가릅니다.
+
+| 단계 | 세션 | 이름 | 한 줄 요약 |
+|---|---|---|---|
+| [0] | 저장소 정비 | PR conflict 우선 해결 | 이슈 처리 착수 전, 담당 프로젝트(+nested repo)의 열려있고 conflict 난 PR을 먼저 해소 |
+| [A] | 이슈별 | 슬래시 커맨드 즉시 실행 | 제목/본문/최신 코멘트가 `/`로 시작하면 상태·나이 무관하게 즉시 해당 워크플로우 기동 |
+| [B] | 이슈별 | PENDING 정제 | 내용을 분석해 작업 지시서 코멘트를 남기고 READY로 전이(실행까지는 안 함) |
+| [C] | 이슈별 | READY 실행 | READY로 1시간 이상 경과한 것만, IN_PROGRESS로 선점 후 실제 처리(PR 완료 게이트 + Actionflow 테스트 게이트 통과 시 DONE) |
+| [D] | 이슈별 | IN_PROGRESS 회수(reclaim) | 1시간 이상 활동 없는 IN_PROGRESS를 원인 분석 후 이어받아 완수 — 죽은/멈춘 세션 복구 |
+| [E] | 저장소 정비 | PR CI 실패 점검 | 이슈 유무와 무관하게 매번, 열린 PR 중 CI/검증 실패한 것을 원인 규명 후 로컬 재검증 통과 시에만 수정 push |
+| [F] | 저장소 정비 | Orphan stash 구조 | 이전 실행이 안전하게 stash해둔 "죽은 세션 잔해"를 이슈와 매칭시켜 구조(확신 없으면 사람에게 위임) |
+| [G] | 이슈별 | REVIEW 재검증 | REVIEW 이슈를 Actionflow로 재테스트해 SUCCESS면 TESTED로(자동 DONE은 하지 않음 — 최종 종결은 사람) |
+| [H] | 저장소 정비 | 최근 코멘트 논리 재검증 | 최근 2시간 내 코멘트의 "검증 가능한 사실 주장"을 직접 재확인해, 틀렸으면 정정 코멘트+상태 복구 |
+
+### 5-3) 프롬프트 템플릿 6종과 단계의 대응
+
+단계는 프롬프트 **블록**으로 구현되고, 큐 항목의 상태에 따라 블록을 조합한 템플릿 1벌이 주입됩니다
+(`run-gissue-claude.ps1`). 이 대응이 §5-1 의 "이슈마다 별도 세션"을 코드에서 확인하는 지점입니다.
+
+| 템플릿 | 포함 단계 블록 | 언제 쓰이나 |
 |---|---|---|
-| [0] | PR conflict 우선 해결 | 이슈 처리 착수 전, 담당 프로젝트(+nested repo)의 열려있고 conflict 난 PR을 먼저 해소 |
-| [A] | 슬래시 커맨드 즉시 실행 | 제목/본문/최신 코멘트가 `/`로 시작하면 상태·나이 무관하게 즉시 해당 워크플로우 기동 |
-| [B] | PENDING 정제 | 내용을 분석해 작업 지시서 코멘트를 남기고 READY로 전이(실행까지는 안 함) |
-| [C] | READY 실행 | READY로 1시간 이상 경과한 것만, IN_PROGRESS로 선점 후 실제 처리(PR 완료 게이트 + Actionflow 테스트 게이트 통과 시 DONE) |
-| [D] | IN_PROGRESS 회수(reclaim) | 1시간 이상 활동 없는 IN_PROGRESS를 원인 분석 후 이어받아 완수 — 죽은/멈춘 세션 복구 |
-| [E] | PR CI 실패 점검 | 이슈 유무와 무관하게 매번, 열린 PR 중 CI/검증 실패한 것을 원인 규명 후 로컬 재검증 통과 시에만 수정 push |
-| [F] | Orphan stash 구조 | 이전 실행이 안전하게 stash해둔 "죽은 세션 잔해"를 이슈와 매칭시켜 구조(확신 없으면 사람에게 위임) |
-| [G] | REVIEW 재검증 | REVIEW 이슈를 Actionflow로 재테스트해 SUCCESS면 TESTED로(자동 DONE은 하지 않음 — 최종 종결은 사람) |
-| [H] | 최근 코멘트 논리 재검증 | 최근 2시간 내 코멘트의 "검증 가능한 사실 주장"을 직접 재확인해, 틀렸으면 정정 코멘트+상태 복구 |
+| `$RepoMaintenancePromptTemplate` | `[0]` `[E]` `[F]` `[H]` | 저장소 정비 세션(CSN 당 1회) |
+| `$PendingIssuePromptTemplate` | `[A]` `[B]` | 큐 항목이 PENDING |
+| `$ReadyIssuePromptTemplate` | `[A]` `[C]` | 큐 항목이 READY(≥1h) |
+| `$StaleIssuePromptTemplate` | `[D]` `[C]` `[B]` | 큐 항목이 STALE_IN_PROGRESS(≥1h) |
+| `$ReviewIssuePromptTemplate` | `[G]` | 큐 항목이 REVIEW |
+| `$TestedIssuePromptTemplate` | TESTED 전용 블록 | 큐 항목이 TESTED |
 
 각 단계 상세 규칙(선점/코멘트 프로토콜, 3회 defer 상한, PR 완료 게이트, Actionflow 테스트 게이트 등)은
-이 레포 `scripts/gissue/run-gissue-claude.ps1`의 `$PromptTemplate` 전문을 참고합니다(본문 복제
+이 레포 `scripts/gissue/run-gissue-claude.ps1`의 위 템플릿 전문을 참고합니다(본문 복제
 금지 — 상세 로직이 자주 갱신되므로 이 문서는 개요만 유지). Actionflow 테스트 게이트는 프로젝트
 자체 Actionflow 스크립트가 있으면 그것을, 없으면(대부분의 배포) HTTP_CHECK을 직접 재현하는 방식으로
 자동 폴백합니다 — SQL_CHECK이 필요한데 DB 접근 수단이 없으면 자동 DONE 대신 REVIEW로 넘깁니다.
@@ -146,8 +200,19 @@ Windows Task Scheduler 등록/해제/확인 스크립트다. `-Action` 셋(기�
     `New-TimeSpan -Days 3650`(약 10년)으로 사실상 무기한 반복을 구현한다.
   - **Settings**: `AllowStartIfOnBatteries`+`DontStopIfGoingOnBatteries`(배터리 전원과 무관하게
     실행/지속), `StartWhenAvailable`(예정 시각에 PC가 꺼져 있었으면 켜지는 즉시 실행),
-    `MultipleInstances Parallel`(여러 인스턴스 동시 실행 허용), `ExecutionTimeLimit`2시간(러너 자신의
-    `$RunTimeoutMin`=90분보다 넉넉하게 상한).
+    `MultipleInstances Parallel`(여러 인스턴스 동시 실행 허용), `ExecutionTimeLimit` 2시간.
+
+    **러너 자신의 타임아웃은 `$RunTimeoutMin` = 105분이다** (`run-gissue-claude.ps1` 134행).
+    Windows 쪽 `ExecutionTimeLimit`(2시간)보다 **15분 먼저** 만료되도록 일부러 낮춘 값이다 —
+    이 15분 간격이 이 설정의 전부이므로 둘 중 하나만 바꾸지 말 것.
+
+    **왜 120 이 아니라 105 인가(giip #1572, 2026-08-27 실측 사고)**: 원래 120분이었는데, 그러면
+    Windows Task Scheduler 의 `ExecutionTimeLimit`(2시간)과 사실상 같아 여유가 전혀 없다. CSN47 잡이
+    01:00:48 까지 정상적으로 작업하고 있었는데 01:07:00 에 **Windows 가 먼저 프로세스를 강제종료**해,
+    스크립트 자신의 우아한 정리(`Complete-Run`, 락 해제)가 한 줄도 실행되지 못했고 `.lock` 파일이
+    고아로 남았다. 즉 "러너가 자기 타임아웃으로 스스로 접는 경로"가 아예 도달 불가였다. 그래서
+    러너를 Windows 보다 15분 먼저 만료시키도록 105 로 낮췄고, `ExecutionTimeLimit` 2시간은
+    **"그 내부 정리마저 실패했을 때"의 최후 안전망**으로 남겨 두었다(제거하면 안 된다).
 
     **`MultipleInstances Parallel`로 바꾼 이유(giip #1562, 2026-08-26 실측 사고)**: 원래
     `IgnoreNew`였는데, csn 47(백로그 큼) 처리가 오래 걸려 16:07 인스턴스가 2시간 가까이 살아있는 동안
@@ -359,9 +424,44 @@ GitHub에서 머지했지만, 그 PR을 병합한 세션이 로컬 `lowyworkenv`
 
    검증도 같은 조건에서 해야 한다: "내 작업 폴더에서 돌아갔다"는 신규 clone 검증이 아니다.
    **gitignore 대상 설정 파일이 하나도 없는 상태**와 **채운 상태** 두 가지를 모두 돌려 확인한다.
+
+   **`bash` PREFLIGHT-WARN 이 뜨면 여기서 해결한다**(2026-09-17 신규 clone 실측): Windows 에
+   Git for Windows 가 깔려 있어도 PATH 에 올라가는 것은 보통 `C:\Program Files\Git\cmd`(=`git.exe`)
+   뿐이고 `bash.exe` 는 `Git\bin` / `Git\usr\bin` 에 있어 **PowerShell 에서는 `bash` 가 해석되지
+   않는다**. 그래서 `powershell -File` 로 기동되는 이 러너는 `[PREFLIGHT-WARN] 'bash' 를 PATH 에서
+   찾지 못했습니다` 를 낸다. 이슈 큐 조회는 `list-issues.js`(node)라 WARN 상태에서도 정상 동작하지만,
+   `get-issue.sh` 를 쓰는 단계는 동작하지 않는다. 시스템 PATH 에 `C:\Program Files\Git\bin` 을
+   추가한 뒤 스케줄러 태스크를 재등록(또는 PC 재로그온)해 WARN 이 사라지는 것을 확인한다.
 6. 문제 없으면 `register-hourly-issue-scheduler.ps1 -Action Register -RepoRoot <이 clone 경로>`로
    Windows 스케줄러에 등록한다(태스크 이름은 배포 대상마다 고유하게 `-TaskName`으로 지정).
-7. 등록 후 **한 사이클을 실제로 돌려** 세션 착수 코멘트의 로드 목록에 규칙 파일이 나타나는지
+
+   ⚠️ **태스크 등록은 반드시 정상 체크아웃에서 한다 — worktree 안에서 실행하면 거부된다.**
+   등록기들은 `Register-ScheduledTask` 직전에 `task-target-guard.ps1` 의 3중 게이트를 통과해야 하는데,
+   게이트 3 이 대상 `.ps1` 경로가 `\temp\worktrees\` 또는 `\.claude\worktrees\` 하위인지 검사해
+   해당하면 등록을 중단한다(§15). worktree 경로를 태스크에 박으면 그 worktree 를 지우는 순간
+   태스크가 존재하지 않는 파일을 가리키며 조용히 죽기 때문이다(giip #2431). 실제 거부 출력:
+
+   ```text
+   [TASK-GUARD][3/3][FAIL] 임시 worktree 경로(패턴 '\temp\worktrees\') 하위 — 등록 거부
+   [TASK-GUARD][BLOCKED] <TaskName> 등록을 중단합니다(1건):
+   ```
+
+7. **(선택) 보조 시간별 스케줄러 5종을 등록한다.** 메인 태스크만으로도 동작하므로 필요할 때만
+   등록하면 된다. 5종의 목록·주기·등록기 이름과 각 등록기의 파라미터는 **정본 유저가이드**
+   [`./aux-hourly-schedulers.md`](./aux-hourly-schedulers.md) 를 따른다(§15 에 목록 요약).
+   등록기도 6단계와 같은 3중 게이트를 쓰므로 **정상 체크아웃에서 실행해야 한다.**
+
+   ```powershell
+   # 5종 모두. 태스크 이름을 바꾸려면 각 등록기의 -TaskName 을 쓴다.
+   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\register-stale-pending-task.ps1
+   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\register-stale-review-task.ps1
+   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\register-audit-review-prs-task.ps1
+   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\register-gate-escalation-task.ps1
+   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\register-slackbot-restart-task.ps1
+   ```
+
+   등록 전에 러너 5종을 직접 1회 돌려 보는 것을 권장한다(등록기는 파싱만 보고 실행 결과는 보지 않는다).
+8. 등록 후 **한 사이클을 실제로 돌려** 세션 착수 코멘트의 로드 목록에 규칙 파일이 나타나는지
    확인한다 — 등록 성공 메시지나 `LastTaskResult=0`은 근거가 아니다(§9, `.agent/rules/42_`).
 
 **주의**: 스케줄러가 처리할 workdir가 사람이 대화형으로 동시에 쓰는 작업 폴더와 같으면, `restBranch`를
@@ -369,6 +469,57 @@ GitHub에서 머지했지만, 그 PR을 병합한 세션이 로컬 `lowyworkenv`
 수 없어, 사람이 작업 중인 워킹트리에 강제 언블록(stash+체크아웃)이 실행될 위험이 남는다. 대화형으로도
 자주 쓰는 저장소라면, 스케줄러 전용 별도 clone을 workdir로 쓰는 것을 권장한다(원본 저장소와는 git
 remote로만 연결된, 완전히 독립적인 워킹트리).
+
+## 13-2) 원본(`lowyworkenv`)과의 파일 격차 — 무엇이 이식되지 않았는가 (giip #2645 작업 D)
+
+**이 문서는 다른 PC 가 clone 해 쓰는 계약서입니다. 알려진 결손을 숨기지 않습니다.**
+
+2026-09-17 신규 clone(`origin/main` `2df478a`) 실측: `scripts/gissue` 최상위 파일이 원본 54개 대
+이 레포 43개입니다. 차이 14건 + gitignore 대상 `csn-projects.json` 1건 = 15건이며, 전부 아래 표에
+있습니다. 반대로 이 레포에만 있는 파일도 3건 있습니다(`csn-projects.json.example` /
+`list-issues.js` / `stale-issue-scan-lib.ps1` — 이식 과정에서 신설).
+
+### 13-2-1) 이식하지 않는 것이 맞는 것 (후속 불요)
+
+| 파일 | 판단 근거(파일을 열어 확인한 내용) |
+| :-- | :-- |
+| `README.md` / `SPEC.md` | 이 스케줄러 표준의 **정본은 이 문서**입니다(§7). 원본의 두 문서를 복제하면 정본이 둘이 됩니다. |
+| `SCHEDULER_CONTROL.md` | "이 PC(Lowy-DP01) 운영 인스턴스"의 제어법이라 배포 대상마다 무의미합니다. §14 가 원본 경로를 링크로만 가리킵니다. |
+| `SLACKBOT_AUTO_RESTART.md` | 같은 내용이 이 레포의 `./aux-hourly-schedulers.md`(slackbot 재시작 스케줄러 절)로 재작성돼 있습니다. |
+| `csn-projects.json` | 시크릿성 로컬 설정(CSN·절대경로). `csn-projects.json.example` 로 대체되며 배포마다 직접 채웁니다(§13 2단계). |
+| `_scan_tp.cjs` (17줄) | 하드코딩된 isn 5개(`1966,1968,1971,1972,2040`)를 `/tmp/g70424/c_*.json` 에서 읽는 1회용 조사 스크립트. 재사용 경로 없음. |
+| `extract_sk70427.ps1` (2줄) | csn 70427 의 SK 1건을 콘솔에 덤프하는 2줄짜리 일회성 스크립트. 시크릿을 표준출력으로 내보내므로 이식 대상이 아닙니다(`.agent/rules/49_no_plaintext_credential_persist.md`). |
+| `verify-1665-oneshot.ps1` (186줄) | 헤더에 "giip #1671 단발성(1회) 검증"이라 명시돼 있고, 실행 끝에 자기 태스크를 `Unregister-ScheduledTask` 로 지웁니다. 2026-08-29 14:07 실행 1회로 역할이 끝났습니다. |
+| `review-done-audit.ps1.bak_1570_20260828094004` | 파일명 그대로 2026-08-28 편집 백업본. |
+| `test-cd-worktree-hook.ps1` (190줄) | `.claude/hooks/check-ps1-parse.sh`(원본 PC 의 훅 배치)를 대상으로 하는 회귀 테스트라, 그 훅이 없는 배포에서는 대상 자체가 없습니다. |
+| `register-interactive-session.ps1` (330줄) | Claude Code **대화형 세션**을 `tSchedulerAgent` 에 등록하는 훅 연동 스크립트(giip #1645). `:07` 스케줄러 동작과 무관하고, 원본 PC 의 훅·`CLAUDE_CODE_BRIDGE_SESSION_ID` 환경에 의존합니다. |
+| `register-issue.ps1` (37줄) | 같은 디렉터리 `register-issue.js` 를 부르는 **PowerShell 래퍼**일 뿐입니다. `register-issue.js` 는 이식돼 있고, 이 레포의 러너·감사 스크립트는 전부 `.js` 를 직접 호출합니다(`run-gissue-claude.ps1` 109행, `review-done-audit.ps1` 101행). 기능 결손 없음. |
+
+### 13-2-2) DB 직접접속 전용 — 이식 대상 아님 (이 레포는 API 경로만 쓴다)
+
+이 레포의 배포 대상에는 `giipdb/mgmt/dbconfig.json`(DB 자격증명)이 없습니다. §13-1-3 의 "쓰기 경로가
+API 하나뿐" 이라는 설계와 같은 이유로, 아래 3건은 의도적으로 제외했습니다.
+
+| 파일 | 하는 일 | 이식하지 않은 결과 |
+| :-- | :-- | :-- |
+| `giipdb-locate.ps1` | nested `giipdb/mgmt`(= `execSQLFile.ps1` + `dbconfig.json`) 위치 탐색 헬퍼 | DB 적재를 안 하므로 호출부가 없습니다. **이 레포의 어떤 스크립트도 이 파일을 참조하지 않습니다**(전수 grep 확인). |
+| `sync-csn-mapping-from-db.ps1` | `dbo.tGissueCsnMapping` 을 정본으로 보고 `csn-projects.json` 을 DB 에서 덮어씀(giip #2363) | 이 레포는 `csn-projects.json` **파일 자체가 정본**입니다(§13 2단계). 원본과 정본 방향이 다르다는 점만 알고 있으면 됩니다. 참조부 없음. |
+| `sync-ai-actor-credentials.ps1` | AI 행위자 계정의 AK 를 giipdb → `slack-bot/.secrets/giip-accounts.json` 으로 직접 이동(giip #2613) | AK 를 **수동으로** 채워야 합니다. 절차서 `scripts/gissue/AI_ACTOR_ACCOUNTS.md` §3-3 이 이미 이 항목을 `미이식` 로 표기하고 있습니다. |
+
+⚠️ **`scripts/gissue/ai-actors.json` 의 `_comment` 가 이 미이식 파일을 가리킵니다** —
+"`sync-ai-actor-credentials.ps1` 이 DB 에서 그리로 직접 옮긴다"고 쓰여 있으나 **그 파일은 이 레포에
+없습니다.** 신규 PC 에서는 그 문장을 따라갈 수 없으므로, AK 는 `AI_ACTOR_ACCOUNTS.md` 의 절차대로
+직접 기입하십시오. (문구 교정은 이 문서 작업의 범위 밖이라 후속 이슈 소관입니다 — 로직·설정 파일을
+건드리지 않고 사실만 여기 남깁니다.)
+
+### 13-2-3) ⚠️ 알려진 결손 — 고쳐야 하지만 아직 안 고쳐진 것
+
+**아래 2건은 "이식됐지만 원본과 동등하지 않은" 상태입니다. 후속 이슈 소관입니다.**
+
+| 항목 | 실측 내용 | 신규 PC 에 미치는 영향 |
+| :-- | :-- | :-- |
+| `scripts/gissue/pr-gate-sweep.ps1` 이 **구버전** | 이 레포 19,753 바이트 vs 원본 43,108 바이트. 원본에만 있는 함수: `Format-PrEvidence` / `Invoke-GateEscalate` / `Set-IssueNeedsDecision` | **게이트 에스컬레이션 / NEEDS_DECISION 전이 경로가 없습니다.** 게이트 실패가 사람에게 올라가지 않고 그대로 머무를 수 있습니다. |
+| `scripts/gissue/get-issue.sh` 에 **`--role` 플래그 없음** | 원본은 `--role` 로 구조화 필드 `loadedRole` 을 채웁니다(giip #1324/#1452). 이 레포의 `get-issue.sh` / `post-comment.js` / `comment-api.js` 에는 그 경로 자체가 없습니다(`role` 문자열 출현 0회 vs 원본 8회). | 이 레포가 남기는 코멘트는 **`loadedRole=null`** 이 됩니다. 어느 역할로 처리했는지가 이슈에 기록되지 않습니다. |
 
 ## 13-1) 감사·스윕·가드 스크립트와 공용 lib (giip #2645)
 
@@ -482,15 +633,20 @@ GIIP_ACCOUNTS_FILE=<...> node scripts/gissue/audit-review-prs.mjs --csn <csn> --
 ### 13-1-7) 회귀 테스트 — 이식/수정 후 반드시 돌린다
 
 ```powershell
-# PowerShell 테스트 8종
+# 먼저 레포 전체 .ps1 의 구문 + BOM 일괄 검사
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\check-ps1-parse.ps1 -All
+
+# PowerShell 테스트 9종
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\tests\test-repo-integrity-gate.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\tests\test-worktree-idle-guard.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\tests\test-stale-code-guard.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\tests\test-scope-gate-pr-identification.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\tests\test-pr-attribution-noop.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\tests\test-humanconfirm-signal.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\tests\test-verify-gate-exit-contract.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\tests\test-task-cadence-guard.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\tests\test-verify-runner-korean-encoding.ps1
+# ↓ 신규 PC 에서는 반드시 -LiveCsn 을 자기 CSN 으로 지정한다(아래 주의 참고)
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\tests\test-verify-gate-exit-contract.ps1 -LiveCsn <이 배포의 CSN>
 ```
 
 ```bash
@@ -501,6 +657,21 @@ node scripts/gissue/tests/test-pr-lookup.mjs
 모두 exit 0 이어야 합니다. 각 테스트는 마지막 줄에 `결과: PASS=N FAIL=0` 형태의 집계를 냅니다.
 호스트 환경에 따라 일부 케이스는 `SKIP` 으로 표시될 수 있습니다(예: `bash` 미설치,
 `giipprj` 컨테이너 배치가 없는 PC) — SKIP 은 실패가 아니며 exit 0 을 유지합니다.
+
+⚠️ **`test-verify-gate-exit-contract.ps1` 은 기본값이 원본 PC 전용이다**(2026-09-17 신규 clone 실측).
+이 테스트의 라이브 케이스 A-3b 는 `-LiveCsn` 기본값이 **33** 이라, `giip-accounts.json` 에 csn 33
+항목이 없는 배포에서는 SK 해석이 실패해 아래처럼 **FAIL 로 뜹니다 — 코드 결함이 아니라 설정 불일치**입니다.
+
+```text
+FAIL  A-3b verify 블록 없는 이슈(isn=2338) → 종료코드 2 — 실제=3 /
+결과: PASS=23 FAIL=1
+```
+
+`-LiveCsn <자기 CSN>` 을 주면 `PASS=24 FAIL=0`, `-SkipLive` 를 주면 `PASS=22 FAIL=0` 으로 통과합니다.
+테스트 자신은 "조회 실패면 검증 생략" NOTE 분기를 갖고 있지만, `verify-runner.mjs` 가 SK 해석 실패를
+`조회 실패` 가 아니라 `[ERROR] 예기치 못한 오류` + 종료코드 3 으로 내보내 그 분기에 걸리지 않습니다
+(§13 5단계의 "신규 clone 에 없는 것을 읽는 지점은 행동지시를 내야 한다" 원칙에 아직 맞지 않은 지점 —
+후속 이슈 소관, 이번 작업은 문서화만 합니다).
 
 ## 14) 연결 문서
 
