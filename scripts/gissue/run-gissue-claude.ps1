@@ -177,6 +177,25 @@ function Write-GissueAlert($msg) {
     } catch {}
 }
 
+# 설정에서 온 경로 문자열은 사람이 손으로 채우는 값이라, 채우지 않은 placeholder(`<...절대경로>`)나
+# 금지문자가 들어올 수 있다. 그런 값을 그대로 Test-Path 에 넘기면 PowerShell 이
+# "Illegal characters in path." **예외**를 던진다(신규 clone 검증에서 실측, giip #2645).
+# 경로 판정은 반드시 이 헬퍼로 한다 — 판정 실패는 "없음"으로 취급하고 예외를 밖으로 내보내지 않는다.
+function Test-GissuePathSafe($path) {
+    if (-not $path) { return $false }
+    try { return (Test-Path -LiteralPath $path) } catch { return $false }
+}
+# csn-projects.json 의 CSN 항목 1건이 실제로 처리 가능한 값인지(숫자 CSN + placeholder 아닌 workdir).
+# Phase -3 preflight 와 Phase 1 루프가 **같은 판정 함수**를 쓴다 — 판정을 복붙하면 한쪽만 고쳐지는
+# 사고가 재발한다(규칙 48 / KNOW-027).
+function Test-GissueCsnEntryValid($csnKey, $entry) {
+    if ("$csnKey" -notmatch '^\d+$') { return $false }
+    $wd = "$($entry.workdir)"
+    if (-not $wd) { return $false }
+    if ($wd -match '[<>|*?"]') { return $false }
+    return $true
+}
+
 # giip-accounts.json 에서 이 CSN 의 SK 조회(스윕/큐 조회가 API 인증에 쓴다).
 function Get-GissueCsnSk($csn) {
     try {
@@ -328,6 +347,146 @@ function Invoke-GissuePrAttributionSweep($csn, $workdir) {
     } catch {
         Write-Log $csn "[PR-ATTRIBUTION] 오류: $($_.Exception.Message)"
     }
+}
+
+# ══════════════════════════════════════════════════════════════════════════════════════
+#  Phase -3: 신규 clone 전제조건 preflight (giip #2645 후속 — 검증 지적)
+#
+#  왜 필요한가(실측): 이 레포를 **새 PC 에 클론한 직후**의 상태에는 gitignore 대상 설정 파일이
+#  하나도 없다. 그런데 정본 절차(docs/60-operations/hourly-issue-scheduler.md §13)가 5단계에서
+#  시키는 첫 명령이 바로 `-DryRun` 이다. 이전 판에서는 csn-projects.json 을 존재검사 없이 바로
+#  `Get-Content` 해서, 절차대로 따라온 사용자가 첫 명령에서 **.NET 예외 스택트레이스**를 봤다:
+#      Get-Content : Cannot find path '...\scripts\gissue\csn-projects.json' because it does not exist.
+#  "설정 파일을 복사하라"는 안내가 아니라 스택트레이스가 나오는 것은 배포 가능성 요구
+#  ("클론만으로 동일 작업 가능")를 정면으로 깨뜨린다.
+#
+#  원칙: **신규 clone 에 없는 것을 읽는 모든 지점은 (a) 치명적이면 행동지시 메시지 + 비0 종료,
+#  (b) 아니면 행동지시 WARN 후 계속** 이어야 한다. 조용한 예외/스택트레이스는 둘 다 아니다.
+#  (개별 호출부의 Test-Path 가드와 별개다 — 여기서는 "무엇을 어떻게 준비하면 되는지"를 한 곳에
+#   모아 사람에게 알려주는 것이 목적이다.)
+# ══════════════════════════════════════════════════════════════════════════════════════
+function Write-GissuePreflightBlock($lines) {
+    foreach ($l in @($lines)) { Write-Output $l }
+}
+
+$script:PreflightWarned = $false
+# (1) CSN 매핑 파일 — 없으면 이 스케줄러가 할 일 자체를 알 수 없다. 치명적(exit 2).
+if (-not (Test-Path -LiteralPath $MapFile)) {
+    Write-GissuePreflightBlock @(
+        "",
+        "[PREFLIGHT-FAIL] CSN 매핑 파일이 없습니다: $MapFile",
+        "",
+        "  이 레포를 새로 클론하면 csn-projects.json 은 없는 것이 정상입니다(gitignore 대상 — 배포마다",
+        "  다른 로컬 경로/CSN 을 담기 때문에 추적하지 않습니다). 아래 순서로 준비한 뒤 다시 실행하세요.",
+        "",
+        "    1) 예시 파일을 복사합니다",
+        "         copy `"$($MapFile).example`" `"$MapFile`"",
+        "    2) 복사한 파일을 열어 csn 항목의 <CSN번호> / project / workdir 를 이 PC 의 실제 값으로 채웁니다",
+        "       (workdir = 그 CSN 의 이슈를 처리할 로컬 프로젝트 폴더의 절대경로)",
+        "    3) 다시 실행합니다",
+        "         powershell -NoProfile -ExecutionPolicy Bypass -File `"$($MyInvocation.MyCommand.Path)`" -DryRun",
+        "",
+        "  정본 절차: docs/60-operations/hourly-issue-scheduler.md §13 (배포 절차), 설정 키 설명은 §4",
+        ""
+    )
+    exit 2
+}
+# (1-b) 매핑 파일이 있어도 JSON 이 깨져 있으면 같은 방식으로 안내한다(예외 스택트레이스 금지).
+try {
+    $script:MapRoot = Get-Content -LiteralPath $MapFile -Raw -Encoding UTF8 | ConvertFrom-Json
+} catch {
+    Write-GissuePreflightBlock @(
+        "",
+        "[PREFLIGHT-FAIL] CSN 매핑 파일을 JSON 으로 읽지 못했습니다: $MapFile",
+        "  사유: $($_.Exception.Message)",
+        "",
+        "  JSON 문법(따옴표/쉼표/주석)을 확인하세요. 주석은 JSON 문법이 아니므로 `"_comment`" 처럼",
+        "  키로 넣어야 합니다($($MapFile).example 참고). 경로 구분자는 `"C:/...`" 또는 `"C:\\\\...`" 로 씁니다.",
+        "  정본 절차: docs/60-operations/hourly-issue-scheduler.md §4 / §13",
+        ""
+    )
+    exit 2
+}
+if (-not $script:MapRoot.csn -or -not @($script:MapRoot.csn.PSObject.Properties.Name).Count) {
+    Write-GissuePreflightBlock @(
+        "",
+        "[PREFLIGHT-FAIL] $MapFile 에 처리할 CSN 이 하나도 없습니다(`"csn`" 객체가 비어 있음).",
+        "  $($MapFile).example 의 csn 항목을 참고해 CSN 번호 / project / workdir 를 1건 이상 채운 뒤 다시 실행하세요.",
+        "  정본 절차: docs/60-operations/hourly-issue-scheduler.md §13",
+        ""
+    )
+    exit 2
+}
+# (1-c) **채우지 않은 placeholder 검사(§13 절차의 중간 상태)**. `.example` 을 복사만 하고 아직 값을
+#   채우지 않은 상태가 배포 절차상 반드시 한 번은 존재한다. 그 상태에서 CSN 키는 `<CSN번호>`,
+#   workdir 는 `<...절대경로>` 인데, 이 값을 그대로 `Test-Path` 에 넘기면 PowerShell 이
+#   "Illegal characters in path." 예외를 던진다 — 또 스택트레이스다(신규 clone 검증에서 실측).
+#   여기서 걸러 행동지시로 바꾸고, 유효한 항목이 하나도 없으면 치명으로 끝낸다.
+$script:InvalidCsnEntries = @()
+$validCsnCount = 0
+foreach ($cKey in @($script:MapRoot.csn.PSObject.Properties.Name)) {
+    $cVal = $script:MapRoot.csn.$cKey
+    if (Test-GissueCsnEntryValid $cKey $cVal) { $validCsnCount++; continue }
+    $wd = "$($cVal.workdir)"
+    $bad = @()
+    if ($cKey -notmatch '^\d+$')  { $bad += "CSN 키 '$cKey' 가 숫자가 아님" }
+    if (-not $wd)                 { $bad += "workdir 가 비어 있음" }
+    elseif ($wd -match '[<>|*?"]'){ $bad += "workdir 에 채우지 않은 placeholder/금지문자가 있음('$wd')" }
+    $script:InvalidCsnEntries += "$cKey : $($bad -join ', ')"
+}
+if ($validCsnCount -eq 0) {
+    Write-GissuePreflightBlock @(
+        "",
+        "[PREFLIGHT-FAIL] $MapFile 의 CSN 항목이 아직 채워지지 않았습니다(예시 placeholder 그대로).",
+        ""
+    )
+    foreach ($ie in $script:InvalidCsnEntries) { Write-Output "    - $ie" }
+    Write-GissuePreflightBlock @(
+        "",
+        "  csn 아래의 키를 실제 CSN 번호(숫자)로, workdir 를 그 CSN 의 이슈를 처리할 로컬 폴더의",
+        "  절대경로로 바꾼 뒤 다시 실행하세요. 예:",
+        "      `"csn`": { `"47`": { `"project`": `"giipprj`", `"workdir`": `"C:/Users/<you>/Projects/giipprj`", `"enabled`": true } }",
+        "  정본 절차: docs/60-operations/hourly-issue-scheduler.md §13 (배포 절차), 설정 키 설명은 §4",
+        ""
+    )
+    exit 2
+}
+if ($script:InvalidCsnEntries.Count -gt 0) {
+    $script:PreflightWarned = $true
+    Write-Output "[PREFLIGHT-WARN] 아래 CSN 항목은 값이 올바르지 않아 이번 실행에서 건너뜁니다(나머지는 정상 처리):"
+    foreach ($ie in $script:InvalidCsnEntries) { Write-Output "    - $ie" }
+}
+# (2) SK 계정 파일 — 없으면 이슈 조회/코멘트/상태전이가 전부 불가능하다. 다만 Phase 0(reaper)/
+#     Phase 0.5(slack-bot 워치독)는 계속 유효하므로 치명으로 만들지 않고 행동지시 WARN 으로 둔다.
+if (-not (Test-Path -LiteralPath $GiipAccountsFile)) {
+    $script:PreflightWarned = $true
+    $sampleAcc = Join-Path (Split-Path -Parent $GiipAccountsFile) 'giip-accounts.sample.json'
+    Write-GissuePreflightBlock @(
+        "",
+        "[PREFLIGHT-WARN] giip API 계정(SK) 파일이 없습니다: $GiipAccountsFile",
+        "  이 파일이 없으면 이슈 조회/코멘트/상태전이가 전부 실패합니다(각 단계가 SKIP 으로 기록됩니다).",
+        "    copy `"$sampleAcc`" `"$GiipAccountsFile`"  후 channels[*].csn / sk 를 채우세요.",
+        "  정본 절차: docs/60-operations/hourly-issue-scheduler.md §4 / §13",
+        ""
+    )
+}
+# (3) 외부 실행파일 — 이 러너는 node(목록/큐 조회) / bash(get-issue.sh) / gh(PR 조회·수정) 에
+#     의존한다. PATH 에 없으면 그 단계만 조용히 실패하므로, 시작 시 한 번 명시적으로 알린다.
+foreach ($dep in @(
+    @{ Cmd = 'node'; Why = '이슈 목록·우선순위 큐 조회(list-issues.js), isn 상태 배치조회(lib/get-isn-status.js)' },
+    @{ Cmd = 'bash'; Why = '이슈 단건 조회·코멘트·상태전이(get-issue.sh)' },
+    @{ Cmd = 'gh';   Why = 'PR 조회/충돌·CI 수정([0]/[E] 단계), 병합 여부 확정 폴백' }
+)) {
+    if (-not (Get-Command $dep.Cmd -ErrorAction SilentlyContinue)) {
+        $script:PreflightWarned = $true
+        Write-GissuePreflightBlock @(
+            "[PREFLIGHT-WARN] '$($dep.Cmd)' 를 PATH 에서 찾지 못했습니다 — 용도: $($dep.Why)",
+            "  설치 후 다시 실행하세요(정본 절차: docs/60-operations/hourly-issue-scheduler.md §4)."
+        )
+    }
+}
+if ($script:PreflightWarned) {
+    Write-GissuePreflightBlock @("[PREFLIGHT] 위 경고를 해결하지 않아도 실행은 계속하지만, 해당 단계는 동작하지 않습니다.", "")
 }
 
 # ══════════════════════════════════════════════════════════════════════════════════════
@@ -917,7 +1076,10 @@ $TestedIssuePromptTemplate     = $HeadTestedIssue     + $NL + $CommonHead + $NL 
 # ══════════════════════════════════════════════════════════════════════════════════════
 #  매핑 로드 + 배포별 설정
 # ══════════════════════════════════════════════════════════════════════════════════════
-$mapRoot = Get-Content $MapFile -Raw | ConvertFrom-Json
+# 매핑은 위 Phase -3 preflight 에서 이미 존재검사 + JSON 파싱까지 끝냈다($script:MapRoot).
+# 여기서 다시 Get-Content 하지 않는다 — 같은 파일을 두 번 읽으면 "한쪽만 가드가 있는" 상태가
+# 다시 생긴다(이번 결함의 재발 경로 그 자체).
+$mapRoot = $script:MapRoot
 $map = $mapRoot.csn
 if ($mapRoot.forcedUnblockExcludeRepoNames) {
     $ForcedUnblockExcludeRepoNames = @($mapRoot.forcedUnblockExcludeRepoNames)
@@ -1024,8 +1186,11 @@ function Get-GissueBusyRepo($workdir, $restBranch = '') {
 function Get-GissueAllProjectRepoPaths($mapObj) {
     $all = @()
     foreach ($c in $mapObj.PSObject.Properties.Name) {
+        # 유효성 판정과 경로 존재 확인은 전부 공용 헬퍼로 — 채우지 않은 placeholder 가 Test-Path 예외를
+        # 일으키지 않게 한다(giip #2645 신규 clone 검증에서 실측).
+        if (-not (Test-GissueCsnEntryValid $c $mapObj.$c)) { continue }
         $wd = $mapObj.$c.workdir
-        if (-not $wd -or -not (Test-Path -LiteralPath $wd)) { continue }
+        if (-not (Test-GissuePathSafe $wd)) { continue }
         $all += @(Get-GissueGitRepoPaths $wd)
     }
     return @($all | Select-Object -Unique)
@@ -1501,7 +1666,11 @@ try {
         # [PowerShell 5.1 실측] `powershell.exe -File script.ps1 -RepoPaths <array>` 로 새 프로세스를
         # 띄우면 배열의 첫 원소만 바인딩되고 나머지는 조용히 유실된다 — 반드시 `& $script -RepoPaths $array`
         # 형태로 같은 프로세스 안에서 직접 호출해야 배열 전체가 올바르게 바인딩된다.
-        $mergeSweepRepoPaths = @($map.PSObject.Properties | ForEach-Object { $_.Value.workdir } | Where-Object { $_ } | Select-Object -Unique)
+        # 채우지 않은 placeholder workdir 를 그대로 넘기면 하위 스크립트가 "Illegal characters in path."
+        # 로 실패한다(실측) — 유효 항목만 넘긴다.
+        $mergeSweepRepoPaths = @($map.PSObject.Properties |
+            Where-Object { Test-GissueCsnEntryValid $_.Name $_.Value } |
+            ForEach-Object { $_.Value.workdir } | Where-Object { $_ } | Select-Object -Unique)
         $out = & $MergeStandingPrsScript -RepoPaths $mergeSweepRepoPaths -DryRun:$DryRun 2>&1
         foreach ($line in @($out)) { if ("$line".Trim()) { Write-Log 'merge-sweep' "$line" } }
     }
@@ -1607,6 +1776,9 @@ try {
 foreach ($csn in $map.PSObject.Properties.Name) {
     if ($OnlyCsn -and $csn -ne $OnlyCsn) { continue }
     $entry   = $map.$csn
+    # 채우지 않은 placeholder 항목은 Phase -3 preflight 가 이미 경고했다 — 여기서는 조용히 건너뛴다
+    # (같은 판정 함수를 쓴다: 판정 복붙 금지, 규칙 48).
+    if (-not (Test-GissueCsnEntryValid $csn $entry)) { continue }
     # 스케줄러 비활성 CSN 은 무인 :07 실행에서 건너뛴다("enabled": false). 명시적 -OnlyCsn 수동 실행만 허용.
     if ($entry.enabled -eq $false -and (-not $OnlyCsn)) { Write-Log $csn "SKIP: 스케줄러 비활성(enabled=false)"; continue }
     $workdir = $entry.workdir
@@ -1628,7 +1800,7 @@ foreach ($csn in $map.PSObject.Properties.Name) {
     } catch { $projectLang = '' }
     $lock = Join-Path $LogDir "gissue_csn$csn.lock"
 
-    if (-not (Test-Path $workdir)) { Write-Log $csn "SKIP: workdir 없음 ($workdir)"; continue }
+    if (-not (Test-GissuePathSafe $workdir)) { Write-Log $csn "SKIP: workdir 없음 ($workdir) — csn-projects.json 의 workdir 경로를 확인하세요"; continue }
 
     # orphan 워크트리 자가정리(giip #1544/#1547) — busy-wait/auto-unblock 보다 먼저, CSN마다 매번 수행
     # (잔해가 stash -u 를 깨뜨리기 전에 먼저 치운다). DryRun 이든 아니든 항상 호출한다(읽기+판단은
