@@ -415,7 +415,9 @@ GitHub에서 머지했지만, 그 PR을 병합한 세션이 로컬 `lowyworkenv`
    | `.example` 를 복사만 하고 값 미기입 | `[PREFLIGHT-FAIL]` + **어느 항목이 왜 잘못됐는지 항목별로** 제시 | 2 |
    | 일부 CSN 항목만 잘못됨 | `[PREFLIGHT-WARN]` + 그 항목만 건너뛰고 나머지는 정상 처리 | 0 |
    | `giip-accounts.json` 없음 | `[PREFLIGHT-WARN]` + 복사 명령(이슈 관련 단계는 전부 SKIP 됨) | 0 |
-   | `node` / `bash` / `gh` 미설치 | `[PREFLIGHT-WARN]` + 각 도구의 용도 | 0 |
+   | `node` / `gh` 미설치 | `[PREFLIGHT-WARN]` + 각 도구의 용도 | 0 |
+   | bash 해석 성공 | `[PREFLIGHT] bash 해석됨: <절대경로>` (경고 아님) | 0 |
+   | bash 후보 전부 실패 | `[PREFLIGHT-WARN]` + 설치 URL + 죽는 단계 명시 | 0 |
 
    설계 근거: 이 절의 5단계가 신규 PC 사용자의 **첫 명령**이다. 여기서 .NET 예외가 나오면
    "클론만으로 동일 작업 가능"이라는 이 배포의 전제가 깨진다. 따라서 **신규 clone 에 없는 것을 읽는
@@ -425,13 +427,32 @@ GitHub에서 머지했지만, 그 PR을 병합한 세션이 로컬 `lowyworkenv`
    검증도 같은 조건에서 해야 한다: "내 작업 폴더에서 돌아갔다"는 신규 clone 검증이 아니다.
    **gitignore 대상 설정 파일이 하나도 없는 상태**와 **채운 상태** 두 가지를 모두 돌려 확인한다.
 
-   **`bash` PREFLIGHT-WARN 이 뜨면 여기서 해결한다**(2026-09-17 신규 clone 실측): Windows 에
-   Git for Windows 가 깔려 있어도 PATH 에 올라가는 것은 보통 `C:\Program Files\Git\cmd`(=`git.exe`)
-   뿐이고 `bash.exe` 는 `Git\bin` / `Git\usr\bin` 에 있어 **PowerShell 에서는 `bash` 가 해석되지
-   않는다**. 그래서 `powershell -File` 로 기동되는 이 러너는 `[PREFLIGHT-WARN] 'bash' 를 PATH 에서
-   찾지 못했습니다` 를 낸다. 이슈 큐 조회는 `list-issues.js`(node)라 WARN 상태에서도 정상 동작하지만,
-   `get-issue.sh` 를 쓰는 단계는 동작하지 않는다. 시스템 PATH 에 `C:\Program Files\Git\bin` 을
-   추가한 뒤 스케줄러 태스크를 재등록(또는 PC 재로그온)해 WARN 이 사라지는 것을 확인한다.
+   **bash 는 러너가 스스로 찾는다 — PATH 에 없어도 된다**(giip #2645). `powershell -File` 로 기동되는
+   이 러너에서 `Get-Command bash` 가 실패하는 것은 **Git for Windows 기본 설치의 정상 상태**다:
+   설치 프로그램은 `<Git>\cmd`(=`git.exe`)만 PATH 에 올리고 `bash.exe` 는 `<Git>\bin` 과
+   `<Git>\usr\bin` 에 둔다. 그래서 러너는 PATH 존재 여부로 판정하지 않고 `Resolve-GissueBashExe`
+   공용 함수로 아래 순서를 훑는다.
+
+   | 순서 | 후보 |
+   |---|---|
+   | 1 | PATH 의 `bash`(사용자가 의도적으로 넣은 경우 최우선) |
+   | 2 | `git.exe` 위치 역산 — `<Git>\bin\bash.exe`, `<Git>\usr\bin\bash.exe`(한 단계 위까지) |
+   | 3 | `%ProgramFiles%` / `%ProgramFiles(x86)%` / `%LOCALAPPDATA%\Programs\Git` / `C:\Git` / `D:\Git` |
+
+   Git 설치 위치가 어디든(기본 경로, `C:\Git`, scoop/winget, x86) 2번이 따라갑니다. 해석에 성공하면
+   경고 대신 이 줄이 나옵니다(이 PC 실측):
+
+   ```text
+   [PREFLIGHT] bash 해석됨: C:\Program Files\Git\bin\bash.exe
+   ```
+
+   **모든 후보가 실패할 때만** 경고가 나오며, 그때는 설치 URL과 "어떤 단계가 죽는지"(이슈 코멘트 게시 /
+   상태 전이 — 실패하면 이슈가 IN_PROGRESS·REVIEW 에 박혀 큐가 정체된다)를 함께 안내합니다.
+   같은 해석 로직이 `verify-runner.mjs`(VERIFY-GATE)에도 들어가 있습니다 — 거기서 bash 를 못 찾으면
+   ```` ```verify ```` 의 bash 블록이 전부 거짓 FAIL 이 되기 때문입니다.
+
+   > 이전 판(PR #86 시점)은 이 절에 "시스템 PATH 에 `Git\bin` 을 추가하라"고 적혀 있었습니다.
+   > 그 조치는 이제 **불필요**합니다. 러너가 스스로 찾습니다.
 6. 문제 없으면 `register-hourly-issue-scheduler.ps1 -Action Register -RepoRoot <이 clone 경로>`로
    Windows 스케줄러에 등록한다(태스크 이름은 배포 대상마다 고유하게 `-TaskName`으로 지정).
 
@@ -520,6 +541,16 @@ API 하나뿐" 이라는 설계와 같은 이유로, 아래 3건은 의도적으
 | :-- | :-- | :-- |
 | `scripts/gissue/pr-gate-sweep.ps1` 이 **구버전** | 이 레포 19,753 바이트 vs 원본 43,108 바이트. 원본에만 있는 함수: `Format-PrEvidence` / `Invoke-GateEscalate` / `Set-IssueNeedsDecision` | **게이트 에스컬레이션 / NEEDS_DECISION 전이 경로가 없습니다.** 게이트 실패가 사람에게 올라가지 않고 그대로 머무를 수 있습니다. |
 | `scripts/gissue/get-issue.sh` 에 **`--role` 플래그 없음** | 원본은 `--role` 로 구조화 필드 `loadedRole` 을 채웁니다(giip #1324/#1452). 이 레포의 `get-issue.sh` / `post-comment.js` / `comment-api.js` 에는 그 경로 자체가 없습니다(`role` 문자열 출현 0회 vs 원본 8회). | 이 레포가 남기는 코멘트는 **`loadedRole=null`** 이 됩니다. 어느 역할로 처리했는지가 이슈에 기록되지 않습니다. |
+
+### 13-2-4) 해소된 결손 (giip #2645 — 이력)
+
+PR #86 시점에 이 절이 "알려진 결손"으로 적어 둔 것 중 아래 2건은 **고쳐졌습니다.** 같은 증상을
+다시 만났을 때 "원래 그런 것"으로 오인하지 않도록 이력을 남깁니다.
+
+| 항목 | 그때 상태 | 지금 |
+| :-- | :-- | :-- |
+| `bash` 를 PATH 에서 못 찾음 | 문서가 "시스템 PATH 에 `Git\bin` 을 추가하라"고 안내했고, 러너의 두 상태전이 호출부는 맨 `bash` 를 불러 **이 PC 에서도 항상 실패**하면서 `Out-Null` + 빈 `catch {}` 로 흔적조차 남기지 않았습니다(실패 시 이슈가 IN_PROGRESS 에 박힘) | `Resolve-GissueBashExe` 공용 함수가 PATH → `git.exe` 역산 → 알려진 설치 위치 순으로 해석합니다. PATH 조치 불필요. 상태 전이는 종료코드를 확인해 `[STATUS-OK]` / `[STATUS-FAIL]` 로 **반드시** 기록합니다. `verify-runner.mjs` 의 `spawnSync('bash')` 도 같은 해석을 씁니다 |
+| `test-verify-gate-exit-contract.ps1` 가 clone 직후 FAIL | `-LiveCsn` 기본값이 원본 PC 의 **33** 이라 `PASS=23 FAIL=1` | 기본값 `0` → `csn-projects.json` 의 첫 enabled CSN 자동 선택, 정할 수 없으면 사유를 밝히고 SKIP. 인자 없이 exit 0 |
 
 ## 13-1) 감사·스윕·가드 스크립트와 공용 lib (giip #2645)
 
@@ -645,8 +676,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\tests\test-pr
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\tests\test-humanconfirm-signal.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\tests\test-task-cadence-guard.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\tests\test-verify-runner-korean-encoding.ps1
-# ↓ 신규 PC 에서는 반드시 -LiveCsn 을 자기 CSN 으로 지정한다(아래 주의 참고)
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\tests\test-verify-gate-exit-contract.ps1 -LiveCsn <이 배포의 CSN>
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\tests\test-verify-gate-exit-contract.ps1
 ```
 
 ```bash
@@ -654,24 +684,26 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\tests\test-ve
 node scripts/gissue/tests/test-pr-lookup.mjs
 ```
 
-모두 exit 0 이어야 합니다. 각 테스트는 마지막 줄에 `결과: PASS=N FAIL=0` 형태의 집계를 냅니다.
-호스트 환경에 따라 일부 케이스는 `SKIP` 으로 표시될 수 있습니다(예: `bash` 미설치,
-`giipprj` 컨테이너 배치가 없는 PC) — SKIP 은 실패가 아니며 exit 0 을 유지합니다.
+**전부 인자 없이 실행해 exit 0 이어야 합니다.** 각 테스트는 마지막 줄에 `결과: PASS=N FAIL=0`
+형태의 집계를 냅니다. 호스트 환경에 따라 일부 케이스는 `SKIP` 으로 표시될 수 있습니다
+(예: `giipprj` 컨테이너 배치가 없는 PC) — SKIP 은 실패가 아니며 exit 0 을 유지합니다.
 
-⚠️ **`test-verify-gate-exit-contract.ps1` 은 기본값이 원본 PC 전용이다**(2026-09-17 신규 clone 실측).
-이 테스트의 라이브 케이스 A-3b 는 `-LiveCsn` 기본값이 **33** 이라, `giip-accounts.json` 에 csn 33
-항목이 없는 배포에서는 SK 해석이 실패해 아래처럼 **FAIL 로 뜹니다 — 코드 결함이 아니라 설정 불일치**입니다.
+**`test-verify-gate-exit-contract.ps1` 은 대상 CSN 을 스스로 정합니다**(giip #2645). 라이브 케이스
+A-3b 는 `-LiveCsn` 기본값(`0`)일 때 `csn-projects.json` 의 **첫 번째 enabled CSN** 을 읽습니다.
+설정 파일이 아직 없는 clone 직후에는 그 케이스를 건너뛰되 **사유를 반드시 출력**합니다.
 
-```text
-FAIL  A-3b verify 블록 없는 이슈(isn=2338) → 종료코드 2 — 실제=3 /
-결과: PASS=23 FAIL=1
-```
+| 상태 | 결과 (실측, 2026-09-17) |
+|---|---|
+| 설정 없는 clone 직후 | `SKIP A-3 … csn-projects.json 이 없습니다` → `PASS=22 FAIL=0`, exit 0 |
+| `csn-projects.json` 채운 뒤 | 첫 enabled CSN 자동 선택 → `PASS=24 FAIL=0`, exit 0 |
+| 특정 CSN 을 강제 | `-LiveCsn <CSN>` |
+| 라이브 조회 자체를 생략 | `-SkipLive` → `PASS=22 FAIL=0` |
 
-`-LiveCsn <자기 CSN>` 을 주면 `PASS=24 FAIL=0`, `-SkipLive` 를 주면 `PASS=22 FAIL=0` 으로 통과합니다.
-테스트 자신은 "조회 실패면 검증 생략" NOTE 분기를 갖고 있지만, `verify-runner.mjs` 가 SK 해석 실패를
-`조회 실패` 가 아니라 `[ERROR] 예기치 못한 오류` + 종료코드 3 으로 내보내 그 분기에 걸리지 않습니다
-(§13 5단계의 "신규 clone 에 없는 것을 읽는 지점은 행동지시를 내야 한다" 원칙에 아직 맞지 않은 지점 —
-후속 이슈 소관, 이번 작업은 문서화만 합니다).
+> 이전 판(PR #86 시점)은 기본값이 **33**(원본 PC 의 CSN)이라 다른 배포에서는 clone 직후부터
+> `PASS=23 FAIL=1` 로 반드시 실패했습니다. 이식된 레포의 테스트가 clone 직후 실패하면 사람이
+> "원래 실패하는 테스트"로 학습해 **진짜 실패를 놓치므로**, 기본값 자체를 고쳤습니다.
+> A-3b 의 판정도 하위 도구의 메시지 문자열(`조회 실패`) 매칭에서 **종료코드 판정**으로 바꿨습니다
+> (`verify-runner.mjs` 의 계약: 0=PASS / 1=FAIL / 2=verify 블록 없음 / 3=판정 불가).
 
 ## 14) 연결 문서
 

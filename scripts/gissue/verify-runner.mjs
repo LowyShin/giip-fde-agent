@@ -158,6 +158,59 @@ function extractVerifyBlocks(texts) {
  * bash는 영향 없으므로 별도 처리 없음.
  * ───────────────────────────────────────────────────────────────────────────────
  */
+/**
+ * bash 실행파일 해석 (giip #2645).
+ *
+ * 왜 필요한가: PATH 에 `bash` 가 없는 것이 Git for Windows 기본 설치의 **정상 상태**다
+ * (설치 프로그램은 `<Git>\cmd` 만 PATH 에 올리고 `bash.exe` 는 `<Git>\bin` / `<Git>\usr\bin` 에
+ * 둔다). 그 상태에서 `spawnSync('bash', ...)` 는 ENOENT 로 죽고, 이 러너는 그것을 status=null
+ * → exit 124(타임아웃)로 보고한다. 즉 ```verify 의 bash 블록이 전부 **거짓 FAIL** 이 되고,
+ * VERIFY-GATE 가 통과시켜야 할 이슈를 막는다.
+ * run-gissue-claude.ps1 의 Resolve-GissueBashExe 와 같은 순서로 판정한다.
+ *
+ * 반환: 해석된 절대경로. 모든 후보가 실패하면 'bash'(PATH 에 있는 환경 — 리눅스/맥 포함 — 에서는
+ *       이것이 정답이고, 없으면 ENOENT 사유가 runBlock 출력에 그대로 남는다).
+ */
+let _bashExe = null;
+function resolveBashExe() {
+  if (_bashExe) return _bashExe;
+  const candidates = [];
+  try {
+    const finder = process.platform === 'win32' ? 'where' : 'which';
+    const gitPath = execFileSync(finder, ['git'], { encoding: 'utf8' })
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter(Boolean)[0];
+    if (gitPath) {
+      const gitRoot = path.dirname(path.dirname(gitPath)); // <Git>\cmd\git.exe -> <Git>
+      const gitRoot2 = path.dirname(gitRoot);
+      for (const root of [gitRoot, gitRoot2]) {
+        candidates.push(path.join(root, 'bin', 'bash.exe'));
+        candidates.push(path.join(root, 'usr', 'bin', 'bash.exe'));
+      }
+    }
+  } catch {
+    /* git 을 못 찾으면 아래 고정 후보로 넘어간다 */
+  }
+  for (const base of [process.env.ProgramFiles, process.env['ProgramFiles(x86)'], 'C:\\Git', 'D:\\Git']) {
+    if (!base) continue;
+    candidates.push(path.join(base, 'Git', 'bin', 'bash.exe'));
+    candidates.push(path.join(base, 'Git', 'usr', 'bin', 'bash.exe'));
+  }
+  for (const c of candidates) {
+    try {
+      if (fs.existsSync(c)) {
+        _bashExe = c;
+        return c;
+      }
+    } catch {
+      /* 접근 불가 후보는 건너뛴다 */
+    }
+  }
+  _bashExe = 'bash';
+  return _bashExe;
+}
+
 function runBlock(lang, cmds) {
   const started = Date.now();
   const script = cmds.join('\n');
@@ -170,12 +223,15 @@ function runBlock(lang, cmds) {
           timeout: CMD_TIMEOUT_MS,
           cwd: REPO_ROOT,
         })
-      : spawnSync('bash', ['-c', cmd], {
+      : spawnSync(resolveBashExe(), ['-c', cmd], {
           encoding: 'utf8',
           timeout: CMD_TIMEOUT_MS,
           cwd: REPO_ROOT,
         });
-  const out = `${r.stdout || ''}${r.stderr || ''}`.trim();
+  // spawn 자체가 실패하면(ENOENT 등) stdout/stderr 가 비어 "출력 없는 FAIL" 이 된다 —
+  // 사유를 출력에 실어 보낸다(giip #2645). 실패를 삼키지 않는다.
+  const spawnErr = r.error ? `[SPAWN-FAIL] ${r.error.code || ''} ${r.error.message}`.trim() : '';
+  const out = `${r.stdout || ''}${r.stderr || ''}${spawnErr ? `\n${spawnErr}` : ''}`.trim();
   return {
     cmd: script,
     lang,

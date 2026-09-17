@@ -140,11 +140,21 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\tests\test-ta
 메인 스케줄러(`./hourly-issue-scheduler.md` §4)와 같습니다 — `csn-projects.json`,
 `slack-bot/.secrets/giip-accounts.json`, node, git(bash 포함). **DB 직접접속은 쓰지 않습니다**(§6).
 
-⚠️ **"git 설치됨"과 "PowerShell 에서 `bash` 가 해석됨"은 다릅니다**(2026-09-17 실측). Git for
-Windows 는 보통 `C:\Program Files\Git\cmd`(=`git.exe`) 만 PATH 에 올리고 `bash.exe` 는
-`Git\bin` / `Git\usr\bin` 에 둡니다. 이 러너들은 `powershell -File` 로 기동되므로 그 상태에서는
-`bash` 를 찾지 못합니다. 시스템 PATH 에 `C:\Program Files\Git\bin` 을 추가하십시오
-(메인 러너는 이 상황을 `[PREFLIGHT-WARN] 'bash' 를 PATH 에서 찾지 못했습니다` 로 알려줍니다).
+**`bash` 가 PATH 에 없어도 됩니다 — PATH 를 손볼 필요 없습니다**(giip #2645). Git for Windows 는
+보통 `C:\Program Files\Git\cmd`(=`git.exe`) 만 PATH 에 올리고 `bash.exe` 는 `Git\bin` /
+`Git\usr\bin` 에 두므로, `powershell -File` 로 기동되는 스크립트에서 `bash` 가 해석되지 않는 것이
+**정상 상태**입니다. 메인 러너의 `Resolve-GissueBashExe` 가 PATH → `git.exe` 위치 역산 →
+알려진 설치 위치 순으로 실제 경로를 찾아 씁니다. 해석에 성공하면 경고 대신 이 줄이 나옵니다.
+
+```text
+[PREFLIGHT] bash 해석됨: C:\Program Files\Git\bin\bash.exe
+```
+
+Git for Windows 자체가 없으면 그때는 설치 URL 과 "어떤 단계가 동작하지 않는지"가 담긴 경고가
+나옵니다. 상세는 `./hourly-issue-scheduler.md` §13 5단계를 보십시오.
+
+> 이 문서의 이전 판(2026-09-17 오전)은 "시스템 PATH 에 `C:\Program Files\Git\bin` 을 추가하십시오"
+> 라고 안내했습니다. **그 조치는 이제 불필요합니다.**
 
 ### 4-2) 등록 (멱등 — 다시 실행하면 갱신, 중복 생성 없음)
 **정상 체크아웃에서** 실행합니다(worktree 안이면 §2 게이트 3 이 막습니다).
