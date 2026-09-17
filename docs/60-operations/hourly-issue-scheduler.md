@@ -46,6 +46,17 @@ powershell.exe -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass `
   브랜치(main/master)와 다르면(예: dev-first 원칙으로 `dev`가 상시 작업 브랜치인 프로젝트) 반드시
   지정합니다 — 안 그러면 busy-check가 이를 매번 "다른 프로세스가 쓰는 중"으로 오판해 30분 대기 후
   강제 언블록(stash+base 체크아웃)을 매 `:07`마다 반복합니다(실측 확인·재현).
+  **최상위(csn 바깥) 선택 키 3개**(giip #2645 — 러너에서 이 PC 전용 절대경로를 제거하면서 배포별
+  설정으로 외부화한 값들입니다. 전부 생략 가능하고, 생략하면 해당 기능만 조용히 비활성됩니다):
+    - `forcedUnblockExcludeRepoNames`: 강제 언블록(병합 여부 불확실해도 stash+base 복귀) 대상에서
+      제외할 nested 레포 **폴더명** 배열. 성역 레포가 있는 배포에서 지정합니다. 병합이 "확인된"
+      안전한 자동 해제(`[AUTO-UNBLOCK]`)는 이 예외와 무관하게 계속 적용됩니다.
+    - `guardRepos`: Phase -2 nested-repo 무결성 가드(giip #1365) 대상 배열
+      (`{ path, expectedRemoteSuffix, requiredFiles[], requiredPsDir, validateDbConfig }`).
+      `path`가 상대경로면 레포 루트 기준입니다. 미설정이면 검증 대상 없음으로 건너뜁니다.
+    - `heartbeat`: 스케줄러 자신의 liveness/실행이력 발행 설정
+      (`{ lssn, hostname, skFile }` — `skFile`은 `sk = "..."` 형식의 agent cfg 경로).
+      미설정이면 heartbeat/실행이력 발행을 하지 않습니다(스케줄러 본연 동작에는 영향 없음).
 - **giip issue API 접근용 SK(Secret Key)**: CSN별 계정 SK가 필요합니다(`slack-bot/.secrets/
   giip-accounts.json`의 `channels[*].sk`를 CSN으로 매칭해 조회, `.sample.json`을 복사해 준비). 이
   파일은 git 비추적 시크릿이므로 배포 대상마다 별도로 준비해야 합니다.
@@ -57,7 +68,13 @@ powershell.exe -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass `
 - **giip issue 조회/코멘트/상태변경 도구(이 레포에 기본 내장, DB 직접 접근 불필요)**:
   `scripts/gissue/list-issues.js`(CSN+상태별 이슈 목록 조회, giipfaw API 경유)와
   `scripts/gissue/get-issue.sh --comment-file`/`--status`(단건 조회/코멘트/상태전이)를 그대로 쓰면
-  됩니다. CSN 교차오염 방지 게이트(giip #1053/#1079)가 내장돼 있어 별도 조치가 필요 없습니다.
+  됩니다. 러너 자신이 쓰는 **우선순위 큐**는 `list-issues.js --csn <N> --queue --json` 한 번으로
+  얻습니다(giip #2645) — PENDING / READY≥60분 / IN_PROGRESS≥60분(라벨 `STALE_IN_PROGRESS`) /
+  REVIEW·TESTED(최신 코멘트가 `[ACTIONFLOW-TEST]`로 시작하면 제외)를 합쳐
+  `qprio → is_user_req DESC → has_comment ASC → elapsedMin DESC` 순으로 정렬해 돌려줍니다.
+  이는 lowyworkenv 운영 러너가 giipdb 직접접속(단일 T-SQL, giip #1472/#1560/#1564/#1651)으로 뽑던
+  큐와 **같은 정렬 계약**을 API로 재현한 것입니다. 후속 이슈 자동 등록(시간박스 초과 시)은
+  `scripts/gissue/register-issue.js`가 담당합니다. CSN 교차오염 방지 게이트(giip #1053/#1079)가 내장돼 있어 별도 조치가 필요 없습니다.
   한글/이모지가 섞인 코멘트 본문은 반드시 UTF-8 파일로 저장한 뒤 파일 경로(`--comment-file`)로
   전달해야 합니다(커맨드라인 리터럴 직접 전달은 headless 실행 체인에서 시스템 기본 코드페이지로
   mojibake가 나는 사고가 재현 확인됨, giip #1030). 이 두 도구가 없는 프로젝트(예: `giipprj`처럼

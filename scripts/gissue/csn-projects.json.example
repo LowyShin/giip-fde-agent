@@ -1,12 +1,22 @@
 {
-  "_comment": "CSN → 処理プロジェクトフォルダのマッピング。この例をコピーして csn-projects.json(gitignore対象)として実データを入れる。新CSN追加 = ここに項目を1つ追加するだけ。詳細は README.md 参照。",
+  "_comment": "CSN → 処理プロジェクトフォルダのマッピング。この例をコピーして csn-projects.json(gitignore対象)として実データを入れる。新CSN追加 = csn に項目を1つ追加するだけ。詳細は README.md / docs/60-operations/hourly-issue-scheduler.md §4 参照。",
+  "_comment_optional_top_level": "以下の最上位キー3つ(forcedUnblockExcludeRepoNames / guardRepos / heartbeat)は全て省略可(giip #2645)。省略するとその機能だけが静かに無効になり、スケジューラ本体の動作には影響しない。ランナーからこのPC固有の絶対パスを排除するために外部化した設定。",
+
+  "forcedUnblockExcludeRepoNames": [],
+  "_comment_forcedUnblock": "強制アンブロック(マージ有無が不確実でも stash -u + base 復帰)の対象から除外する nested リポジトリの【フォルダ名】配列。聖域(コード修正禁止)リポジトリがある配置で指定する。マージが『確認された』安全な自動解除([AUTO-UNBLOCK])はこの例外と無関係に適用され続ける。",
+
+  "guardRepos": [],
+  "_comment_guardRepos": "Phase -2 nested-repo 整合性ガード(giip #1365)の対象。例: [{ \"path\": \"giipprj/giipdb\", \"expectedRemoteSuffix\": \"LowyShin/giipdb.git\", \"requiredFiles\": [\"mgmt\"], \"requiredPsDir\": \"mgmt\", \"validateDbConfig\": true }]。path が相対ならリポジトリルート基準。未設定なら検証対象なしとしてスキップ。scripts/gissue/verify-nested-repo.ps1 が必要。",
+
+  "_comment_heartbeat": "スケジューラ自身の liveness/実行履歴の発行設定。lssn は tLSvr に登録済みの番号、hostname はその tLSvr の hostname、skFile は sk = \"...\" 形式の agent cfg のパス(git非追跡)。未設定なら heartbeat/実行履歴を発行しない。例: \"heartbeat\": { \"lssn\": \"71291\", \"hostname\": \"Lowy-DP01-gissue-hourly-scheduler\", \"skFile\": \"C:/path/to/giipAgent.cfg\" }",
+
   "csn": {
     "<CSN番号>": {
-      "project": "<プロジェクトフォルダ名(任意のラベル)>",
+      "project": "<プロジェクトフォルダ名(任意のラベル。slack-bot/project-lang.json のキーと一致させると CJK混入QAゲートが有効になる)>",
       "workdir": "<このCSNの対象プロジェクトの絶対パス>",
       "restBranch": "<省略可 — このプロジェクトの常用作業ブランチが git リモートの既定ブランチ(main/master)と異なる場合のみ指定(例: dev-first運用のプロジェクトなら \"dev\")。指定しないと busy-check がその状態を毎回 BUSY と誤認し、強制アンブロックを繰り返す。>",
       "enabled": true,
-      "note": "<このCSN/プロジェクト固有の注意事項・性域(コード修正禁止)ファイルなどをここに記録>"
+      "note": "<このCSN/プロジェクト固有の注意事項・聖域(コード修正禁止)ファイルなどをここに記録>"
     }
   }
 }
