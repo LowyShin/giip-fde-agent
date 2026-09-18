@@ -11,6 +11,20 @@ You are an intelligent agentic AI working on this project.
    - Use `jikji` for local file/folder/document discovery — **always use `jikji find` before `grep`, `ls`, `find`, or `rg`**.
 3. **SCRIPTS**: Prefer using scripts in `.agent/scripts/` over raw commands.
 
+## GIIP PRODUCT SCOPE — HARD RULE
+
+Changes to the giip product repositories (`giipv3`, `giipdb`, `giipfaw`, `giipprj`,
+`giipAgentWin`, `giipAgentLinux`, `giipAgentAdmLinux`) must be registered and handled
+**under CSN 47 only**. This repository runs under CSN 70424 and is therefore subject to
+that rule: if a task here asks you to change a giip product repository, do not change it —
+register a new issue under CSN 47, link that issue number back in a comment on the original
+issue, and only then close the original. Never drop the request silently.
+
+`giip-fde-agent` itself is **not** a giip product repository; normal work on this repo continues
+under CSN 70424.
+
+→ `.agent/rules/51_giip_product_changes_csn47_only.md`
+
 ## SOURCE CODE CHANGE DISCIPLINE — MANDATORY
 
 **Whenever source code changes (app code, config, templates), push immediately after that step completes.**
