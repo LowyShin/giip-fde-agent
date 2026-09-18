@@ -19,6 +19,9 @@ else
   echo "[entrypoint] cloned ($(git -C "$REPO_DIR" rev-parse --short HEAD))"
 fi
 
+# ── optional: pull env from GIIP web (giip 2665 "Docker 생성") instead of per-field env vars ──
+eval "$(/fetch-instance-env.sh)"
+
 REPO_DIR="$REPO_DIR" node /setup-registration.js
 
 mkdir -p "$REPO_DIR/scripts/gissue/logs"

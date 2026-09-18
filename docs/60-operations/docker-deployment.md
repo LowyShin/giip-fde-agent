@@ -36,6 +36,31 @@ docker compose logs -f
 
 env var 전체 계약은 [`.env.example`](../../docker/.env.example)이 정본입니다.
 
+### 2-1) GIIP web에서 `.env`를 완결시키기 (giip 2665)
+
+`.env`에 값을 직접 채우는 대신, GIIP web(admin > Docker Instances, `giipv3`)에서 "Docker 인스턴스
+생성"을 누르면 login_id/sk/csn/slack 토큰 등을 입력받아 **giipfaw가 서버측에서 AES-256-GCM으로
+암호화해 DB에 저장**하고 `instanceToken` 1개만 화면에 보여줍니다(재조회 불가 — 생성 시 1회만 노출).
+`.env`에는 그 토큰 한 줄만 넣으면 됩니다:
+
+```env
+GIIP_INSTANCE_TOKEN=<발급받은 토큰>
+```
+
+컨테이너 기동 시 `docker/fetch-instance-env.sh`가 `dockerInstanceFetch` API(`giipfaw`, anonymous
+auth, 토큰 자체가 자격증명)를 호출해 나머지 env를 내려받고, 이미 `.env`에 직접 채워둔 키는
+그대로 우선합니다(부분 override 가능). 토큰 폐기는 같은 화면의 Revoke 버튼으로 즉시 반영됩니다.
+
+**구성 요소**(giipprj-hub, 이 레포와는 별도 저장소):
+- DB: `giipdb/Tables/tDockerInstance.sql` + `giipdb/SP/pApiDockerInstance{Create,List,Revoke}byAK.sql`, `pApiDockerInstanceFetchbyToken.sql`
+- API: `giipfaw/giipApiJson/run.ps1`(`DockerInstanceCreate` 특수 처리 — 암호화 후 SP 호출), `giipfaw/dockerInstanceFetch/`(신규 Function, 토큰으로 조회+복호화)
+- UI: `giipv3/src/app/[locale]/admin/docker-instances/page.tsx`
+
+**검증 상태(정직하게 명시)**: 코드는 작성했지만 `tDockerInstance` 테이블 생성(DDL)이 하네스 안전
+가드("Modify Shared Resources")에 막혀 **실제 DB 배포·end-to-end 실행은 아직 못 했습니다.** 테이블
+DDL은 사용자 승인 후 별도로 배포해야 합니다. giipv3 화면도 로컬 빌드 검증(TypeScript 컴파일)은
+하지 못했고 괄호/중괄호 균형만 정적으로 확인했습니다.
+
 ## 3) 선행 조건 — `run-gissue-claude.ps1`의 Linux/pwsh 포팅 (giip #2665)
 
 기존 §13-1-1은 "이 레포의 `.ps1`은 **Windows PowerShell 5.1 전용**"이라고 명시하고 있었습니다.

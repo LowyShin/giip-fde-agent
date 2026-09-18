@@ -16,7 +16,8 @@ RUN apt-get update \
 WORKDIR /work
 
 COPY entrypoint.sh /entrypoint.sh
+COPY fetch-instance-env.sh /fetch-instance-env.sh
 COPY setup-registration.js /setup-registration.js
-RUN chmod +x /entrypoint.sh
+RUN chmod +x /entrypoint.sh /fetch-instance-env.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
