@@ -213,34 +213,44 @@ function Resolve-GissueBashExe {
     $candidates = New-Object System.Collections.Generic.List[string]
 
     # (1) PATH 에 실제로 올라와 있으면 그것을 최우선으로 쓴다(사용자가 의도적으로 넣은 경우).
+    #     Linux 에는 bash 가 기본 내장이라 이 단계만으로 항상 해결된다.
     try {
         $onPath = Get-Command bash -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($onPath -and $onPath.Source) { $candidates.Add($onPath.Source) }
     } catch {}
 
-    # (2) git.exe 위치에서 역산 — Git 설치 위치가 어디든(C:\Git, scoop, winget) 따라간다.
-    #     <Git>\cmd\git.exe → <Git> → <Git>\bin\bash.exe / <Git>\usr\bin\bash.exe
-    try {
-        $gitCmd = Get-Command git -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($gitCmd -and $gitCmd.Source) {
-            $gitDir = Split-Path -Parent $gitCmd.Source           # <Git>\cmd  또는 <Git>\bin
-            $gitRoot = Split-Path -Parent $gitDir                  # <Git>
-            foreach ($rel in @('bin\bash.exe', 'usr\bin\bash.exe')) {
-                if ($gitRoot) { $candidates.Add((Join-Path $gitRoot $rel)) }
+    # [giip Docker/Linux 이식] (2)/(3)은 Windows 전용 Git-for-Windows 번들 bash 를 찾는 로직이라
+    # 'C:\Git'/'D:\Git' 같은 리터럴 드라이브 경로가 섞여 있다. Linux pwsh 의 Join-Path 는 존재하지
+    # 않는 드라이브 문자를 만나면 그대로 예외를 던지므로(단순 미스매치가 아니라 크래시), Windows가
+    # 아니면 이 두 단계를 건너뛴다. 로컬에서 새로 판정하는 이유: 이 함수는 스크립트 상단(Phase -3
+    # preflight)에서 아래쪽 $script:GissueIsWindowsHost 초기화보다 먼저 호출되므로 그 변수에 기대면
+    # 안 된다(같은 패턴을 이 함수 안에서 독립적으로 다시 계산).
+    $isWin = if (Get-Variable -Name IsWindows -Scope Global -ErrorAction SilentlyContinue) { [bool]$IsWindows } else { $true }
+    if ($isWin) {
+        # (2) git.exe 위치에서 역산 — Git 설치 위치가 어디든(C:\Git, scoop, winget) 따라간다.
+        #     <Git>\cmd\git.exe → <Git> → <Git>\bin\bash.exe / <Git>\usr\bin\bash.exe
+        try {
+            $gitCmd = Get-Command git -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($gitCmd -and $gitCmd.Source) {
+                $gitDir = Split-Path -Parent $gitCmd.Source           # <Git>\cmd  또는 <Git>\bin
+                $gitRoot = Split-Path -Parent $gitDir                  # <Git>
+                foreach ($rel in @('bin\bash.exe', 'usr\bin\bash.exe')) {
+                    if ($gitRoot) { $candidates.Add((Join-Path $gitRoot $rel)) }
+                }
+                # 한 단계 더 위(<Git>\mingw64\bin\git.exe 같은 배치 대비)
+                $gitRoot2 = Split-Path -Parent $gitRoot
+                foreach ($rel in @('bin\bash.exe', 'usr\bin\bash.exe')) {
+                    if ($gitRoot2) { $candidates.Add((Join-Path $gitRoot2 $rel)) }
+                }
             }
-            # 한 단계 더 위(<Git>\mingw64\bin\git.exe 같은 배치 대비)
-            $gitRoot2 = Split-Path -Parent $gitRoot
-            foreach ($rel in @('bin\bash.exe', 'usr\bin\bash.exe')) {
-                if ($gitRoot2) { $candidates.Add((Join-Path $gitRoot2 $rel)) }
-            }
-        }
-    } catch {}
+        } catch {}
 
-    # (3) 알려진 기본 설치 위치 — Program Files / Program Files (x86) / 흔한 커스텀 경로.
-    foreach ($base in @($env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:LOCALAPPDATA, 'C:\Git', 'D:\Git')) {
-        if (-not $base) { continue }
-        foreach ($rel in @('Git\bin\bash.exe', 'Git\usr\bin\bash.exe', 'Programs\Git\bin\bash.exe', 'bin\bash.exe', 'usr\bin\bash.exe')) {
-            $candidates.Add((Join-Path $base $rel))
+        # (3) 알려진 기본 설치 위치 — Program Files / Program Files (x86) / 흔한 커스텀 경로.
+        foreach ($base in @($env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:LOCALAPPDATA, 'C:\Git', 'D:\Git')) {
+            if (-not $base) { continue }
+            foreach ($rel in @('Git\bin\bash.exe', 'Git\usr\bin\bash.exe', 'Programs\Git\bin\bash.exe', 'bin\bash.exe', 'usr\bin\bash.exe')) {
+                $candidates.Add((Join-Path $base $rel))
+            }
         }
     }
 
@@ -1170,19 +1180,52 @@ if ($mapRoot.forcedUnblockExcludeRepoNames) {
 $HeartbeatCfg = Get-GissueHeartbeatConfig $mapRoot
 
 # ── 프로세스 트리 헬퍼 (이름을 빌트인과 겹치지 않게 지어 재귀 함정 회피) ──
+# [giip Docker/Linux 이식] Win32_Process(CIM)는 Windows 전용이라 pwsh/Linux 에는 provider 자체가
+# 없다. PowerShell 5.1 에는 $IsWindows 자동변수가 없으므로(=$null=falsy) "변수가 없으면 Windows"로
+# 판정해야 기존 Windows 경로가 무조건 그대로 유지된다. Linux 경로만 /proc 직접 파싱으로 새로 추가.
+$script:GissueIsWindowsHost = if (Get-Variable -Name IsWindows -Scope Global -ErrorAction SilentlyContinue) { [bool]$IsWindows } else { $true }
+function Get-GissueProcInfo($id) {
+    if ($script:GissueIsWindowsHost) {
+        return Get-CimInstance Win32_Process -Filter "ProcessId=$id" -ErrorAction SilentlyContinue
+    }
+    $statPath = "/proc/$id/stat"
+    if (-not (Test-Path $statPath)) { return $null }
+    try {
+        $stat = Get-Content $statPath -Raw -ErrorAction Stop
+        $lastParen = $stat.LastIndexOf(')')
+        if ($lastParen -lt 0) { return $null }
+        $fields = $stat.Substring($lastParen + 2).Trim() -split '\s+'
+        $ppid = [int]$fields[1]
+        $nameRaw = Get-Content "/proc/$id/comm" -Raw -ErrorAction SilentlyContinue
+        $name = if ($nameRaw) { $nameRaw.Trim() } else { '' }
+        $cmdlineRaw = Get-Content "/proc/$id/cmdline" -Raw -ErrorAction SilentlyContinue
+        $cmdline = if ($cmdlineRaw) { ($cmdlineRaw -split "`0") -join ' ' } else { '' }
+        return [pscustomobject]@{ ProcessId = [int]$id; ParentProcessId = $ppid; Name = $name; CommandLine = $cmdline }
+    } catch { return $null }
+}
+function Get-GissueChildIds($parentId) {
+    if ($script:GissueIsWindowsHost) {
+        return @(Get-CimInstance Win32_Process -Filter "ParentProcessId=$parentId" -ErrorAction SilentlyContinue | ForEach-Object { [int]$_.ProcessId })
+    }
+    $ids = @()
+    foreach ($d in (Get-ChildItem /proc -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^\d+$' })) {
+        $info = Get-GissueProcInfo $d.Name
+        if ($info -and $info.ParentProcessId -eq [int]$parentId) { $ids += $info.ProcessId }
+    }
+    return $ids
+}
 function Get-GissueDescendantIds($parentId) {
     $ids = @()
-    $kids = Get-CimInstance Win32_Process -Filter "ParentProcessId=$parentId" -ErrorAction SilentlyContinue
-    foreach ($k in $kids) {
-        $ids += [int]$k.ProcessId
-        $ids += Get-GissueDescendantIds $k.ProcessId
+    foreach ($cid in (Get-GissueChildIds $parentId)) {
+        $ids += $cid
+        $ids += Get-GissueDescendantIds $cid
     }
     return $ids
 }
 function Get-GissueAncestorNames($startId) {
     $names = @(); $cur = [int]$startId
     for ($i = 0; $i -lt 12 -and $cur -and $cur -ne 0; $i++) {
-        $pr = Get-CimInstance Win32_Process -Filter "ProcessId=$cur" -ErrorAction SilentlyContinue
+        $pr = Get-GissueProcInfo $cur
         if (-not $pr) { break }
         $names += $pr.Name
         $cur = [int]$pr.ParentProcessId
@@ -1191,11 +1234,12 @@ function Get-GissueAncestorNames($startId) {
 }
 # 현재 실행 트리 안의 claude 호스트 PID(=이 세션 자신)는 절대 종료 대상에서 뺀다.
 function Get-SelfClaudeHostId {
+    $claudeName = if ($script:GissueIsWindowsHost) { 'claude.exe' } else { 'claude' }
     $cur = $PID
     for ($i = 0; $i -lt 12 -and $cur; $i++) {
-        $pr = Get-CimInstance Win32_Process -Filter "ProcessId=$cur" -ErrorAction SilentlyContinue
+        $pr = Get-GissueProcInfo $cur
         if (-not $pr) { break }
-        if ($pr.Name -eq 'claude.exe') { return [int]$pr.ProcessId }
+        if ($pr.Name -eq $claudeName) { return [int]$pr.ProcessId }
         $cur = [int]$pr.ParentProcessId
     }
     return 0
@@ -1211,7 +1255,11 @@ function Get-SelfClaudeHostId {
 # 여러 CSN 을 동시에 활성화하면 한 CSN 의 정상 작업이 다른 CSN 의 좀비 판정을 가릴 수 있다(후속 과제).
 function Test-GissueCsnHasLiveEngineProcess {
     try {
-        $procs = @(Get-CimInstance Win32_Process -Filter "Name='claude.exe'" -ErrorAction SilentlyContinue)
+        if ($script:GissueIsWindowsHost) {
+            $procs = @(Get-CimInstance Win32_Process -Filter "Name='claude.exe'" -ErrorAction SilentlyContinue)
+        } else {
+            $procs = @(Get-Process claude -ErrorAction SilentlyContinue | ForEach-Object { Get-GissueProcInfo $_.Id } | Where-Object { $_ })
+        }
         foreach ($p in $procs) {
             if ($p.CommandLine -and $p.CommandLine -like '*--dangerously-skip-permissions*' -and $p.CommandLine -like '*--add-dir*') {
                 return $true
@@ -1788,10 +1836,10 @@ if (-not $DryRun) {
                 Write-Log 'reaper' "SKIP claude PID $($cp.Id) — 대화형 세션(조상: $(($anc | Select-Object -First 4) -join '>')), age ${ageMin}m"
                 continue
             }
-            $ci = Get-CimInstance Win32_Process -Filter "ProcessId=$($cp.Id)" -ErrorAction SilentlyContinue
+            $ci = Get-GissueProcInfo $cp.Id
             $parentAlive = $false
             if ($ci -and $ci.ParentProcessId) {
-                $parentAlive = [bool](Get-CimInstance Win32_Process -Filter "ProcessId=$($ci.ParentProcessId)" -ErrorAction SilentlyContinue)
+                $parentAlive = [bool](Get-GissueProcInfo $ci.ParentProcessId)
             }
             $isOrphan = -not $parentAlive
             $kill = ($ageMin -ge $ReaperHardMin) -or ($isOrphan -and $ageMin -ge $ReaperOrphanMin)
