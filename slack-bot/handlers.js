@@ -17,6 +17,7 @@ const {
   extractExistingTaskIds, extractGiipIssueRef, findSimilarPendingTasks, findDuplicatePendingClusters, applyTaskMerge,
 } = require('./task-dedup');
 const tm = require('./task-manager');
+const taskEvidence = require('./task-evidence');
 const dashboard = require('./dashboard');
 const { searchKLayer } = require('./k-layer');
 const { getIssues, refreshIssues, getCacheAge } = require('./github-issues');
@@ -629,9 +630,9 @@ async function startTaskExecution(pendingKey, pendingTask, channelId, replyTs, t
             await gt.maybeFinish(channelId, pendingTask.isn, 'IN_PROGRESS',
               `⚠️ 아직 완료 아님(REVIEW 보류). 이 태스크가 바꾼 다음 저장소 변경분이 PR 로 반영되지 않았습니다(수동 PR 필요): ${unlandedTxt}${prTxt}`);
           } else {
-            const cmt = allUrls.length
-              ? `✅ 작업 완료. PR: ${allUrls.join(' , ')}`
-              : `✅ 작업 완료(push/PR 실패). 결과: .agent/tasks/done/${pendingTask.taskId}.md`;
+            const cmt = uiT(uiLang, 'issueReviewReport', { result: allUrls.length
+              ? `PR: ${allUrls.join(' , ')}`
+              : `.agent/tasks/done/${pendingTask.taskId}.md (push/PR failed)` });
             await gt.maybeFinish(channelId, pendingTask.isn, 'REVIEW', cmt);
           }
         }
@@ -654,6 +655,7 @@ async function startTaskExecution(pendingKey, pendingTask, channelId, replyTs, t
           ...(blockedLines.length ? ['', ...blockedLines] : []),
           ...(skipLines.length ? ['', ...skipLines] : []),
           ...resumeGuide,
+          ...(blocked.length || unlanded.length ? [] : [uiT(uiLang, 'verificationPending')]),
         ].join('\n'), replyTs);
       } else {
         await postMessage(channelId, [
@@ -663,6 +665,7 @@ async function startTaskExecution(pendingKey, pendingTask, channelId, replyTs, t
           ...(skipLines.length
             ? ['', ...skipLines]
             : [uiT(uiLang, 'noRepoChanged')]),
+          ...(unlanded.length ? [] : [uiT(uiLang, 'verificationPending')]),
         ].join('\n'), replyTs);
         if (!skipLines.length) await postLong(channelId, checkAllRepoStatus(), replyTs);
       }
@@ -1038,7 +1041,7 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
       const taskUrl = tm.getTaskFileUrl(t.taskId);
       const taskLink = taskUrl ? `\n     📁 ${taskUrl}` : '';
       const result = t.resultUrl ? `\n     📄 ${t.resultUrl}` : '';
-      return `${emoji} \`${t.taskId}\` [${t.status}] ${date}\n     *${t.title}*\n     ${t.summary}${taskLink}${result}`;
+      return `${emoji} \`${t.taskId}\` [${t.status}] ${date}\n     *${t.title}*\n     ${uiT(uiLang, 'taskEvidenceLabel', { state: t.verification_state })}\n     ${t.summary}${taskLink}${result}`;
     });
     const header = showAll
       ? `*全 Task 一覧 (${tasks.length}件)*`
@@ -1079,7 +1082,7 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
       const taskUrl = tm.getTaskFileUrl(t.taskId);
       const taskLink = taskUrl ? `\n     📁 ${taskUrl}` : '';
       const result = t.resultUrl ? `\n     📄 ${t.resultUrl}` : '';
-      return `${emoji} \`${t.taskId}\` [${t.status}] ${date}\n     *${t.title}*\n     ${t.summary}${taskLink}${result}`;
+      return `${emoji} \`${t.taskId}\` [${t.status}] ${date}\n     *${t.title}*\n     ${uiT(uiLang, 'taskEvidenceLabel', { state: t.verification_state })}\n     ${t.summary}${taskLink}${result}`;
     });
     const header = `*直近7日間の全 Task 一覧 (${tasks.length}件)*\n${summary}`;
     await postLong(channelId, [header, '', ...lines].join('\n'), replyTs);
@@ -1512,6 +1515,8 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
   if (giipIsn) taskState.pending[convKey].isn = giipIsn;
   saveJSON(TASK_STATE_FILE, taskState);
   if (reuseTaskId) {
+    try { taskEvidence.recordPrepared(taskId, config.BASE_DIR || BASE_DIR); }
+    catch (e) { console.error('[Bot] evidence prepare failed:', e.message); }
     tm.updateTasklistEntry(taskId, { title: taskTitle, summary: taskSummary, status: 'pending', updatedAt: new Date().toISOString() });
   } else {
     tm.addToTasklist(taskId, taskTitle, taskSummary, taskRequestText);
