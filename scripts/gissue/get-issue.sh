@@ -46,6 +46,7 @@
 #   scripts/gissue/get-issue.sh <isn> [csn]              # 이슈 상세 + 코멘트 조회
 #   scripts/gissue/get-issue.sh <isn> [csn] --comment "내용"   # note 코멘트 등록(+사후검증)
 #   scripts/gissue/get-issue.sh <isn> [csn] --comment-file <path>  # 본문을 UTF-8 파일에서 읽어 등록
+#   scripts/gissue/get-issue.sh <isn> [csn] --comment "내용" --role <역할키>  # loadedRole 을 함께 등록(giip #1324)
 #   scripts/gissue/get-issue.sh <isn> [csn] --status DONE      # 상태 전이(제목/본문 보존, PUT status-only)
 #   scripts/gissue/get-issue.sh <isn> [csn] --delete-comment <cSn>  # ★파괴적★ 코멘트 1건 삭제
 #   scripts/gissue/get-issue.sh <isn> [csn] --comment "내용" --status DONE   # 둘 다 순서대로 실행(결합 호출 지원)
@@ -97,15 +98,23 @@ if [ $# -eq 0 ]; then
   exit 0
 fi
 
-# --force-csn 은 어느 위치에 있어도 인식되도록 먼저 스캔해서 제거한다(아래 while 루프의 옵션
+# --force-csn / --role 은 어느 위치에 와도 인식되도록 먼저 스캔해서 제거한다(아래 while 루프의 옵션
 # 파서는 --comment/--comment-file/--status/--delete-comment 만 알고, 모르는 옵션은 에러로 처리한다).
 FORCE_CSN=0
+ROLE_VAL=""
 FILTERED_ARGS=()
-for a in "$@"; do
+while [ $# -gt 0 ]; do
+  a="$1"
   if [ "${a}" = "--force-csn" ]; then
     FORCE_CSN=1
+    shift
+  elif [ "${a}" = "--role" ]; then
+    ROLE_VAL="${2:-}"
+    if [ -z "${ROLE_VAL}" ]; then echo "❌ --role 뒤에 역할 경로가 필요합니다." >&2; exit 2; fi
+    shift 2
   else
     FILTERED_ARGS+=("${a}")
+    shift
   fi
 done
 set -- "${FILTERED_ARGS[@]}"
@@ -146,7 +155,7 @@ while [ $# -gt 0 ]; do
       # \uXXXX JSON escape 형태(순수 ASCII 본문)로 보내면 정상 저장되는 것을 같은 날 재확인 —
       # 항상 non-ASCII를 \uXXXX 로 escape 해서 보낸다.
       # giip-1073: 등록만 하고 끝내지 않고, post-comment.js 가 즉시 재조회해 mojibake 를 검증한다.
-      node "${SCRIPT_DIR}/lib/post-comment.js" "${ISN}" "${CONTENT}" "${SK}" "${API_BASE}" || exit 1
+      node "${SCRIPT_DIR}/lib/post-comment.js" "${ISN}" "${CONTENT}" "${SK}" "${API_BASE}" "note" "${ROLE_VAL}" || exit 1
       shift 2
       ;;
     --comment-file)
@@ -154,7 +163,7 @@ while [ $# -gt 0 ]; do
       if [ -z "${CONTENT_FILE}" ]; then echo "❌ --comment-file 뒤에 파일 경로가 필요합니다." >&2; exit 2; fi
       if [ ! -f "${CONTENT_FILE}" ]; then echo "❌ 본문 파일을 찾을 수 없습니다: ${CONTENT_FILE}" >&2; exit 2; fi
       # 긴 본문/따옴표가 많은 본문은 셸 인자 경유를 피하고 UTF-8 파일로 넘기는 게 안전하다.
-      node "${SCRIPT_DIR}/lib/post-comment.js" "${ISN}" "@${CONTENT_FILE}" "${SK}" "${API_BASE}" || exit 1
+      node "${SCRIPT_DIR}/lib/post-comment.js" "${ISN}" "@${CONTENT_FILE}" "${SK}" "${API_BASE}" "note" "${ROLE_VAL}" || exit 1
       shift 2
       ;;
     --delete-comment)
@@ -176,7 +185,7 @@ while [ $# -gt 0 ]; do
       shift 2
       ;;
     *)
-      echo "❌ 알 수 없는 옵션: $1 (--comment | --comment-file | --status | --delete-comment 만 지원)" >&2
+      echo "❌ 알 수 없는 옵션: $1 (--comment | --comment-file | --status | --delete-comment | --role 만 지원)" >&2
       exit 2
       ;;
   esac

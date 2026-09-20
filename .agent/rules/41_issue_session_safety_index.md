@@ -1,7 +1,7 @@
 # 41. 이슈 처리 세션 안전 규칙 — 색인 및 주입 계약 (Injection Contract)
 
 > **HARD RULE** — 무인(스케줄러) 세션과 대화형 세션 모두에 적용된다.
-> 이 파일 하나가 42~50 규칙의 **단일 진입점**이다. 프롬프트/위임문에서는 이 파일만 가리키면 된다.
+> 이 파일 하나가 42~51 규칙의 **단일 진입점**이다. 프롬프트/위임문에서는 이 파일만 가리키면 된다.
 
 ## 이 규칙군이 존재하는 이유
 
@@ -16,7 +16,7 @@
 ## 주입 계약 (Injection Contract)
 
 1. 이슈를 자동 처리하는 세션(매시 스케줄러의 `[A]`~`[H]` 전 단계)은 **처리 착수 전에 이 파일을
-   읽고, 이 파일이 가리키는 42~50 중 해당 상황의 규칙을 읽는다.**
+   읽고, 이 파일이 가리키는 42~51 중 해당 상황의 규칙을 읽는다.**
 2. 프롬프트 템플릿에는 **이 블록을 단 한 번만** 둔다. 단계별([C] READY 처리 / [D] stale
    IN_PROGRESS 회수 등)로 같은 문단을 복붙하지 않는다 — 복붙하면 나중에 한쪽만 고쳐지는 사고가
    난다(giip #2425 실측, 상세는 `48_single_source_safety_predicate.md`).
@@ -37,6 +37,7 @@
 | [48_single_source_safety_predicate.md](48_single_source_safety_predicate.md) | 안전 판정은 공용 함수 1개. 복붙 중복 금지 | #2440 #2463 #2425 |
 | [49_human_confirmation_false_positive.md](49_human_confirmation_false_positive.md) | "사람 확인 필요" 탐지 시 주어·시제 구분(오탐이 잘 지킨 이슈를 벌준다) | #2424 #2457 |
 | [50_bot_pr_scope_discipline.md](50_bot_pr_scope_discipline.md) | 봇 PR 은 이슈 범위 밖 파일을 쓸어담지 않는다 | #2424 #2459 |
+| [51_giip_product_changes_csn47_only.md](51_giip_product_changes_csn47_only.md) | giip 제품 레포(`giipv3`/`giipdb`/`giipfaw` 등) 변경은 CSN 47 로만. 이 레포 자신은 대상 아님 | giip 2679 (사용자 직접 지시) |
 
 코멘트 작성 시각을 추정하지 않는 규칙은 신설하지 않고 기존
 [`PROTOCOL_PROGRESS_COMMENT.md`](PROTOCOL_PROGRESS_COMMENT.md) 의 "시각(When)" 절을 확장했다

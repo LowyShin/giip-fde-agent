@@ -1,0 +1,5 @@
+# Shell scripts must keep LF line endings regardless of the checkout OS —
+# a CRLF shebang line ("#!/usr/bin/env bash\r") fails to execute on Linux.
+# Bit us for docker/entrypoint.sh specifically (giip #2665): core.autocrlf=true
+# on a Windows checkout would otherwise silently break the container build.
+*.sh text eol=lf

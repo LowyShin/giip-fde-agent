@@ -27,9 +27,11 @@ const { escapeNonAscii } = require('./text-escape');
 
 const DEFAULT_API_BASE = 'https://giipfaw.azurewebsites.net/api';
 
-/** giipIssueComments POST body 를 순수 ASCII 로 만든다. */
-function buildCommentBody(isn, content, issuetype = 'note') {
-  return escapeNonAscii(JSON.stringify({ isn: Number(isn), content, issuetype }));
+/** giipIssueComments POST body 를 순수 ASCII 로 만든다. loadedRole 이 주어지면(giip #1324) body 에 loadedRole 키를 포함시킨다 — V2 엔드포인트 전용 필드. */
+function buildCommentBody(isn, content, issuetype = 'note', loadedRole) {
+  const body = { isn: Number(isn), content, issuetype };
+  if (loadedRole) body.loadedRole = loadedRole;
+  return escapeNonAscii(JSON.stringify(body));
 }
 
 function request(method, url, { apiKey, body } = {}) {
@@ -70,10 +72,14 @@ async function listComments({ apiBase = DEFAULT_API_BASE, apiKey, isn }) {
   return res.json.comments;
 }
 
-async function postComment({ apiBase = DEFAULT_API_BASE, apiKey, isn, content, issuetype = 'note' }) {
-  return request('POST', `${apiBase}/giipIssueComments`, {
+/** loadedRole 이 주어지면(giip #1324) 신규 giipIssueCommentsV2 엔드포인트로 보낸다 — 기존
+ * giipIssueComments(성역 파일)는 loadedRole/inquiryStatus 를 받아도 무시하고 버리기 때문이다.
+ * loadedRole 이 없으면 기존 엔드포인트/기존 동작 그대로(하위호환). */
+async function postComment({ apiBase = DEFAULT_API_BASE, apiKey, isn, content, issuetype = 'note', loadedRole }) {
+  const endpoint = loadedRole ? `${apiBase}/giipIssueCommentsV2` : `${apiBase}/giipIssueComments`;
+  return request('POST', endpoint, {
     apiKey,
-    body: buildCommentBody(isn, content, issuetype),
+    body: buildCommentBody(isn, content, issuetype, loadedRole),
   });
 }
 
@@ -151,7 +157,7 @@ function detectMojibake(expected, actual) {
  *
  * @returns {{csn:number|null, attempts:number, verified:boolean, log:string[]}}
  */
-async function postCommentVerified({ apiBase = DEFAULT_API_BASE, apiKey, isn, content, issuetype = 'note', maxAttempts = 2 }) {
+async function postCommentVerified({ apiBase = DEFAULT_API_BASE, apiKey, isn, content, issuetype = 'note', loadedRole, maxAttempts = 2 }) {
   const log = [];
   let lastReasons = [];
 
@@ -166,7 +172,7 @@ async function postCommentVerified({ apiBase = DEFAULT_API_BASE, apiKey, isn, co
     }
 
     // 2) 등록
-    const res = await postComment({ apiBase, apiKey, isn, content, issuetype });
+    const res = await postComment({ apiBase, apiKey, isn, content, issuetype, loadedRole });
     if (res.status !== 200) {
       throw new Error(`코멘트 등록 실패 (HTTP ${res.status}): ${res.text.slice(0, 500)}`);
     }
@@ -193,15 +199,17 @@ async function postCommentVerified({ apiBase = DEFAULT_API_BASE, apiKey, isn, co
     const csn = Number(mine.cSn);
     log.push(`[VERIFY] 자기 코멘트 cSn=${csn} 특정(신규 ${fresh.length}건 중 최신)`);
 
-    // 4) 검증
-    const check = detectMojibake(content, mine.content);
-    if (check.ok) {
+    // 4) 검증 — content 뿐 아니라 loadedRole 도 같은 방식으로 검증한다(giip #1491: loadedRole 도 mojibake 가능성).
+    const contentCheck = detectMojibake(content, mine.content);
+    const roleCheck = loadedRole ? detectMojibake(loadedRole, mine.loadedRole) : { ok: true, reasons: [] };
+    if (contentCheck.ok && roleCheck.ok) {
       log.push(`[VERIFY] OK — 저장본이 원문과 일치(cSn=${csn}).`);
       return { csn, attempts: attempt, verified: true, log };
     }
 
-    lastReasons = check.reasons;
-    log.push(`[VERIFY] ❌ mojibake 의심(cSn=${csn}): ${check.reasons.join(' / ')}`);
+    const allReasons = [...contentCheck.reasons, ...roleCheck.reasons.map((r) => `[loadedRole] ${r}`)];
+    lastReasons = allReasons;
+    log.push(`[VERIFY] ❌ mojibake 의심(cSn=${csn}): ${allReasons.join(' / ')}`);
 
     // 5) 자기가 만든 그 코멘트만 삭제
     const del = await deleteComment({ apiBase, apiKey, csn });

@@ -1,0 +1,15 @@
+services:
+  giip-fde-agent:
+    build: .
+    container_name: giip-fde-agent
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      # Persist the clone + generated registration files + scheduler logs across
+      # container restarts (also lets you edit csn-projects.json/giip-accounts.json
+      # by hand without losing them on the next `docker compose up`).
+      - giip-fde-agent-data:/work/giip-fde-agent
+
+volumes:
+  giip-fde-agent-data:
