@@ -81,7 +81,8 @@ test('a notes symlink cannot import another workspace claims', t => {
   note(b, claim('001', 'borrowed', '- **project**: alpha'));
   const notes = path.join(a, '.agent', 'knowledge', 'notes');
   fs.rmSync(notes, { recursive: true });
-  fs.symlinkSync(path.join(b, '.agent', 'knowledge', 'notes'), notes, 'dir');
+  const symlinkType = process.platform === 'win32' ? 'junction' : 'dir';
+  fs.symlinkSync(path.join(b, '.agent', 'knowledge', 'notes'), notes, symlinkType);
   assert.deepEqual(searchKLayer('api', { workspaceDir: a, project: 'alpha' }), []);
 });
 
