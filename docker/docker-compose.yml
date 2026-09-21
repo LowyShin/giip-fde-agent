@@ -8,8 +8,11 @@ services:
     volumes:
       # Persist the clone + generated registration files + scheduler logs across
       # container restarts (also lets you edit csn-projects.json/giip-accounts.json
-      # by hand without losing them on the next `docker compose up`).
-      - giip-fde-agent-data:/work/giip-fde-agent
+      # by hand without losing them on the next `docker compose up`). Mounted at
+      # /work (not just /work/giip-fde-agent) so giipAgent.cnf/giipAgentLinux
+      # (giip 2665 후속 — live GIIP agent) keep the same self-registered lssn
+      # across restarts instead of registering a brand-new one every time.
+      - giip-fde-agent-data:/work
 
 volumes:
   giip-fde-agent-data:

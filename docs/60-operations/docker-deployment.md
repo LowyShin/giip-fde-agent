@@ -61,6 +61,56 @@ auth, 토큰 자체가 자격증명)를 호출해 나머지 env를 내려받고,
 DDL은 사용자 승인 후 별도로 배포해야 합니다. giipv3 화면도 로컬 빌드 검증(TypeScript 컴파일)은
 하지 못했고 괄호/중괄호 균형만 정적으로 확인했습니다.
 
+### 2-2) 컨테이너의 실시간 상태를 GIIP web에서 확인하기 — `giipAgentLinux` 내장 (giip 2665 후속)
+
+§2-1의 `instanceToken` 교환은 컨테이너 기동 시점에 **1회** GIIP에서 값을 받아오는 것뿐이라,
+"지금 이 순간 컨테이너가 살아있는가"는 별도 통신 채널이 없으면 알 수 없습니다. 이를 새 화면을
+따로 만드는 대신 **GIIP가 이미 모든 인프라를 체크하는 기존 구조(`giipAgentLinux` + `tLSvr.lsChkdt`
+하트비트, `lsvrlist`/`lsvrdetail` 화면)에 컨테이너를 편입**시켜 해결합니다 — 컨테이너 안에서 실제
+GIIP agent를 기동해 GIIP와 통신하게 합니다.
+
+`entrypoint.sh`가 컨테이너 기동 시 (`GIIP_ENABLE_AGENT=true`이고 `GIIP_SK`가 있으면, 기본값 true):
+
+1. `GIIP_AGENT_URL`(기본 `LowyShin/giipAgentLinux`)을 `GIIP_AGENT_DIR`(기본 `/work/giipAgentLinux`)로 clone/pull
+2. 그 **부모 디렉터리**에 `giipAgent.cnf`를 생성 — `sk="$GIIP_SK"`(§2-1/Option B의 SK를 그대로 재사용,
+   별도 자격증명 없음), `lssn="0"`(최초 실행 시 GIIP가 자동으로 lssn을 배정하고 `giipAgent3.sh`가
+   `sed -i`로 같은 cnf 파일에 되써넣음 — 이후 재기동부터는 같은 lssn 유지)
+3. `/etc/cron.d/giip-agent`에 `* * * * * ... bash giipAgent3.sh` 등록(상주 데몬이 아니라 1분마다
+   실행하는 official 패턴을 그대로 따름) — 이미 있던 scheduler cron과 함께 **`cron` 데몬 1개를
+   컨테이너 전체에서 공유**(이전에는 scheduler if-block 안에서만 `cron`을 띄워 giip-agent 단독
+   구성 시 데몬이 안 뜨는 문제가 있어, `cron` 기동 호출을 모든 `/etc/cron.d/*` 등록 이후로 이동)
+
+기동 후에는 `giipAgent3.sh`가 매분 `apiaddrv2`(`giipApiSk2`)로 폴링하면서 `tLSvr.lsChkdt`를 갱신하고,
+이 lssn은 **기존 GIIP web의 `lsvrlist`/`lsvrdetail` 화면에 다른 서버와 동일하게** 나타납니다 — Docker
+컨테이너 전용 신규 UI가 필요 없습니다.
+
+`docker-compose.yml`의 볼륨을 `/work/giip-fde-agent`에서 `/work` 전체로 넓힌 것도 이 때문입니다 —
+`giipAgent.cnf`가 `giip-fde-agent` clone 밖(그 부모 디렉터리)에 있어서, 볼륨이 좁으면 재시작마다
+`lssn=0`으로 리셋되어 매번 새 서버로 재등록되어 버립니다.
+
+**구성 요소**:
+- `docker/Dockerfile` — `wget`/`procps`(`ps`/`pgrep`) 추가 설치. `giipAgent3.sh`가 curl이 아닌
+  wget을 쓰고, 좀비/중복 실행 감지에 `ps`를 쓰는데 베이스 이미지엔 둘 다 없어서 전체가 조용히
+  실패하고 있었습니다.
+- `docker/entrypoint.sh` — 위 1~3단계
+- `docker/docker-compose.yml` — 볼륨을 `/work`로 확대
+- `docker/.env.example` — `GIIP_ENABLE_AGENT`/`GIIP_AGENT_URL`/`GIIP_AGENT_DIR`
+
+**giipAgentLinux 저장소 자체의 실 버그 수정(부수적으로 발견)**:
+- `giipAgent3.sh`의 `lssn="0"` 최초 등록 분기 안에서 `local` 키워드가 함수 바깥(top-level if 블록)에
+  쓰여 있어 `curl: option -o: requires parameter`로 조용히 등록이 실패하고 있었습니다
+  (`tmpFileName`/등 3곳, `local` 제거로 수정, official repo `main`에 commit·push 완료)
+- `.sh` 파일 CRLF 오염(§3과 동일한 클래스의 문제) 방지용 `.gitattributes`(`*.sh text eol=lf`) 신설
+
+**검증 상태(정직하게 명시)**:
+- ✅ 메커니즘 end-to-end: 실제 Docker 빌드·기동으로 clone → cnf 생성 → cron 등록 → `giipAgent3.sh`가
+  실제 GIIP API(`giipApiSk2`)로 HTTPS 요청까지 도달하는 것을 로그로 확인(더미 SK로 깨끗한 401 인증
+  거부 — 통신 자체는 정상)
+- ❌ **미검증**: 실제 유효한 SK로 최초 등록(`lssn` 실제 배정)까지의 성공 케이스, 그리고 그 lssn이
+  GIIP web `lsvrlist`/`lsvrdetail`에 실제로 하트비트와 함께 나타나는지의 화면 확인. 실 자격증명은
+  제가 임의로 만들 수 없어 사용자 쪽에서 실제 `GIIP_SK`로 `docker compose up -d --build` 후
+  `lsvrlist`에서 새 lssn이 뜨는지 확인이 필요합니다.
+
 ## 3) 선행 조건 — `run-gissue-claude.ps1`의 Linux/pwsh 포팅 (giip #2665)
 
 기존 §13-1-1은 "이 레포의 `.ps1`은 **Windows PowerShell 5.1 전용**"이라고 명시하고 있었습니다.
