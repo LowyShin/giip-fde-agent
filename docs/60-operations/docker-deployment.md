@@ -73,8 +73,11 @@ GIIP agent를 기동해 GIIP와 통신하게 합니다.
 
 1. `GIIP_AGENT_URL`(기본 `LowyShin/giipAgentLinux`)을 `GIIP_AGENT_DIR`(기본 `/work/giipAgentLinux`)로 clone/pull
 2. 그 **부모 디렉터리**에 `giipAgent.cnf`를 생성 — `sk="$GIIP_SK"`(§2-1/Option B의 SK를 그대로 재사용,
-   별도 자격증명 없음), `lssn="0"`(최초 실행 시 GIIP가 자동으로 lssn을 배정하고 `giipAgent3.sh`가
-   `sed -i`로 같은 cnf 파일에 되써넣음 — 이후 재기동부터는 같은 lssn 유지)
+   별도 자격증명 없음). `lssn`은 `GIIP_LSSN` 환경변수가 양의 정수면 그 값을, 아니면 `"0"`을 쓴다.
+   `lssn="0"`이면 최초 실행 시 GIIP가 자동으로 lssn을 배정하고 `giipAgent3.sh`가 `sed -i`로 같은
+   cnf 파일에 되써넣음 — 이후 재기동부터는 같은 lssn 유지. `GIIP_LSSN`은 `.env.example`에 설명된
+   대로 보통은 비워 두고 `GIIP_INSTANCE_TOKEN` 경로로 자동 수신되며, 수동 지정 시 그 값이 우선한다
+   (giip 2857).
 3. `/etc/cron.d/giip-agent`에 `* * * * * ... bash giipAgent3.sh` 등록(상주 데몬이 아니라 1분마다
    실행하는 official 패턴을 그대로 따름) — 이미 있던 scheduler cron과 함께 **`cron` 데몬 1개를
    컨테이너 전체에서 공유**(이전에는 scheduler if-block 안에서만 `cron`을 띄워 giip-agent 단독
@@ -106,6 +109,9 @@ GIIP agent를 기동해 GIIP와 통신하게 합니다.
 - ✅ 메커니즘 end-to-end: 실제 Docker 빌드·기동으로 clone → cnf 생성 → cron 등록 → `giipAgent3.sh`가
   실제 GIIP API(`giipApiSk2`)로 HTTPS 요청까지 도달하는 것을 로그로 확인(더미 SK로 깨끗한 401 인증
   거부 — 통신 자체는 정상)
+- ✅ `GIIP_LSSN` 동적 배정(giip 2857): `GIIP_LSSN=12345` 환경변수를 주면 `lssn="12345"`로 cnf가
+  생성되고, 미지정 시 `lssn="0"`으로 기본 동작(자기등록)이 유지됨을 `docker build/run` 실측으로 확인.
+  더미 SK로 실행해 API 등록은 401로 거부되지만 cnf 생성까지만 검증하는 검사라 안전하다.
 - ❌ **미검증**: 실제 유효한 SK로 최초 등록(`lssn` 실제 배정)까지의 성공 케이스, 그리고 그 lssn이
   GIIP web `lsvrlist`/`lsvrdetail`에 실제로 하트비트와 함께 나타나는지의 화면 확인. 실 자격증명은
   제가 임의로 만들 수 없어 사용자 쪽에서 실제 `GIIP_SK`로 `docker compose up -d --build` 후

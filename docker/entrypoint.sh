@@ -77,14 +77,24 @@ if [ "${GIIP_ENABLE_AGENT:-true}" = "true" ] && [ -n "${GIIP_SK:-}" ]; then
     # lssn=0 → giipAgent3.sh 첫 실행 시 자기 CSN 아래 새 lssn으로 자동 등록되고, 발급받은 lssn을
     # 이 파일에 다시 써서 재기동해도 같은 lssn을 재사용한다 — 그래서 이 파일이 /work(영속 볼륨)
     # 밑에 있어야 한다(docker-compose.yml의 볼륨이 /work 전체를 덮는 이유).
+    # GIIP_LSSN이 있으면 우선 사용 (giip 2857): 양의 정수면 그 값, 아니면 0 (하위호환)
+    lssn_val="0"
+    if [ -n "${GIIP_LSSN:-}" ]; then
+      if [[ "$GIIP_LSSN" =~ ^[1-9][0-9]*$ ]]; then
+        lssn_val="$GIIP_LSSN"
+        echo "[entrypoint] GIIP_LSSN=$GIIP_LSSN is valid — using it"
+      else
+        echo "[entrypoint] GIIP_LSSN=$GIIP_LSSN is invalid (not a positive integer) — using default lssn=0"
+      fi
+    fi
     cat > "$GIIP_AGENT_CNF" <<CNFEOF
 sk="$GIIP_SK"
-lssn="0"
+lssn="$lssn_val"
 giipagentdelay="60"
 apiaddrv2="https://giipfaw.azurewebsites.net/api/giipApiSk2"
 apiaddr="https://giipasp.azurewebsites.net"
 CNFEOF
-    echo "[entrypoint] wrote $GIIP_AGENT_CNF (lssn=0, first run self-registers)"
+    echo "[entrypoint] wrote $GIIP_AGENT_CNF (lssn=$lssn_val)"
   else
     echo "[entrypoint] $GIIP_AGENT_CNF already exists — keeping it (may already hold an assigned lssn)"
   fi
