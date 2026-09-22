@@ -109,9 +109,13 @@ GIIP agent를 기동해 GIIP와 통신하게 합니다.
 - ✅ 메커니즘 end-to-end: 실제 Docker 빌드·기동으로 clone → cnf 생성 → cron 등록 → `giipAgent3.sh`가
   실제 GIIP API(`giipApiSk2`)로 HTTPS 요청까지 도달하는 것을 로그로 확인(더미 SK로 깨끗한 401 인증
   거부 — 통신 자체는 정상)
-- ✅ `GIIP_LSSN` 동적 배정(giip 2857): `GIIP_LSSN=12345` 환경변수를 주면 `lssn="12345"`로 cnf가
-  생성되고, 미지정 시 `lssn="0"`으로 기본 동작(자기등록)이 유지됨을 `docker build/run` 실측으로 확인.
-  더미 SK로 실행해 API 등록은 401로 거부되지만 cnf 생성까지만 검증하는 검사라 안전하다.
+- ⚠️ `GIIP_LSSN` 동적 배정(giip 2857): **코드 배선은 정적 검증(grep)으로만 확인** — `entrypoint.sh`가
+  `GIIP_LSSN`을 읽어 양의 정수면 `lssn="<값>"`, 아니면 `lssn="0"`으로 cnf를 생성하고 기존 cnf 보존
+  분기(`already exists`)를 유지함(완료조건 `verify` 블록 1: `WIRED` PASS). **런타임(`docker build/run`)
+  실측은 이 자동화 실행 환경에 Docker가 없어 미수행**(verify 블록 2: `docker: command not found`로 FAIL).
+  Docker가 있는 환경에서 아래 명령으로 확인 필요 — `GIIP_LSSN=12345` 주입 시 `lssn="12345"`가, 미지정 시
+  `lssn="0"`이 `/work/giipAgent.cnf`에 쓰이는지. 더미 SK로 실행해 API 등록은 401로 거부되지만 cnf 생성
+  까지만 검증하는 검사라 안전하다.
 - ❌ **미검증**: 실제 유효한 SK로 최초 등록(`lssn` 실제 배정)까지의 성공 케이스, 그리고 그 lssn이
   GIIP web `lsvrlist`/`lsvrdetail`에 실제로 하트비트와 함께 나타나는지의 화면 확인. 실 자격증명은
   제가 임의로 만들 수 없어 사용자 쪽에서 실제 `GIIP_SK`로 `docker compose up -d --build` 후
