@@ -79,10 +79,12 @@ if [ "${GIIP_ENABLE_SCHEDULER:-true}" = "true" ]; then
   CRON_CMD="pwsh -NoProfile -NonInteractive -File \"$REPO_DIR/scripts/gissue/run-gissue-claude.ps1\"${ONLY_CSN_ARG} >> $REPO_DIR/scripts/gissue/logs/cron.log 2>&1"
   {
     echo "SHELL=/bin/bash"
-    echo "7 * * * * root cd $REPO_DIR && $CRON_CMD"
+    # docker 는 프로젝트(CSN)마다 컨테이너를 따로 띄우므로 컨테이너당 스케줄러를 20분마다(:07/:27/:47) 돌린다.
+    # 이전 실행이 아직 돌고 있으면 CSN lock 으로 SKIP 되어 겹치지 않는다(run-gissue-claude.ps1 Phase 1).
+    echo "7,27,47 * * * * root cd $REPO_DIR && $CRON_CMD"
   } > /etc/cron.d/gissue-scheduler
   chmod 0644 /etc/cron.d/gissue-scheduler
-  echo "[entrypoint] registered hourly-issue-scheduler cron (:07, pwsh) via /etc/cron.d"
+  echo "[entrypoint] registered issue-scheduler cron (every 20 min: :07/:27/:47, pwsh) via /etc/cron.d"
 else
   echo "[entrypoint] GIIP_ENABLE_SCHEDULER=false — skipping scheduler cron"
 fi
