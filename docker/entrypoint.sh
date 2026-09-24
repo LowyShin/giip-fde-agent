@@ -22,6 +22,41 @@ fi
 # ── optional: pull env from GIIP web (giip 2665 "Docker 생성") instead of per-field env vars ──
 eval "$(/fetch-instance-env.sh)"
 
+# ── giip #2949: optional target project repo clone (zero-touch remote clone) ──
+# GIIP web의 docker-instances 생성 폼에 프로젝트 레포 URL을 넣으면 dockerInstanceFetch env로
+# GIIP_PROJECT_REPO_URL / GIIP_PROJECT_REPO_BRANCH 가 내려온다. 사람이 대상 PC에 접속하거나 CQE를 수동
+# 등록할 필요 없이, 컨테이너가 최초 기동 시 여기서 직접 clone한다(위에서 giip-fde-agent/giipAgentLinux를
+# clone하는 것과 동일한 방식·신뢰모델). GIIP_WORKDIR을 안 주면 레포명 기반 기본 경로에 clone하고 그 경로를
+# GIIP_WORKDIR로 export해 아래 setup-registration.js가 scheduler workdir로 등록하게 한다. clone 실패가
+# 컨테이너 전체를 죽이지 않도록 방어한다(set -e).
+if [ -n "${GIIP_PROJECT_REPO_URL:-}" ]; then
+  PROJECT_REPO_BRANCH="${GIIP_PROJECT_REPO_BRANCH:-main}"
+  if [ -n "${GIIP_WORKDIR:-}" ]; then
+    PROJECT_DIR="$GIIP_WORKDIR"
+  else
+    _repo_base="$(basename "$GIIP_PROJECT_REPO_URL")"
+    _repo_base="${_repo_base%.git}"
+    PROJECT_DIR="/work/${_repo_base:-project}"
+    export GIIP_WORKDIR="$PROJECT_DIR"
+  fi
+  echo "[entrypoint] project repo: $GIIP_PROJECT_REPO_URL ($PROJECT_REPO_BRANCH) -> $PROJECT_DIR"
+  if [ -d "$PROJECT_DIR/.git" ]; then
+    if git -C "$PROJECT_DIR" fetch origin "$PROJECT_REPO_BRANCH" \
+       && git -C "$PROJECT_DIR" checkout "$PROJECT_REPO_BRANCH" \
+       && git -C "$PROJECT_DIR" merge --ff-only "origin/$PROJECT_REPO_BRANCH"; then
+      echo "[entrypoint] project repo pulled ($(git -C "$PROJECT_DIR" rev-parse --short HEAD))"
+    else
+      echo "[entrypoint] WARN: project repo pull failed — continuing with existing checkout"
+    fi
+  else
+    if git clone --branch "$PROJECT_REPO_BRANCH" "$GIIP_PROJECT_REPO_URL" "$PROJECT_DIR"; then
+      echo "[entrypoint] project repo cloned ($(git -C "$PROJECT_DIR" rev-parse --short HEAD))"
+    else
+      echo "[entrypoint] WARN: project repo clone failed ($GIIP_PROJECT_REPO_URL) — container continues without it"
+    fi
+  fi
+fi
+
 REPO_DIR="$REPO_DIR" node /setup-registration.js
 
 mkdir -p "$REPO_DIR/scripts/gissue/logs"

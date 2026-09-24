@@ -121,6 +121,42 @@ GIIP agent를 기동해 GIIP와 통신하게 합니다.
   제가 임의로 만들 수 없어 사용자 쪽에서 실제 `GIIP_SK`로 `docker compose up -d --build` 후
   `lsvrlist`에서 새 lssn이 뜨는지 확인이 필요합니다.
 
+### 2-3) 대상 프로젝트 레포 무인 자동 clone (giip 2949)
+
+§2-1의 흐름은 컨테이너가 `giip-fde-agent`(자기 자신)와 `giipAgentLinux`만 clone합니다 — scheduler가
+실제로 작업할 **대상 프로젝트 레포**(예: `giipprj`, `ecokaku-aidc` 등)는 컨테이너 안에 없어서,
+지금까지는 대상 PC에 접속하거나 CQE를 수동 등록하지 않고는 clone할 방법이 없었습니다(giip #2949 증상).
+
+이를 **GIIP web 폼 한 번으로 완결**되게 했습니다. admin > Docker Instances의 "Docker 인스턴스 생성"
+폼에 `GIIP_PROJECT_REPO_URL`(+선택 `GIIP_PROJECT_REPO_BRANCH`) 필드가 추가되어, 여기에 레포 URL을
+넣으면 그 값이 §2-1과 동일하게 암호화되어 `dockerInstanceFetch` env로 내려오고, `entrypoint.sh`가
+**최초 기동 시 그 레포를 직접 clone**합니다(위 §2-2의 `giip-fde-agent`/`giipAgentLinux` clone과 동일한
+방식·신뢰모델). 사람이 대상 PC 쉘에 접속하거나 CQE Repo/Queue를 수동 등록하는 단계가 전혀 없습니다.
+
+- clone 경로: `GIIP_WORKDIR`이 지정돼 있으면 그 경로, 없으면 레포명 기반 `/work/<repo>` 기본 경로.
+  후자의 경우 그 경로를 `GIIP_WORKDIR`로 export해 `setup-registration.js`가 **scheduler workdir**
+  (`csn-projects.json`)로 등록하게 합니다 — 즉 clone과 동시에 scheduler가 그 레포를 대상으로 삼습니다.
+- 브랜치: `GIIP_PROJECT_REPO_BRANCH` 미지정 시 `main`. 이미 clone돼 있으면 `fetch` + `--ff-only` pull.
+- **실패 격리**: clone/pull 실패는 경고만 남기고 컨테이너는 계속 뜹니다(`set -e`에도 죽지 않음).
+
+**CQE 경로(§CQE_SPECIFICATION.md)와의 관계**: giip #2949는 원래 CQE cron 배선 누락도 함께 고쳤고
+(`entrypoint.sh`의 `/etc/cron.d/giip-cqe`, `admin/giipcronreg.sh`), CQE는 기동 후 임의의 스크립트를
+원격 실행하는 범용 경로로 여전히 유효합니다. 다만 **프로젝트 레포 clone이라는 특정 목적**에는 이
+§2-3의 env 기반 직접 clone이 더 단순하고(60초 타임아웃·소유자 게이트 무관), 폼 제출만으로 무인
+완결됩니다. Linux 에이전트(`cqe/giipCQE.sh`)가 기대하는 `msType` 값은 Windows 기준(§2.4 `ps1`/`cmd`)과
+다를 수 있으므로, CQE로 Linux 컨테이너에 스크립트를 배달할 때는 `cqe/giipCQE.sh` 실측값을 확인하십시오.
+
+**구성 요소**:
+- UI: `giipv3/src/app/[locale]/admin/docker-instances/page.tsx`(폼 필드 → env 주입)
+- `docker/entrypoint.sh`(env fetch 직후 clone 블록), `docker/.env.example`(`GIIP_PROJECT_REPO_URL`/`_BRANCH`)
+- giipdb/giipfaw **무변경** — env 객체는 `giipApiJson`이 통째로 암호화하므로 새 키가 성역 수정 없이 전달됨
+
+**검증 상태(정직하게 명시)**:
+- ✅ 정적: `entrypoint.sh` `bash -n` 문법 통과, giipv3 `tsc --noEmit` 에러 0.
+- ❌ **미검증(사람/인프라 확인 필요)**: 실 SK + 실 레포 URL로 `docker compose up -d --build` 후, 사람이
+  중간에 아무것도 안 한 상태에서 컨테이너 안 `GIIP_WORKDIR`(또는 `/work/<repo>`)에 대상 레포가 실제로
+  clone되는지의 end-to-end 확인. 실 자격증명은 임의 생성이 불가해 사용자 확인이 필요합니다(오너 완료조건 4).
+
 ## 3) 선행 조건 — `run-gissue-claude.ps1`의 Linux/pwsh 포팅 (giip #2665)
 
 기존 §13-1-1은 "이 레포의 `.ps1`은 **Windows PowerShell 5.1 전용**"이라고 명시하고 있었습니다.

@@ -17,7 +17,7 @@ docker compose logs -f
 | 파일 | 역할 |
 |---|---|
 | `Dockerfile` | pwsh 7 + Node.js + git + claude CLI + pm2 런타임 |
-| `entrypoint.sh` | clone/pull → 등록 스크립트 실행 → slack-bot(pm2) + scheduler(cron) 기동 |
+| `entrypoint.sh` | clone/pull → (선택) 대상 프로젝트 레포 auto clone(`GIIP_PROJECT_REPO_URL`, giip #2949) → 등록 스크립트 실행 → slack-bot(pm2) + scheduler(cron) 기동 |
 | `setup-registration.js` | env var → `csn-projects.json` / `giip-accounts.json` 생성 (이미 있으면 건드리지 않음) |
 | `docker-compose.yml` | 볼륨 영속화 포함 기동 정의 |
 | `.env.example` | env var 계약(정본) |
