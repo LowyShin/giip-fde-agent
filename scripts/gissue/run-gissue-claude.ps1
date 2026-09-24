@@ -33,7 +33,7 @@
 #   - Phase -2.5: 미매핑 CSN 감시(giip #2362). csn-projects.json 에 없는데 열린 이슈가 있는 CSN 을
 #                 찾아 1회성 안내 코멘트만 남긴다(상태 전이 없음).
 #   - Phase -1  : 열린 PR 자동머지(merge-standing-prs.ps1).
-#   - Phase 0   : reaper — 이전 실행이 남긴 30분 이상 멈춘/고아 headless claude 프로세스 종료.
+#   - Phase 0   : reaper — 이전 실행이 남긴 30분 이상 고아(부모 죽음) headless claude 프로세스 종료.
 #                 대화형(WindowsTerminal/explorer 등) 세션·현재 세션·pm2/slack-bot 은 절대 미대상.
 #   - Phase 0.5 : slack-bot 좀비 소켓 감시(watchdog).
 #   - Phase 1   : CSN별 사전점검 + lock 획득 + 잡 병렬 기동(위 (A)/(B)).
@@ -155,8 +155,8 @@ $DivergeFailAlertThreshold = 3
 # 레포 이름(폴더명) 목록. csn-projects.json 최상위 `forcedUnblockExcludeRepoNames` 로 배포마다 지정한다
 # (기본은 없음). 병합이 "확인된" 안전한 자동 해제([AUTO-UNBLOCK])는 이 예외와 무관하게 계속 적용된다.
 $ForcedUnblockExcludeRepoNames = @()
-# reaper: 이 나이(분) 이상인 headless claude 는 무조건 종료.
-$ReaperHardMin = 30
+# reaper: 부모가 죽은(고아) headless 엔진 claude 가 이 나이(분) 이상이면 종료.
+# 부모가 살아있는 claude 는 나이와 무관하게 절대 종료하지 않는다 — 실행 중인 세션을 죽이던 사고 방지.
 $ReaperOrphanMin = 30
 # 대화형 세션 판별용 조상 프로세스(이 조상을 타면 사람이 직접 쓰는 창 → 절대 종료 금지).
 $InteractiveAncestors = @('WindowsTerminal.exe','explorer.exe','Code.exe','devenv.exe')
@@ -1880,16 +1880,17 @@ if (-not $DryRun) {
             }
 
             $parentAlive = $false
-            if ($ci -and $ci.ParentProcessId) {
+            if ($ci.ParentProcessId) {
                 $parentAlive = [bool](Get-GissueProcInfo $ci.ParentProcessId)
             }
-            $isOrphan = -not $parentAlive
-            $kill = ($ageMin -ge $ReaperHardMin) -or ($isOrphan -and $ageMin -ge $ReaperOrphanMin)
-            if (-not $kill) { continue }
+            if ($parentAlive) {
+                if ($ageMin -ge $ReaperOrphanMin) { Write-Log 'reaper' "SKIP claude PID $($cp.Id) — 부모 생존(활성 세션), age ${ageMin}m" }
+                continue
+            }
+            if ($ageMin -lt $ReaperOrphanMin) { continue }
             $tree = @($cp.Id) + (Get-GissueDescendantIds $cp.Id) | Select-Object -Unique
             foreach ($tid in $tree) { Stop-Process -Id $tid -Force -ErrorAction SilentlyContinue }
-            $reason = if ($isOrphan) { "고아(부모 죽음)" } else { "headless" }
-            Write-Log 'reaper' "[WARN] KILLED $reason claude PID $($cp.Id) + 자식 $($tree.Count - 1)개 (idle ${ageMin}m, 기준 ${ReaperHardMin}m/${ReaperOrphanMin}m)"
+            Write-Log 'reaper' "[WARN] KILLED 고아(부모 죽음) claude PID $($cp.Id) + 자식 $($tree.Count - 1)개 (age ${ageMin}m, 기준 ${ReaperOrphanMin}m)"
         } catch { Write-Log 'reaper' "reaper 오류(PID $($cp.Id)): $($_.Exception.Message)" }
     }
 }
