@@ -71,3 +71,56 @@ writeIfAbsent(
   },
   'giip-accounts.json'
 );
+
+// ── scheduler heartbeat lssn (csn-projects.json 의 heartbeat 블록) ──
+// run-gissue-claude.ps1 은 heartbeat 블록(lssn/hostname/skFile)이 있어야만 스케줄러 자신의 lssn 으로
+// heartbeat 를 보낸다. 새 컨테이너마다 사람이 등록하지 않도록 여기서 AgentAutoRegister 로 lssn 을
+// 받아 블록을 채운다. 같은 hostname 재호출은 SP 가 기존 행을 UPDATE 하므로 재실행해도 안전하다.
+// giipApiSk2 는 hostname 문자열을 JSON 으로 재파싱해 400 을 내므로 giipApiSk4 + 이름 바인딩을 쓴다.
+// 실패해도 컨테이너 기동은 막지 않는다(다음 기동 때 재시도).
+async function ensureSchedulerHeartbeat() {
+  if (process.env.GIIP_ENABLE_SCHEDULER === 'false') return;
+  const mapPath = path.join(REPO_DIR, 'scripts/gissue/csn-projects.json');
+  const sk = process.env.GIIP_SK;
+  if (!fs.existsSync(mapPath) || !sk) {
+    console.log('[setup-registration] scheduler heartbeat: csn-projects.json or GIIP_SK missing, skip');
+    return;
+  }
+  const raw = fs.readFileSync(mapPath, 'utf8');
+  const bom = raw.charCodeAt(0) === 0xfeff;
+  const doc = JSON.parse(bom ? raw.slice(1) : raw);
+  if (doc.heartbeat && doc.heartbeat.lssn) {
+    console.log(`[setup-registration] scheduler heartbeat: already set (lssn=${doc.heartbeat.lssn}), skip`);
+    return;
+  }
+
+  const hostname = process.env.GIIP_SCHEDULER_HOSTNAME ||
+    `${process.env.GIIP_PROJECT_NAME || 'docker'}-gissue-scheduler`;
+  const skFile = path.join(REPO_DIR, 'slack-bot/.secrets/gissue-heartbeat.cfg');
+  fs.mkdirSync(path.dirname(skFile), { recursive: true });
+  fs.writeFileSync(skFile, `sk="${sk}"\n`, { encoding: 'utf8', mode: 0o600 });
+
+  const base = process.env.GIIP_API_BASE || 'https://giipfaw.azurewebsites.net/api';
+  const inner = JSON.stringify({ hostname, os: 'Debian 12 (docker cron gissue scheduler)', agent_version: 'run-gissue-claude.ps1' });
+  const body = new URLSearchParams({
+    text: 'AgentAutoRegister hostname jsondata',
+    token: sk,
+    jsondata: JSON.stringify({ hostname, jsondata: inner }),
+  });
+  try {
+    const res = await fetch(`${base}/giipApiSk4`, { method: 'POST', body, signal: AbortSignal.timeout(30000) });
+    const json = await res.json();
+    const row = Array.isArray(json.data) ? json.data[0] : null;
+    if (!row || Number(row.RstVal) !== 200 || !(Number(row.lssn) > 0)) {
+      console.log(`[setup-registration] scheduler heartbeat: register failed, skip (${JSON.stringify(json.error || row || json).slice(0, 200)})`);
+      return;
+    }
+    doc.heartbeat = { lssn: String(row.lssn), hostname, skFile };
+    fs.writeFileSync(mapPath, (bom ? '﻿' : '') + JSON.stringify(doc, null, 2) + '\n', 'utf8');
+    console.log(`[setup-registration] scheduler heartbeat: registered lssn=${row.lssn} (${row.action}, hostname=${hostname})`);
+  } catch (e) {
+    console.log(`[setup-registration] scheduler heartbeat: register error, skip (${e.message})`);
+  }
+}
+
+ensureSchedulerHeartbeat();
