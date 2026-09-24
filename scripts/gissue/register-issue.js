@@ -76,7 +76,7 @@ async function main() {
     // 바꿀 때는 그 호출부도 같이 고칠 것.
     console.log(`✅ giip issue #${isn} 등록 완료 (status=${a.status}, csn=${csn})`);
     console.log(`   제목: ${title}`);
-    console.log(`   보기: https://giipfaw.azurewebsites.net (admin/giip-issues/${isn})`);
+    console.log(`   보기: https://giip.littleworld.net/ko/admin/giip-issues/${isn}`);
 
     // [USER-REQUEST] 마커: 사용자가 직접 요청한 경로로 등록한 경우만 자동 첨부
     // (giip #2417 — 봇 자동 등록 이슈와 구분, 오케스트레이터가 --user-request로 명시时才添付)
