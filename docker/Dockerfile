@@ -6,7 +6,7 @@
 FROM mcr.microsoft.com/powershell:7.4-debian-12
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git curl wget procps ca-certificates cron gnupg \
+    && apt-get install -y --no-install-recommends git curl wget procps iproute2 ca-certificates cron gnupg \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && npm install -g @anthropic-ai/claude-code pm2 \
