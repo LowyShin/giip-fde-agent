@@ -1184,6 +1184,16 @@ $HeartbeatCfg = Get-GissueHeartbeatConfig $mapRoot
 # 없다. PowerShell 5.1 에는 $IsWindows 자동변수가 없으므로(=$null=falsy) "변수가 없으면 Windows"로
 # 판정해야 기존 Windows 경로가 무조건 그대로 유지된다. Linux 경로만 /proc 직접 파싱으로 새로 추가.
 $script:GissueIsWindowsHost = if (Get-Variable -Name IsWindows -Scope Global -ErrorAction SilentlyContinue) { [bool]$IsWindows } else { $true }
+
+# Phase 0 reaper 의 "헤드리스/대화형" 판정 순수함수(giip #2960). 정본은 reaper-lib.ps1 —
+# 이유·테스트는 그 파일 헤더와 tests/test-reaper-interactive-skip.ps1 참조.
+$ReaperLib = Join-Path $Root 'reaper-lib.ps1'
+if (Test-Path -LiteralPath $ReaperLib) {
+    . $ReaperLib
+} else {
+    Write-Output "[WARN][REAPER] reaper-lib.ps1 을 찾을 수 없음($ReaperLib) — Phase 0 은 조상이름 판정만으로 동작합니다."
+}
+
 function Get-GissueProcInfo($id) {
     if ($script:GissueIsWindowsHost) {
         return Get-CimInstance Win32_Process -Filter "ProcessId=$id" -ErrorAction SilentlyContinue
@@ -1824,6 +1834,10 @@ try {
 # 이전 :07 실행이 타임아웃/크래시로 남긴 headless claude 프로세스(+자식 트리)를 종료한다.
 # 안전장치: (1) 현재 세션 호스트 제외 (2) 대화형(WindowsTerminal/explorer/Code 조상) 제외
 #           (3) claude.exe 만 대상 → pm2/slack-bot(node)은 원천 비대상 (4) 30분 기준
+#           (5) [giip #2960] 커맨드라인에 `-p`/`--print` 가 없으면 OS 불문 대화형으로 간주해 제외
+#               (Linux Docker 에서 (2)의 조상이름 판정이 무력했던 갭을 메운다 — reaper-lib.ps1 참조)
+#           (6) [giip #2960, Linux 전용 보조] stdin(fd 0)이 실제 TTY(/dev/pts/*, /dev/tty*)면
+#               다른 판정과 무관하게 대화형으로 제외
 if (-not $DryRun) {
     $selfClaude = Get-SelfClaudeHostId
     foreach ($cp in @(Get-Process claude -ErrorAction SilentlyContinue)) {
@@ -1837,6 +1851,34 @@ if (-not $DryRun) {
                 continue
             }
             $ci = Get-GissueProcInfo $cp.Id
+
+            # (5) 헤드리스 판정(giip #2960) — 못 읽으면(null) fail-safe 로 SKIP(죽이지 않음).
+            $headless = if (Get-Command Test-GissueClaudeIsHeadless -ErrorAction SilentlyContinue) {
+                Test-GissueClaudeIsHeadless $ci.CommandLine
+            } else { $true }   # reaper-lib.ps1 미로드 시 기존 동작(조상판정만) 유지 — fail-open
+            if ($null -eq $headless) {
+                Write-Log 'reaper' "SKIP claude PID $($cp.Id) — cmdline 읽기 실패(안전 SKIP), age ${ageMin}m"
+                continue
+            }
+            if (-not $headless) {
+                Write-Log 'reaper' "SKIP claude PID $($cp.Id) — 대화형 세션(-p 없음), age ${ageMin}m"
+                continue
+            }
+
+            # (6) TTY 보조 체크(Linux 전용, giip #2960). /proc 읽기 실패는 이 체크 자체만 건너뛴다
+            #     (전체 판정을 막지 않는다) — 못 읽었다고 대화형으로 오판하지 않는다.
+            if ((-not $script:GissueIsWindowsHost) -and (Get-Command Test-GissueClaudeHasInteractiveTty -ErrorAction SilentlyContinue)) {
+                $fd0Target = $null
+                try {
+                    $fd0Item = Get-Item -Path "/proc/$($cp.Id)/fd/0" -ErrorAction Stop
+                    $fd0Target = "$($fd0Item.Target)"
+                } catch { $fd0Target = $null }
+                if (Test-GissueClaudeHasInteractiveTty $fd0Target) {
+                    Write-Log 'reaper' "SKIP claude PID $($cp.Id) — 대화형 세션(TTY: $fd0Target), age ${ageMin}m"
+                    continue
+                }
+            }
+
             $parentAlive = $false
             if ($ci -and $ci.ParentProcessId) {
                 $parentAlive = [bool](Get-GissueProcInfo $ci.ParentProcessId)
