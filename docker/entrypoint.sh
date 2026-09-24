@@ -102,6 +102,13 @@ CNFEOF
   echo "* * * * * root cd $GIIP_AGENT_DIR && bash giipAgent3.sh >> $GIIP_AGENT_DIR/log/cron.log 2>&1" > /etc/cron.d/giip-agent
   chmod 0644 /etc/cron.d/giip-agent
   echo "[entrypoint] registered giipAgentLinux cron (every 1 min)"
+
+  # giip #2949: CQE (Command Queue Engine) poller — 같은 giipAgent Linux 환경 사용
+  # giipCQE.sh는 ../giipAgent.cnf (=$GIIP_AGENT_DIR의 부모 = /work/giipAgent.cnf)에서 설정 읽음
+  mkdir -p /tmp/giip_cqe_logs
+  echo "*/5 * * * * root cd $GIIP_AGENT_DIR && bash cqe/giipCQE.sh >> /tmp/giip_cqe_logs/cqe_cron.log 2>&1" > /etc/cron.d/giip-cqe
+  chmod 0644 /etc/cron.d/giip-cqe
+  echo "[entrypoint] registered giipCQE.sh cron (every 5 min)"
 else
   echo "[entrypoint] GIIP_ENABLE_AGENT=false or GIIP_SK not set — skipping giip agent (container state will not be visible in GIIP web)"
 fi
