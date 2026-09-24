@@ -319,14 +319,18 @@ function Send-GissueLssnHeartbeat($hbCfg) {
             return
         }
         $sk = $skMatch.Groups[1].Value
-        $jsonData = "{""hostname"": ""$($hbCfg.Hostname)"", ""os"": ""$env:OS ($env:COMPUTERNAME Task Scheduler)"", ""agent_version"": ""run-gissue-claude.ps1""}"
+        # giipApiSk2 는 jsondata 의 문자열 값(hostname 등)을 다시 JSON 으로 파싱해 400 "Malformed JSON in
+        # query parameter" 로 거부한다(2026-09-24 실측). giipApiSk4 는 text 의 필드명(hostname/jsondata)을
+        # jsondata 의 같은 이름 키로 바인딩하므로, SP 의 @jsondata 인자는 JSON 문자열로 한 번 더 감싼다.
+        $inner = @{ hostname = $hbCfg.Hostname; os = "$env:OS ($env:COMPUTERNAME Task Scheduler)"; agent_version = 'run-gissue-claude.ps1' } | ConvertTo-Json -Compress
+        $jsonData = @{ hostname = $hbCfg.Hostname; jsondata = $inner } | ConvertTo-Json -Compress
         $form = New-Object System.Collections.Specialized.NameValueCollection
         $form.Add('text', 'AgentAutoRegister hostname jsondata')
         $form.Add('token', $sk)
         $form.Add('jsondata', $jsonData)
         $wc = New-Object System.Net.WebClient
         $wc.Encoding = [System.Text.Encoding]::UTF8
-        $resp = $wc.UploadValues($ApiSk2Url, 'POST', $form)
+        $resp = $wc.UploadValues(($ApiSk2Url -replace 'giipApiSk2$', 'giipApiSk4'), 'POST', $form)
         $respText = [System.Text.Encoding]::UTF8.GetString($resp)
         Write-Output "[LSSN-HEARTBEAT] OK: $respText"
     } catch {
