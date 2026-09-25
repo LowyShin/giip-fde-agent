@@ -355,12 +355,13 @@ function Send-GissueRunHistory {
         try {
             $utf8NoBom = New-Object System.Text.UTF8Encoding $false
             [System.IO.File]::WriteAllText($tmpFile, $jsondata, $utf8NoBom)
+            # giipApiSk2 는 이 호출을 400 "Malformed JSON in query parameter" 로 거부한다(2026-09-25 실측:
+            # usertoken 의 sk 값을 JSON 숫자로 파싱). giipAgentLinux kvsput 과 같은 giipApiSk4 + token 만 쓴다.
             $curlArgs = @(
-                '-s', '-X', 'POST', $ApiSk2Url,
+                '-s', '-X', 'POST', ($ApiSk2Url -replace 'giipApiSk2$', 'giipApiSk4'),
                 '-H', 'Content-Type: application/x-www-form-urlencoded',
                 '--data-urlencode', 'text=KVSPut kType kKey kFactor',
                 '--data-urlencode', "token=$Sk",
-                '--data-urlencode', "usertoken=$Sk",
                 '--data-urlencode', "jsondata@$tmpFile",
                 '--max-time', '20'
             )

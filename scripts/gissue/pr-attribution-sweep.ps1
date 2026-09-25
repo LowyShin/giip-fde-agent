@@ -193,6 +193,9 @@ Write-AttrLog "시작: Workdir=$Workdir, repos=$(@($repos | ForEach-Object { Spl
 $totalSweepers = 0; $totalAttrib = 0; $totalClosed = 0; $totalKept = 0; $totalSkipNoIntersect = 0; $totalWarn = 0
 
 foreach ($repo in $repos) {
+    # [giip #2504] 체크아웃 없는 `slug:OWNER/REPO` 항목은 로컬 git(no-op 판정·Push-Location)이 필요한
+    # 이 스윕에서 처리할 수 없다 — 건너뛴다(이전엔 Push-Location 'slug:...' 로 매번 예외).
+    if ("$repo" -match '^slug:') { Write-AttrLog "SKIP $repo — 로컬 체크아웃 없음"; continue }
     $originUrl = (git -C $repo remote get-url origin 2>$null)
     $slug = $null
     if ($originUrl -and "$originUrl" -match 'github\.com[:/]([^/]+/[^/]+?)(?:\.git)?\s*$') { $slug = $Matches[1] }
