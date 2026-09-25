@@ -364,7 +364,7 @@ function Send-GissueRunHistory {
                 '--data-urlencode', "jsondata@$tmpFile",
                 '--max-time', '20'
             )
-            $respRaw = (& curl.exe @curlArgs) -join "`n"
+            $respRaw = (& $script:GissueCurlExe @curlArgs) -join "`n"
             # 전체 JSON 파싱이 깨지더라도 RstVal 만 정규식으로 뽑아 판정한다.
             $rstVal = $null
             try {
@@ -393,7 +393,7 @@ function Invoke-GissuePrGateSweep($csn, $workdir) {
     $sk = Get-GissueCsnSk $csn
     if (-not $sk) { Write-Log $csn "[PR-GATE-SWEEP] SKIP: SK 없음(giip-accounts.json 에 csn=$csn 미등록)"; return }
     try {
-        $out = & powershell -NoProfile -ExecutionPolicy Bypass -File $SweepScript -Csn $csn -Workdir $workdir -ApiKey $sk 2>&1
+        $out = & $script:GissuePsExe -NoProfile -ExecutionPolicy Bypass -File $SweepScript -Csn $csn -Workdir $workdir -ApiKey $sk 2>&1
         foreach ($line in @($out)) { if ("$line".Trim()) { Write-Log $csn "[PR-GATE-SWEEP] $line" } }
     } catch {
         Write-Log $csn "[PR-GATE-SWEEP] 오류: $($_.Exception.Message)"
@@ -407,7 +407,7 @@ function Invoke-GissueReviewDoneAudit($csn, $workdir) {
     $sk = Get-GissueCsnSk $csn
     if (-not $sk) { Write-Log $csn "[REVIEW-DONE-AUDIT] SKIP: SK 없음(giip-accounts.json 에 csn=$csn 미등록)"; return }
     try {
-        $out = & powershell -NoProfile -ExecutionPolicy Bypass -File $ReviewDoneAuditScript -Csn $csn -Workdir $workdir -ApiKey $sk -Live 2>&1
+        $out = & $script:GissuePsExe -NoProfile -ExecutionPolicy Bypass -File $ReviewDoneAuditScript -Csn $csn -Workdir $workdir -ApiKey $sk -Live 2>&1
         foreach ($line in @($out)) { if ("$line".Trim()) { Write-Log $csn "[REVIEW-DONE-AUDIT] $line" } }
     } catch {
         Write-Log $csn "[REVIEW-DONE-AUDIT] 오류: $($_.Exception.Message)"
@@ -421,7 +421,7 @@ function Invoke-GissuePrAttributionSweep($csn, $workdir) {
     $sk = Get-GissueCsnSk $csn
     if (-not $sk) { Write-Log $csn "[PR-ATTRIBUTION] SKIP: SK 없음(giip-accounts.json 에 csn=$csn 미등록)"; return }
     try {
-        $out = & powershell -NoProfile -ExecutionPolicy Bypass -File $PrAttributionScript -Workdir $workdir -ApiKey $sk -SinceHours 6 -Live 2>&1
+        $out = & $script:GissuePsExe -NoProfile -ExecutionPolicy Bypass -File $PrAttributionScript -Workdir $workdir -ApiKey $sk -SinceHours 6 -Live 2>&1
         foreach ($line in @($out)) { if ("$line".Trim()) { Write-Log $csn "[PR-ATTRIBUTION] $line" } }
     } catch {
         Write-Log $csn "[PR-ATTRIBUTION] 오류: $($_.Exception.Message)"
@@ -1188,6 +1188,10 @@ $HeartbeatCfg = Get-GissueHeartbeatConfig $mapRoot
 # 없다. PowerShell 5.1 에는 $IsWindows 자동변수가 없으므로(=$null=falsy) "변수가 없으면 Windows"로
 # 판정해야 기존 Windows 경로가 무조건 그대로 유지된다. Linux 경로만 /proc 직접 파싱으로 새로 추가.
 $script:GissueIsWindowsHost = if (Get-Variable -Name IsWindows -Scope Global -ErrorAction SilentlyContinue) { [bool]$IsWindows } else { $true }
+# Linux(pwsh/Docker)에는 `powershell`·`curl.exe` 가 없어 하위 스크립트 호출과 실행이력 발행이 매번
+# "is not recognized" 로 실패했다(2026-09-25 실측). OS 에 맞는 실행파일 이름을 한 곳에서 정한다.
+$script:GissuePsExe   = if ($script:GissueIsWindowsHost) { 'powershell' } else { 'pwsh' }
+$script:GissueCurlExe = if ($script:GissueIsWindowsHost) { 'curl.exe' } else { 'curl' }
 
 # Phase 0 reaper 의 "헤드리스/대화형" 판정 순수함수(giip #2960). 정본은 reaper-lib.ps1 —
 # 이유·테스트는 그 파일 헤더와 tests/test-reaper-interactive-skip.ps1 참조.
@@ -1633,7 +1637,7 @@ try {
             if ($g.requiredFiles)        { $guardArgs += @('-RequiredFiles', (@($g.requiredFiles) -join ',')) }
             if ($g.requiredPsDir)        { $guardArgs += @('-RequiredPsDir', "$($g.requiredPsDir)") }
             if ($g.validateDbConfig -eq $true) { $guardArgs += '-ValidateDbConfig' }
-            $guardOut = & powershell @guardArgs 2>&1
+            $guardOut = & $script:GissuePsExe @guardArgs 2>&1
             $guardLines = @($guardOut)
             $resultLine = ($guardLines | Where-Object { "$_" -match '^RESULT:' } | Select-Object -Last 1)
             foreach ($gl in $guardLines) {
