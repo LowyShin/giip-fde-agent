@@ -31,3 +31,6 @@ scripts/gissue/audit-results/
 
 # Docker 배포 — csn/sk/login_id 등 실값이 들어가는 로컬 .env, .example 만 추적
 docker/.env
+
+# per-instance env files written by the giip Docker bootstrap script (contain instance tokens)
+docker/instances/
