@@ -61,6 +61,34 @@ REPO_DIR="$REPO_DIR" node /setup-registration.js
 
 mkdir -p "$REPO_DIR/scripts/gissue/logs"
 
+# ── giip #3405: resolve this machine's CSN from the single source of truth (SSOT) ──
+# SSOT = scripts/gissue/csn-projects.json 의 단일 csn 키. GIIP_CSN 환경변수는 최초 기동 때 이 파일을
+# 만드는 입력일 뿐이라, 클론 후 csn-projects.json 만 새 CSN 으로 바꾸고 컨테이너를 재기동하면(env 는 옛
+# 값 유지) 둘이 어긋난다(caci-skp 인시던트: cron=47 인데 매핑=70434 로 조용히 어긋남). 그래서 아래
+# 스케줄러 cron 의 -OnlyCsn 은 env 가 아니라 이 SSOT 에서 파생하고, env 와 SSOT 가 다르면 경고한다.
+CSN_MAP_FILE="$REPO_DIR/scripts/gissue/csn-projects.json"
+SSOT_CSN=""
+if [ -f "$CSN_MAP_FILE" ]; then
+  if SSOT_CSN="$(node "$REPO_DIR/scripts/gissue/lib/ssot-csn.js" "$CSN_MAP_FILE")"; then
+    echo "[entrypoint] SSOT CSN (csn-projects.json) = $SSOT_CSN"
+  else
+    SSOT_CSN=""
+    echo "[entrypoint] WARN: csn-projects.json 에서 단일 CSN 을 확정하지 못함 — GIIP_CSN 폴백"
+    if [ "${GIIP_STRICT_CSN:-false}" = "true" ]; then
+      echo "[entrypoint] GIIP_STRICT_CSN=true — CSN 정합성 확정 실패로 기동 중단"; exit 1
+    fi
+  fi
+fi
+# guard: env(GIIP_CSN) 와 SSOT 가 다르면 clone+swap 후 stale env 다 (giip #3405 caci-skp 사례)
+if [ -n "${GIIP_CSN:-}" ] && [ -n "$SSOT_CSN" ] && [ "$GIIP_CSN" != "$SSOT_CSN" ]; then
+  echo "[entrypoint] WARN: GIIP_CSN(env)=$GIIP_CSN != csn-projects.json csn=$SSOT_CSN — 클론 후 env 가 stale 합니다. csn-projects.json(SSOT) 값을 사용합니다."
+  if [ "${GIIP_STRICT_CSN:-false}" = "true" ]; then
+    echo "[entrypoint] GIIP_STRICT_CSN=true — CSN 불일치로 기동 중단"; exit 1
+  fi
+fi
+# 최종 사용할 CSN: SSOT 우선, 없으면(csn-projects.json 이 아직 없는 최초 기동 등) GIIP_CSN 폴백
+EFFECTIVE_CSN="${SSOT_CSN:-${GIIP_CSN:-}}"
+
 # ── slack-bot (optional — only if Slack tokens are supplied) ──
 if [ -n "${SLACK_BOT_TOKEN:-}" ] && [ -n "${SLACK_APP_TOKEN:-}" ]; then
   echo "[entrypoint] starting slack-bot via pm2"
@@ -73,8 +101,8 @@ fi
 # ── hourly-issue-scheduler (optional — cron replaces Windows Task Scheduler) ──
 if [ "${GIIP_ENABLE_SCHEDULER:-true}" = "true" ]; then
   ONLY_CSN_ARG=""
-  if [ -n "${GIIP_CSN:-}" ]; then
-    ONLY_CSN_ARG=" -OnlyCsn ${GIIP_CSN}"
+  if [ -n "${EFFECTIVE_CSN:-}" ]; then
+    ONLY_CSN_ARG=" -OnlyCsn ${EFFECTIVE_CSN}"
   fi
   CRON_CMD="pwsh -NoProfile -NonInteractive -File \"$REPO_DIR/scripts/gissue/run-gissue-claude.ps1\"${ONLY_CSN_ARG} >> $REPO_DIR/scripts/gissue/logs/cron.log 2>&1"
   {
@@ -85,6 +113,14 @@ if [ "${GIIP_ENABLE_SCHEDULER:-true}" = "true" ]; then
   } > /etc/cron.d/gissue-scheduler
   chmod 0644 /etc/cron.d/gissue-scheduler
   echo "[entrypoint] registered issue-scheduler cron (every 20 min: :07/:27/:47, pwsh) via /etc/cron.d"
+  # giip #3405: 방금 쓴 cron 의 -OnlyCsn 이 SSOT 와 일치하는지 재검증(요구사항 2 — cron ↔ csn-projects.json 가드)
+  if [ -n "$SSOT_CSN" ]; then
+    CRON_CSN="$(grep -oE '\-OnlyCsn [0-9]+' /etc/cron.d/gissue-scheduler | grep -oE '[0-9]+' || true)"
+    if [ "$CRON_CSN" != "$SSOT_CSN" ]; then
+      echo "[entrypoint] WARN: gissue-scheduler cron -OnlyCsn=$CRON_CSN != csn-projects.json csn=$SSOT_CSN"
+      [ "${GIIP_STRICT_CSN:-false}" = "true" ] && { echo "[entrypoint] GIIP_STRICT_CSN=true — cron/SSOT 불일치로 기동 중단"; exit 1; }
+    fi
+  fi
 else
   echo "[entrypoint] GIIP_ENABLE_SCHEDULER=false — skipping scheduler cron"
 fi
@@ -154,6 +190,12 @@ fi
 if ls /etc/cron.d/* >/dev/null 2>&1; then
   cron
   echo "[entrypoint] cron daemon started"
+fi
+
+# giip #3405: 최종 3개 스케줄(giip-agent/giip-cqe/gissue-scheduler)의 CSN 정합성 자기점검(비차단).
+# 경고만 출력하고 컨테이너는 계속 뜬다 — GIIP_STRICT_CSN=true 면 위 개별 가드에서 이미 기동을 막는다.
+if [ -f "$REPO_DIR/scripts/gissue/check-csn-consistency.sh" ]; then
+  bash "$REPO_DIR/scripts/gissue/check-csn-consistency.sh" || echo "[entrypoint] WARN: CSN 정합성 점검에서 경고가 있습니다(위 로그 확인)."
 fi
 
 echo "[entrypoint] ready. tailing logs."
