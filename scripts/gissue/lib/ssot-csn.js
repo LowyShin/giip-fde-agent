@@ -5,7 +5,7 @@
  * 이 docker 배포 모델은 "컨테이너 1개 = 프로젝트(CSN) 1개"다. 그래서 이 머신이 처리하는 CSN 은
  * scripts/gissue/csn-projects.json 의 단일 최상위 `csn` 키가 정본(SSOT)이다. GIIP_CSN 환경변수는
  * 최초 기동 때 이 파일을 생성하는 입력일 뿐, 컨테이너 프로세스에 박혀 클론+CSN 교체 후 stale 된다
- * (giip #3405 caci-skp 인시던트: cron=47 인데 매핑=70434 로 조용히 어긋남).
+ * (giip #3405: 최초 기동 CSN 이 cron 에 박힌 채 매핑만 새 CSN 으로 바뀌어 조용히 어긋나는 사고 방지).
  *
  * entrypoint.sh 와 check-csn-consistency.sh 가 공용으로 이 파서를 써서 "이 머신의 CSN" 을 한 곳
  * (csn-projects.json)에서만 읽는다.

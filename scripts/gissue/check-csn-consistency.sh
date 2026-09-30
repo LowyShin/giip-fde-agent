@@ -94,7 +94,7 @@ else
   elif [ "$cron_csn" = "$SSOT_CSN" ]; then
     pass "일치 (-OnlyCsn=$cron_csn)"
   else
-    faill "불일치: cron -OnlyCsn=$cron_csn != SSOT=$SSOT_CSN (이번 caci-skp 인시던트 패턴 — 컨테이너 재기동으로 entrypoint 가 SSOT 기준으로 다시 생성)"
+    faill "불일치: cron -OnlyCsn=$cron_csn != SSOT=$SSOT_CSN (최초 기동 CSN 이 cron 에 박힌 stale 패턴 — 컨테이너 재기동으로 entrypoint 가 SSOT 기준으로 다시 생성)"
   fi
 fi
 

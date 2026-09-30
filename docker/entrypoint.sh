@@ -64,8 +64,8 @@ mkdir -p "$REPO_DIR/scripts/gissue/logs"
 # ── giip #3405: resolve this machine's CSN from the single source of truth (SSOT) ──
 # SSOT = scripts/gissue/csn-projects.json 의 단일 csn 키. GIIP_CSN 환경변수는 최초 기동 때 이 파일을
 # 만드는 입력일 뿐이라, 클론 후 csn-projects.json 만 새 CSN 으로 바꾸고 컨테이너를 재기동하면(env 는 옛
-# 값 유지) 둘이 어긋난다(caci-skp 인시던트: cron=47 인데 매핑=70434 로 조용히 어긋남). 그래서 아래
-# 스케줄러 cron 의 -OnlyCsn 은 env 가 아니라 이 SSOT 에서 파생하고, env 와 SSOT 가 다르면 경고한다.
+# 값 유지) 둘이 어긋난다(최초 기동 CSN 이 cron 에 박힌 채 매핑만 새 CSN 으로 바뀌어 조용히 어긋남).
+# 그래서 아래 스케줄러 cron 의 -OnlyCsn 은 env 가 아니라 이 SSOT 에서 파생하고, env 와 SSOT 가 다르면 경고한다.
 CSN_MAP_FILE="$REPO_DIR/scripts/gissue/csn-projects.json"
 SSOT_CSN=""
 if [ -f "$CSN_MAP_FILE" ]; then
@@ -79,7 +79,7 @@ if [ -f "$CSN_MAP_FILE" ]; then
     fi
   fi
 fi
-# guard: env(GIIP_CSN) 와 SSOT 가 다르면 clone+swap 후 stale env 다 (giip #3405 caci-skp 사례)
+# guard: env(GIIP_CSN) 와 SSOT 가 다르면 clone+swap 후 stale env 다 (giip #3405)
 if [ -n "${GIIP_CSN:-}" ] && [ -n "$SSOT_CSN" ] && [ "$GIIP_CSN" != "$SSOT_CSN" ]; then
   echo "[entrypoint] WARN: GIIP_CSN(env)=$GIIP_CSN != csn-projects.json csn=$SSOT_CSN — 클론 후 env 가 stale 합니다. csn-projects.json(SSOT) 값을 사용합니다."
   if [ "${GIIP_STRICT_CSN:-false}" = "true" ]; then
