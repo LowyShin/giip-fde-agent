@@ -54,6 +54,25 @@ else
   sk_val="$(grep -oE '^sk="?[^"]*"?' "$GIIP_AGENT_CNF" | head -1 | sed -E 's/^sk="?([^"]*)"?/\1/')"
   lssn_val="$(grep -oE '^lssn="?[^"]*"?' "$GIIP_AGENT_CNF" | head -1 | sed -E 's/^lssn="?([^"]*)"?/\1/')"
   if [ -n "$sk_val" ]; then pass "sk 설정됨"; else faill "sk 비어 있음 ($GIIP_AGENT_CNF)"; fi
+  # sk 가 SSOT CSN 의 정본(giip-accounts.json)과 일치하는지 — "sk 비어있지 않음"만으로는
+  # giipAgent.cnf 가 다른 CSN 의 sk 로 조용히 어긋나는 드리프트를 못 잡는다(giipfaw 가 411
+  # "No User information" 을 돌려줘도 체크는 통과했던 구멍).
+  ACCOUNTS_FILE="$REPO_DIR/slack-bot/.secrets/giip-accounts.json"
+  SSOT_SK_JS="$REPO_DIR/scripts/gissue/lib/ssot-sk.js"
+  if [ -n "$sk_val" ] && [ -n "$SSOT_CSN" ]; then
+    if [ ! -f "$ACCOUNTS_FILE" ]; then
+      warn "giip-accounts.json 없음($ACCOUNTS_FILE) — sk↔SSOT 대조 생략(최초 부팅 전이면 정상)"
+    else
+      ssot_sk="$(node "$SSOT_SK_JS" "$ACCOUNTS_FILE" "$SSOT_CSN" 2>/tmp/.ssot_sk_err || true)"
+      if [ -z "$ssot_sk" ]; then
+        warn "giip-accounts.json 에서 csn=$SSOT_CSN 의 sk 를 찾지 못함: $(cat /tmp/.ssot_sk_err 2>/dev/null) — sk↔SSOT 대조 생략"
+      elif [ "$sk_val" = "$ssot_sk" ]; then
+        pass "sk 가 SSOT 정본과 일치 (csn=$SSOT_CSN)"
+      else
+        faill "sk 불일치: giipAgent.cnf 의 sk 가 giip-accounts.json(csn=$SSOT_CSN) 의 정본 sk 와 다릅니다 — 컨테이너 재기동으로 entrypoint 가 SSOT 기준으로 sk 를 재파생/갱신하게 하세요."
+      fi
+    fi
+  fi
   if [[ "$lssn_val" =~ ^[1-9][0-9]*$ ]]; then
     pass "lssn 등록됨 (lssn=$lssn_val)"
   else

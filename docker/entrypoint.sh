@@ -131,7 +131,25 @@ fi
 # 여기서 clone/구성해 매분 폴링시키면, 이 컨테이너가 자기 CSN 아래 lssn 하나로 등록되고,
 # lsvrlist/lsvrdetail(giipv3)에서 heartbeat(tLSvr.lsChkdt)로 "지금 살아있는지"를 그대로 볼 수 있다
 # — 새 상태 화면을 만든 게 아니라 이미 있는 서버 모니터링 화면을 그대로 재사용한다.
-if [ "${GIIP_ENABLE_AGENT:-true}" = "true" ] && [ -n "${GIIP_SK:-}" ]; then
+#
+# giipAgent.cnf 의 SK 는 giip-fde-agent 가 먼저 설치되며 materialize 한 정본
+# (slack-bot/.secrets/giip-accounts.json)에서 SSOT CSN(EFFECTIVE_CSN)으로 파생한다(lib/ssot-sk.js).
+# GIIP_SK 환경변수는 최초 부팅 seed 일 뿐이라 클론+CSN 교체 후 stale 될 수 있으므로, 정본에서
+# 끌어오는 쪽을 우선하고 못 구하면 GIIP_SK 로 폴백한다 — ssot-csn.js 가 CSN 에 대해 하는 역할의 SK 판.
+# CSN 은 코드에 박지 않고 EFFECTIVE_CSN(=SSOT) 을 그대로 넘긴다.
+AGENT_SK=""
+GIIP_ACCOUNTS_FILE="$REPO_DIR/slack-bot/.secrets/giip-accounts.json"
+if [ -n "${EFFECTIVE_CSN:-}" ] && [ -f "$GIIP_ACCOUNTS_FILE" ]; then
+  AGENT_SK="$(node "$REPO_DIR/scripts/gissue/lib/ssot-sk.js" "$GIIP_ACCOUNTS_FILE" "$EFFECTIVE_CSN" 2>/dev/null || true)"
+fi
+if [ -n "$AGENT_SK" ]; then
+  echo "[entrypoint] giipAgent SK: giip-fde-agent 정본에서 파생(giip-accounts.json, csn=$EFFECTIVE_CSN)"
+else
+  AGENT_SK="${GIIP_SK:-}"
+  [ -n "$AGENT_SK" ] && echo "[entrypoint] giipAgent SK: SSOT 미해결 — GIIP_SK(env) 폴백 사용"
+fi
+
+if [ "${GIIP_ENABLE_AGENT:-true}" = "true" ] && [ -n "$AGENT_SK" ]; then
   GIIP_AGENT_DIR="${GIIP_AGENT_DIR:-/work/giipAgentLinux}"
   GIIP_AGENT_URL="${GIIP_AGENT_URL:-https://github.com/LowyShin/giipAgentLinux.git}"
   GIIP_AGENT_CNF="$(dirname "$GIIP_AGENT_DIR")/giipAgent.cnf"
@@ -161,7 +179,7 @@ if [ "${GIIP_ENABLE_AGENT:-true}" = "true" ] && [ -n "${GIIP_SK:-}" ]; then
       fi
     fi
     cat > "$GIIP_AGENT_CNF" <<CNFEOF
-sk="$GIIP_SK"
+sk="$AGENT_SK"
 lssn="$lssn_val"
 giipagentdelay="60"
 apiaddrv2="https://giipfaw.azurewebsites.net/api/giipApiSk2"
@@ -169,7 +187,23 @@ apiaddr="https://giipasp.azurewebsites.net"
 CNFEOF
     echo "[entrypoint] wrote $GIIP_AGENT_CNF (lssn=$lssn_val)"
   else
-    echo "[entrypoint] $GIIP_AGENT_CNF already exists — keeping it (may already hold an assigned lssn)"
+    # 이미 있는 cnf 의 sk 가 SSOT 정본과 어긋나면(클론+CSN/SK 교체 후 stale) SSOT 값으로 갱신한다.
+    # lssn 등 다른 줄은 보존하고 sk= 줄만 교체하며, 내용만 덮어써 inode 를 유지한다
+    # (giipAgent.cnf 를 단일 파일 bind mount 해도 깨지지 않게 — persist_lssn 과 같은 이유).
+    cur_sk="$(grep -oE '^sk="?[^"]*"?' "$GIIP_AGENT_CNF" | head -1 | sed -E 's/^sk="?([^"]*)"?/\1/')"
+    if [ -n "$AGENT_SK" ] && [ "$cur_sk" != "$AGENT_SK" ]; then
+      echo "[entrypoint] WARN: $GIIP_AGENT_CNF 의 sk 가 SSOT(csn=$EFFECTIVE_CSN) 와 다릅니다"
+      if [ "${GIIP_STRICT_CSN:-false}" = "true" ]; then
+        echo "[entrypoint] GIIP_STRICT_CSN=true — giipAgent.cnf sk/SSOT 불일치로 기동 중단"; exit 1
+      fi
+      tmp_cnf="$(mktemp)"
+      sed -E "s|^sk=.*|sk=\"$AGENT_SK\"|" "$GIIP_AGENT_CNF" > "$tmp_cnf"
+      cat "$tmp_cnf" > "$GIIP_AGENT_CNF"
+      rm -f "$tmp_cnf"
+      echo "[entrypoint] $GIIP_AGENT_CNF sk 를 SSOT 정본 값으로 갱신(lssn 등 보존)"
+    else
+      echo "[entrypoint] $GIIP_AGENT_CNF already exists — sk 가 SSOT 와 일치(또는 SSOT 미해결) — 그대로 둠"
+    fi
   fi
 
   echo "* * * * * root cd $GIIP_AGENT_DIR && bash giipAgent3.sh >> $GIIP_AGENT_DIR/log/cron.log 2>&1" > /etc/cron.d/giip-agent
@@ -183,7 +217,7 @@ CNFEOF
   chmod 0644 /etc/cron.d/giip-cqe
   echo "[entrypoint] registered giipCQE.sh cron (every 5 min)"
 else
-  echo "[entrypoint] GIIP_ENABLE_AGENT=false or GIIP_SK not set — skipping giip agent (container state will not be visible in GIIP web)"
+  echo "[entrypoint] GIIP_ENABLE_AGENT=false or no SK resolvable (SSOT giip-accounts.json / GIIP_SK) — skipping giip agent (container state will not be visible in GIIP web)"
 fi
 
 # cron.d 파일이 하나라도 등록됐으면 cron 데몬을 한 번만 기동한다(중복 기동은 lock 에러).
