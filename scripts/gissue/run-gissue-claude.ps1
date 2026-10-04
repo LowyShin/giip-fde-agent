@@ -550,6 +550,8 @@ if (-not (Test-Path -LiteralPath $GiipAccountsFile)) {
         ""
     )
 }
+# cron 의 기본 PATH 는 /usr/bin:/bin 뿐이라 /usr/local/bin 의 gh 를 못 찾는다(giip #3535). 자식 프로세스도 상속한다.
+if ($IsLinux -and ($env:PATH -split ':') -notcontains '/usr/local/bin') { $env:PATH = "/usr/local/bin:$env:PATH" }
 # (3) 외부 실행파일 — 이 러너는 node(목록/큐 조회) / bash(get-issue.sh) / gh(PR 조회·수정) 에
 #     의존한다. PATH 에 없으면 그 단계만 조용히 실패하므로, 시작 시 한 번 명시적으로 알린다.
 foreach ($dep in @(
@@ -1486,7 +1488,7 @@ function Remove-GissueOrphanWorktrees($csn, $workdir) {
                 continue
             }
             try {
-                $emptyDir = Join-Path $env:TEMP ("gissue_orphanwt_empty_{0}" -f ([guid]::NewGuid().ToString('N')))
+                $emptyDir = Join-Path ([System.IO.Path]::GetTempPath()) ("gissue_orphanwt_empty_{0}" -f ([guid]::NewGuid().ToString('N')))
                 New-Item -ItemType Directory -Path $emptyDir -Force | Out-Null
                 try {
                     robocopy $emptyDir $c.Path /MIR /NFL /NDL /NJH /NJS /NC /NS /NP | Out-Null
@@ -2116,7 +2118,7 @@ foreach ($csn in $map.PSObject.Properties.Name) {
                 if (-not $sk) { return }
                 & node (Join-Path $root 'lib\check-csn.js') $isn $sk $apiBase $expectedCsn > $null 2>&1
                 if ($LASTEXITCODE -eq 1) { return }  # 명백한 CSN 불일치 — 쓰지 않는다(조회 실패는 exit 0, fail-open)
-                $tmp = Join-Path $env:TEMP ("gissue_watchdog_note_{0}_{1}.txt" -f $isn, [guid]::NewGuid().ToString('N'))
+                $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("gissue_watchdog_note_{0}_{1}.txt" -f $isn, [guid]::NewGuid().ToString('N'))
                 try {
                     [System.IO.File]::WriteAllText($tmp, $note, (New-Object System.Text.UTF8Encoding $true))
                     & node (Join-Path $root 'lib\post-comment.js') $isn "@$tmp" $sk $apiBase 'note' 2>&1 | Out-Null
@@ -2891,7 +2893,7 @@ ${function:Invoke-GissueEngine}
                     $timeboxGitSnapshot = try { (git -C $workdir status --short 2>&1 | Out-String) } catch { "(git status 캡처 실패: $($_.Exception.Message))" }
                     $timeboxFollowupTitle = "[후속] $($issue.Title) - ${issueEngineDeadlineMin}분 캡 초과 잔여 작업 (원본 giip #$($issue.Isn))"
                     $timeboxFollowupBody = "giip #$($issue.Isn) 처리가 시간 캡(${issueEngineDeadlineMin}분)을 초과해 run-gissue-claude.ps1(giip #1565)이 강제 정리했습니다.`n`n원본 이슈 번호: $($issue.Isn)`n원본 제목: $($issue.Title)`n원본 상태(캡 초과 시점): $($issue.Status)`n`nGit 워킹 디렉토리 상태 스냅샷($workdir):`n$timeboxGitSnapshot"
-                    $timeboxTmp = Join-Path $env:TEMP ("gissue_timebox_followup_{0}_{1}.txt" -f $issue.Isn, [guid]::NewGuid().ToString('N'))
+                    $timeboxTmp = Join-Path ([System.IO.Path]::GetTempPath()) ("gissue_timebox_followup_{0}_{1}.txt" -f $issue.Isn, [guid]::NewGuid().ToString('N'))
                     $timeboxNewIsn = $null
                     $timeboxRegOut = ''
                     try {

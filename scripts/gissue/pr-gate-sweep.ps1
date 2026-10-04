@@ -160,7 +160,7 @@ function Invoke-GateRevert($isn, $marker, $author, $note, $logLabel) {
         Write-SweepLog "[DRYRUN] REVERT isn=$isn REVIEW→READY ($logLabel)"
         return
     }
-    $tmp = Join-Path $env:TEMP ("gissue_{0}_note_{1}_{2}.txt" -f $author, $isn, [guid]::NewGuid().ToString('N'))
+    $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("gissue_{0}_note_{1}_{2}.txt" -f $author, $isn, [guid]::NewGuid().ToString('N'))
     try {
         [System.IO.File]::WriteAllText($tmp, $note, (New-Object System.Text.UTF8Encoding $true))
         & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $MgmtDir 'addIssueComment.ps1') -isn $isn -ContentFile $tmp -issuetype note -author $author 2>&1 | Out-Null
@@ -242,7 +242,7 @@ $historyText
         Write-SweepLog "[DRYRUN] ESCALATE isn=$isn REVIEW→NEEDS_DECISION + 사람 확인 필요 코멘트 ($gateLabel, 누적 $totalText 회: $countsText)"
         return
     }
-    $tmp = Join-Path $env:TEMP ("gissue_{0}_escalate_{1}_{2}.txt" -f $author, $isn, [guid]::NewGuid().ToString('N'))
+    $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("gissue_{0}_escalate_{1}_{2}.txt" -f $author, $isn, [guid]::NewGuid().ToString('N'))
     try {
         [System.IO.File]::WriteAllText($tmp, $note, (New-Object System.Text.UTF8Encoding $true))
         & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $MgmtDir 'addIssueComment.ps1') -isn $isn -ContentFile $tmp -issuetype note -author $author 2>&1 | Out-Null
