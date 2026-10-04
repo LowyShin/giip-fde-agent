@@ -295,7 +295,7 @@ function Write-AuditComment($isn, $body, $marker) {
     # 경고 한 줄만 내도 NativeCommandError 가 종료성 오류가 되어 감사 전체가 그 줄에서 죽는다.
     # 이 함수 스코프에서만 Continue 로 내리고 $LASTEXITCODE 로 성패를 직접 확인한다.
     $ErrorActionPreference = 'Continue'
-    $tmp = Join-Path $env:TEMP ("gissue_reviewaudit_note_{0}_{1}.txt" -f $isn, [guid]::NewGuid().ToString('N'))
+    $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("gissue_reviewaudit_note_{0}_{1}.txt" -f $isn, [guid]::NewGuid().ToString('N'))
     try {
         [System.IO.File]::WriteAllText($tmp, $body, (New-Object System.Text.UTF8Encoding $true))
         $global:LASTEXITCODE = 0
@@ -346,7 +346,7 @@ function New-FollowupIssueAudit($parentIsn, $title, $contentBody, $csn) {
     # 이전 구현(`... 2>&1`)은 node 가 경고 한 줄만 내도 NativeCommandError 로 죽었다. 이제 stdout 만
     # 캡처한다 — register-issue.js 는 등록 결과("giip issue #N")를 stdout 으로 낸다.
     $ErrorActionPreference = 'Continue'
-    $tmp = Join-Path $env:TEMP ("gissue_reviewaudit_followup_{0}_{1}.txt" -f $parentIsn, [guid]::NewGuid().ToString('N'))
+    $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("gissue_reviewaudit_followup_{0}_{1}.txt" -f $parentIsn, [guid]::NewGuid().ToString('N'))
     try {
         [System.IO.File]::WriteAllText($tmp, $contentBody, (New-Object System.Text.UTF8Encoding $true))
         $global:LASTEXITCODE = 127

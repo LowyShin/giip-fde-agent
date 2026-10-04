@@ -364,7 +364,7 @@ foreach ($t in $targets) {
         continue
     }
 
-    $tmp = Join-Path $env:TEMP ("gissue_gate_recheck_{0}_{1}.txt" -f $isn, [guid]::NewGuid().ToString('N'))
+    $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("gissue_gate_recheck_{0}_{1}.txt" -f $isn, [guid]::NewGuid().ToString('N'))
     try {
         # 본문은 반드시 UTF-8 파일로 넘긴다(커맨드라인 리터럴은 mojibake — giip #1030).
         [System.IO.File]::WriteAllText($tmp, $note, (New-Object System.Text.UTF8Encoding $true))

@@ -128,7 +128,7 @@ function Add-PrComment($repo, $slug, $prNumber, $body, $label) {
         return
     }
     $repoArgs = if ($slug) { @('--repo', $slug) } else { @() }
-    $tmp = Join-Path $env:TEMP ("gissue_attr_{0}_{1}.md" -f $prNumber, [guid]::NewGuid().ToString('N'))
+    $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("gissue_attr_{0}_{1}.md" -f $prNumber, [guid]::NewGuid().ToString('N'))
     try {
         [System.IO.File]::WriteAllText($tmp, $body, (New-Object System.Text.UTF8Encoding $false))
         Push-Location $repo
@@ -155,7 +155,7 @@ function Add-GiipIssueNote($isn, $body, $label) {
         Write-AttrLog "WARN: -ApiKey 가 없어 giip #$isn 이슈 코멘트를 건너뜁니다(PR 코멘트는 정상 등록됨)."
         return
     }
-    $tmp = Join-Path $env:TEMP ("gissue_attr_isn{0}_{1}.txt" -f $isn, [guid]::NewGuid().ToString('N'))
+    $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("gissue_attr_isn{0}_{1}.txt" -f $isn, [guid]::NewGuid().ToString('N'))
     try {
         [System.IO.File]::WriteAllText($tmp, $body, (New-Object System.Text.UTF8Encoding $true))
         # rule 63: 네이티브 호출에 `2>&1` 리다이렉트를 쓰지 않는다($ErrorActionPreference='Stop' 과
