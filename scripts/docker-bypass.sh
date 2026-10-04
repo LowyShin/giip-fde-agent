@@ -7,7 +7,9 @@
 #   2. 그 사용자로 전환해서 claude 를 bypass + remote-control 옵션으로 실행한다.
 #
 # 사용:
-#   git clone <giip-fde-agent> && cd giip-fde-agent && sh docker-bypass.sh
+#   git clone <giip-fde-agent> && cd giip-fde-agent && sh scripts/docker-bypass.sh
+#   claude 의 시작 디렉토리는 스크립트를 기동한 현재 위치(pwd)다. 다른 폴더에서 시작하려면:
+#   cd /work/giipprj-hub && sh /work/giip-fde-agent/scripts/docker-bypass.sh
 #
 # 환경변수:
 #   FDE_USER            전환할 일반 사용자 이름 (기본 dev)
@@ -26,7 +28,8 @@ FDE_USER="${FDE_USER:-dev}"
 FDE_REMOTE_CONTROL="${FDE_REMOTE_CONTROL:-1}"
 FDE_MODE="${FDE_MODE:-interactive}"
 FDE_RC_NAME="${FDE_RC_NAME:-giip-fde-agent-$(hostname)}"
-SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
+SELF_DIR="$(cd "$(dirname "$0")/.." && pwd)"   # scripts/ 의 상위 = 저장소 루트
+WORK_DIR="$(pwd)"                              # 스크립트를 기동한 위치 = claude 시작 디렉토리
 
 log() { echo "[docker-bypass] $*"; }
 die() { echo "[docker-bypass] ERROR: $*" >&2; exit 1; }
@@ -50,7 +53,7 @@ build_cmd() {
 # ---- 1) root 가 아니면 이미 일반 사용자: 바로 실행 ----
 if [ "$(id -u)" != "0" ]; then
   command -v claude >/dev/null 2>&1 || die "claude 를 찾을 수 없습니다 (PATH 확인 / 설치 필요)"
-  cd "$SELF_DIR"
+  cd "$WORK_DIR"
   eval "exec $(build_cmd)"
 fi
 
@@ -84,6 +87,9 @@ fi
 # ---- 4) 저장소 소유권 이전 ----
 log "소유권 이전: $SELF_DIR → $FDE_USER"
 chown -R "$FDE_USER" "$SELF_DIR"
+if [ "$WORK_DIR" != "$SELF_DIR" ]; then
+  log "시작 디렉토리: $WORK_DIR (소유권은 변경하지 않음; $FDE_USER 가 쓸 수 있어야 함)"
+fi
 
 # ---- 5) 일반 사용자로 전환해 실행 ----
 CMD="$(build_cmd)"
@@ -92,9 +98,9 @@ HOME_DIR="$(getent passwd "$FDE_USER" 2>/dev/null | cut -d: -f6 || true)"
 HOME_DIR="${HOME_DIR:-/home/$FDE_USER}"
 
 if command -v runuser >/dev/null 2>&1; then
-  exec runuser -u "$FDE_USER" -- env HOME="$HOME_DIR" sh -c "cd '$SELF_DIR' && exec $CMD"
+  exec runuser -u "$FDE_USER" -- env HOME="$HOME_DIR" sh -c "cd '$WORK_DIR' && exec $CMD"
 elif command -v su >/dev/null 2>&1; then
-  exec su "$FDE_USER" -s /bin/sh -c "HOME='$HOME_DIR'; cd '$SELF_DIR' && exec $CMD"
+  exec su "$FDE_USER" -s /bin/sh -c "HOME='$HOME_DIR'; cd '$WORK_DIR' && exec $CMD"
 else
   die "runuser/su 가 없어 사용자 전환이 불가능합니다"
 fi
