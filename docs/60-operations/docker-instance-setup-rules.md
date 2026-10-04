@@ -3,7 +3,8 @@
 > 새 docker 인스턴스를 만들 때 **반드시 지켜야 하는 모든 룰**을 이 한 파일에 모은다.
 > 사람이든 AI 에이전트든 이 문서만 따르면 인스턴스가 규칙에 맞게 서고, 인스턴스 간 정보가
 > 섞이지 않는다. 관련 코드: `docker/entrypoint.sh`, `docker/setup-registration.js`,
-> `docker/Dockerfile`, `scripts/gissue/lib/ssot-csn.js`, `scripts/gissue/check-csn-consistency.sh`.
+> `docker/Dockerfile`, `scripts/gissue/lib/ssot-csn.js`, `scripts/gissue/lib/ssot-sk.js`,
+> `scripts/gissue/check-csn-consistency.sh`.
 > 배포 동작 원리는 [`docker-deployment.md`](./docker-deployment.md) 참고.
 
 ## 0. 대전제 — giip-fde-agent 는 범용 프레임워크다
@@ -39,6 +40,12 @@ lssn·hostname)의 값을 **코드/문서/주석 어디에도 하드코딩하지
 
 `.env` 의 `GIIP_LOGIN_ID`/`GIIP_SK`/`GIIP_CSN` 등도 인스턴스별 값이며 커밋하지 않는다.
 
+> **sk 의 정본은 한 곳:** `giipAgent.cnf` 의 `sk` 는 사람이 매번 맞추는 값이 아니라, entrypoint 가
+> `slack-bot/.secrets/giip-accounts.json` 에서 **SSOT CSN 에 해당하는 계정의 sk** 를
+> (`scripts/gissue/lib/ssot-sk.js` 로) 파생해 쓴다. `GIIP_SK` env 는 최초 부팅 seed 일 뿐이고(이걸로
+> `giip-accounts.json` 이 만들어진다), 재기동마다 정본에서 다시 끌어오므로 clone+교체 후에도 어긋나지
+> 않는다. CSN 과 마찬가지로 sk 도 코드/cron 에 박지 않는다.
+
 ## 2. 3종 스케줄 (한 CSN 으로 자동 등록)
 
 컨테이너 안에서 아래 3종이 같은 CSN 으로 함께 돈다.
@@ -60,9 +67,12 @@ giip-cqe 자체 CSN 등록 코드는 giip #3404 참고(giip-agent 의 `giipAgent
 
 ### 방법 B — 기존 환경 복제 후 CSN 만 교체
 1. `csn-projects.json` 의 csn 키를 **이 인스턴스의 새 CSN 하나로** 교체(project/workdir 도).
-2. `giipAgent.cnf` 의 `sk` 를 이 인스턴스 값으로, `lssn` 은 `0` 으로 비워 새로 발급받게 한다.
-3. `slack-bot/.secrets/giip-accounts.json` 의 csn/sk 도 이 인스턴스 값으로(슬랙봇 사용 시).
-4. 컨테이너 재기동 → entrypoint 가 SSOT 기준으로 cron 재생성(옛 `GIIP_CSN` env 가 남아 있으면 경고 후 SSOT 사용).
+2. `slack-bot/.secrets/giip-accounts.json` 의 csn/sk 를 이 인스턴스 값으로 교체(= 이 CSN 의 sk 정본).
+3. `giipAgent.cnf` 의 `sk` 는 **직접 고치지 않아도 된다** — 재기동 시 entrypoint 가 §R3 의 정본
+   (giip-accounts.json, SSOT CSN)에서 파생해 다르면 자동 갱신한다. CSN 자체를 바꾼 경우에는 `lssn` 을
+   `0` 으로 비워 새 CSN 아래 새로 발급받게 한다(옛 CSN 의 lssn 은 새 sk 로 쓰면 giipfaw 가 거부).
+4. 컨테이너 재기동 → entrypoint 가 SSOT 기준으로 cron 재생성 + giipAgent.cnf sk 재파생(옛 `GIIP_CSN`
+   env 가 남아 있으면 경고 후 SSOT 사용).
 5. §4 정합성 점검.
 
 ## 4. 정합성 점검 (필수)
@@ -71,14 +81,19 @@ giip-cqe 자체 CSN 등록 코드는 giip #3404 참고(giip-agent 의 `giipAgent
 bash scripts/gissue/check-csn-consistency.sh            # 읽기 전용 점검
 bash scripts/gissue/check-csn-consistency.sh --register # lssn 미등록 시 giipAgent3.sh 자기등록까지
 ```
-점검: SSOT csn 1개 · `giipAgent.cnf` sk/lssn · `GIIP_CSN`(env)↔SSOT · gissue-scheduler cron `-OnlyCsn`↔SSOT ·
-3종 cron 파일 존재. 전부 PASS 여야 한다.
+점검: SSOT csn 1개 · `giipAgent.cnf` sk/lssn · **sk↔SSOT 정본 일치**(giip-accounts.json 의 SSOT CSN sk 와
+`giipAgent.cnf` sk 대조 — 다른 CSN 의 sk 로 조용히 어긋났는지) · `GIIP_CSN`(env)↔SSOT ·
+gissue-scheduler cron `-OnlyCsn`↔SSOT · 3종 cron 파일 존재. 전부 PASS 여야 한다.
 
 ## 5. entrypoint 자동 가드
 
 - `-OnlyCsn` 을 `GIIP_CSN` 이 아니라 SSOT(csn-projects.json)에서 파생.
 - `GIIP_CSN`(env)≠SSOT 이면 경고 후 SSOT 사용, cron 생성 뒤 `-OnlyCsn`↔SSOT 재검증, 부팅 후 자기점검.
-- **엄격 모드**: `.env` 에 `GIIP_STRICT_CSN=true` 를 주면 CSN 불일치/SSOT 확정 실패 시 **기동 자체를 실패**시킨다.
+- **giipAgent.cnf sk 재파생**: giip-agent 블록에서 sk 를 `giip-accounts.json`(SSOT CSN, `ssot-sk.js`)에서
+  파생해 쓰고, 기존 cnf 의 sk 가 정본과 다르면 **그 줄만 SSOT 값으로 갱신**한다(lssn 등 보존, inode 유지).
+  정본에서 못 구하면 `GIIP_SK` env 로 폴백.
+- **엄격 모드**: `.env` 에 `GIIP_STRICT_CSN=true` 를 주면 CSN 불일치/SSOT 확정 실패, **또는 giipAgent.cnf
+  sk↔SSOT 불일치** 시 **기동 자체를 실패**시킨다.
 
 ## 6. gh CLI (PR 자동화)
 
