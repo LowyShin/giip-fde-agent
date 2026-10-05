@@ -4,8 +4,8 @@
 # 하는 일:
 #   1. root 로 실행되면 일반 사용자(기본 dev)를 만들고 이 저장소 소유권을 넘긴다.
 #      (claude 는 root 에서 --dangerously-skip-permissions 를 거부한다)
-#      root 소유인 시작 디렉토리(및 FDE_GRANT_DIRS)는 소유자를 바꾸지 않고, 그 사용자를 root 그룹에
-#      넣은 뒤 그룹 읽기/쓰기 권한을 부여해서 읽고 쓸 수 있게 한다.
+#      root 소유인 /work 전체와 시작 디렉토리(FDE_GRANT_DIRS)는 소유자를 바꾸지 않고, 그 사용자를
+#      root 그룹에 넣은 뒤 그룹 읽기/쓰기 권한을 부여해서 읽고 쓸 수 있게 한다.
 #   2. 그 사용자로 전환해서, remote-control 을 쓰는 경우 claude.ai 로그인 여부를 먼저 확인한다.
 #      (미로그인이면 claude auth login 을 먼저 실행)
 #   3. claude 를 bypass + remote-control 옵션으로 실행한다.
@@ -22,8 +22,9 @@
 #                         interactive: claude --dangerously-skip-permissions --remote-control
 #                         server     : claude remote-control --permission-mode bypassPermissions
 #   FDE_RC_NAME         remote-control 세션 이름 (기본 giip-fde-agent-<hostname>)
-#   FDE_GRANT_DIRS      일반 사용자에게 읽기/쓰기 권한을 줄 디렉토리 목록, 공백 구분 (기본: 시작 디렉토리)
-#                       예) FDE_GRANT_DIRS="/work/caci-aqchat /work/giipprj-hub"
+#   FDE_GRANT_DIRS      일반 사용자에게 읽기/쓰기 권한을 줄 디렉토리 목록, 공백 구분
+#                       기본: /work (있으면) + 시작 디렉토리(/work 밖일 때)
+#                       예) FDE_GRANT_DIRS="/work /data/repos"
 #
 # 주의: remote-control 은 claude.ai 계정 로그인(claude auth login)이 필요하다.
 #       API key / setup-token 은 지원되지 않는다. 로그인은 이 스크립트가 전환한 사용자의 홈에 저장된다.
@@ -39,7 +40,16 @@ FDE_RC_NAME="${FDE_RC_NAME:-giip-fde-agent-$(hostname)}"
 SELF_DIR="$(cd "$(dirname "$0")/.." && pwd)"   # scripts/ 의 상위 = 저장소 루트
 SELF_PATH="$SELF_DIR/scripts/$(basename "$0")"
 WORK_DIR="$(pwd)"                              # 스크립트를 기동한 위치 = claude 시작 디렉토리
-FDE_GRANT_DIRS="${FDE_GRANT_DIRS:-$WORK_DIR}"
+if [ -z "${FDE_GRANT_DIRS:-}" ]; then
+  # 인스턴스의 작업 루트(/work) 하위는 모두 root 소유이므로 통째로 대상에 넣는다
+  FDE_GRANT_DIRS="$WORK_DIR"
+  if [ -d /work ]; then
+    case "$WORK_DIR/" in
+      /work/*) FDE_GRANT_DIRS="/work" ;;
+      *)       FDE_GRANT_DIRS="/work $WORK_DIR" ;;
+    esac
+  fi
+fi
 
 log() { echo "[docker-bypass] $*"; }
 die() { echo "[docker-bypass] ERROR: $*" >&2; exit 1; }
@@ -144,12 +154,17 @@ for d in $FDE_GRANT_DIRS; do
     /|/root|/etc|/usr|/bin|/sbin|/lib|/var|/home) die "시스템 디렉토리에는 권한을 부여하지 않습니다: $d" ;;
   esac
   [ "$d" = "$SELF_DIR" ] && continue          # 4) 에서 이미 소유권 이전됨
+  [ "$d" = "$HOME_DIR" ] && continue          # 사용자 홈은 원래 본인 소유
   log "읽기/쓰기 권한 부여: $d (그룹 $ROOT_GROUP, 소유자 유지)"
   chgrp -R "$ROOT_GROUP" "$d"
   chmod -R g+rwX "$d"
   # 소유자가 다른 저장소에서도 일반 사용자의 git 이 동작하도록 등록
+  # (대상 디렉토리 자체와, 그 바로 아래의 저장소들)
   if command -v git >/dev/null 2>&1; then
-    run_as "git config --global --get-all safe.directory | grep -qxF '$d' || git config --global --add safe.directory '$d'"
+    for r in "$d" "$d"/*; do
+      [ -e "$r/.git" ] || continue
+      run_as "git config --global --get-all safe.directory | grep -qxF '$r' || git config --global --add safe.directory '$r'"
+    done
   fi
 done
 
