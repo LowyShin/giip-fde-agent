@@ -22,7 +22,7 @@
 
 | 순서 | 수단 | 조건 |
 |---|---|---|
-| ① | `csn-lang-cache.peekCachedLangCode(csn)` — csn → `tCorp.cLang` 캐시(동기, 네트워크 없음) | csn 을 알고 캐시에 유효한 히트가 있을 때 최우선 |
+| ① | `csn-lang-cache.peekCachedLangCode(csn)` — csn → `tCorp.cLang` 캐시(동기, 네트워크 없음). 성공 조회 TTL(`SUCCESS_TTL_MS`)은 **24시간(1일)** — 캐시 미스일 때만 API 를 부르고, 성공 값은 하루에 한 번만 재조회한다. 실패 TTL(`FAILURE_TTL_MS`)은 1분 그대로(변경 없음). | csn 을 알고 캐시에 유효한 히트가 있을 때 최우선 |
 | ② | 수동 맵 `slack-bot/project-lang.json`(`loadProjectLangMap()`) | csn 미상, 캐시 미스, 또는 조회 실패(예: 403) 시 폴백 |
 | ③ | `DEFAULT_LANG`(`'ko'`, `slack-bot/config.js`) | ①②모두 없을 때 최종 폴백 |
 
@@ -73,6 +73,12 @@ function resolveLangForProject(projectName) {
   밖).
 - 캐시는 프로세스 재시작에도 살아남도록 `slack-bot/.csn-lang-cache.env`(git-ignored, dotenv 형식)에
   write-through 로 영속화된다(csn-lang-cache.js 18~22행).
+- 캐시 성공 TTL(`SUCCESS_TTL_MS`)은 **2026-10-05 사용자 지시로 5분 → 24시간(1일)으로 변경됐다.**
+  목적: CSN 언어 확인을 위해 매 트리거마다/5분마다 giipdb API(`pApiCorpLangGetbySk`)를 반복 호출하지
+  않고, 영속 캐시 파일(`.csn-lang-cache.env`)을 1차 소스로 삼아 캐시 미스일 때만 API 를 부르고
+  성공 값은 하루에 한 번만 재조회하도록 바꾼 것이다. `FAILURE_TTL_MS`(1분, 실패 캐시)는 변경하지
+  않았다 — 전송 오류가 길게 방치되지 않아야 하기 때문이다. 혼동 방지: 두 TTL 은 서로 다른 값이고
+  이번 변경은 성공 TTL 에만 적용된다.
 
 ## 상호참조
 

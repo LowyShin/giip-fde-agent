@@ -47,3 +47,20 @@ SK 로는 403 이 날 수 있는데, 이는 설계상 정상 폴백 경로로 �
 
 다음에 이 레포에서 언어 관련 코드를 만지거나 신규 프로젝트를 온보딩하는 에이전트/사람이
 `.agent/rules/52_project_language_from_csn.md` 를 먼저 읽고 기존 메커니즘을 재사용하도록 함.
+
+## 추가: 캐시 성공 TTL 5분 → 24시간 변경 (2026-10-05 사용자 직접 지시)
+
+사용자 요청: "언어 체크를 위해 매번 api호출하는게 아니고 언어 정보가 config파일에 없으면 api로
+불러와서 config파일을 기준으로 하루에 한 번만 업데이트 되게 해줘." 당시 이미 "캐시 미스 시
+API 호출 + `.csn-lang-cache.env` 영속화" 구조는 구현돼 있었으므로, 바꿀 것은
+`csn-lang-cache.js` 의 `SUCCESS_TTL_MS` 값 하나였다(5 * 60 * 1000 → 24 * 60 * 60 * 1000). 캐시
+조회/쓰기 로직, `peekCachedLangCode`/`prefetch` 인터페이스, `resolveLangForProject` 의 우선순위
+(①캐시→②수동맵→③DEFAULT_LANG)는 변경하지 않았다(surgical change, rule 10). `FAILURE_TTL_MS`
+(1분, 실패 캐시)도 그대로 유지했다 — 전송 오류를 길게 방치하지 않기 위해서다.
+
+목적/효과: 영속 캐시 파일(`.csn-lang-cache.env`)을 1차 소스로 삼아, 캐시가 채워진 상태에서는
+트리거마다/5분마다 giipdb API(`pApiCorpLangGetbySk`)를 다시 호출하지 않고 성공 값은 하루에 한
+번만 재조회한다. 함께 갱신한 파일: `slack-bot/csn-lang-cache.js`(28행),
+`.agent/rules/52_project_language_from_csn.md`(해석 순서 표 ①항목 + "알아둘 것" 섹션에 TTL 값과
+근거 날짜 명시). 이 변경에는 별도 giip 이슈 번호가 없다 — 근거는 "사용자 직접 지시(2026-10-05,
+이 대화)"뿐이다.
