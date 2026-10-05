@@ -153,6 +153,19 @@ function Write-SweepLog($msg) {
     Write-Output "[$ts] [pr-gate-sweep] $msg"
 }
 
+# [giip #3535/#3536] 코멘트·상태 쓰기는 giipfaw API(get-issue.sh)로만 한다. 예전엔 `& powershell` 로
+# giipdb/mgmt(DB 직접 접속) 스크립트를 불렀는데, Linux 호스트에는 powershell·sqlcmd·dbconfig.json 이 없고
+# 출력을 Out-Null 로 버려서 REVIEW→READY 되돌림과 NEEDS_DECISION 전이가 조용히 실패했다.
+# 실패하면 예외를 던져 "REVERTED" 같은 성공 로그가 거짓으로 찍히지 않게 한다.
+function Invoke-IssueWrite($isn, [string[]]$GetIssueArgs) {
+    $out = & bash (Join-Path $PSScriptRoot 'get-issue.sh') "$isn" "$Csn" @GetIssueArgs 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        $text = (($out | Out-String).Trim() -replace '\s+', ' ')
+        if ($text.Length -gt 300) { $text = $text.Substring(0, 300) }
+        throw "get-issue.sh 실패(isn=$isn, exit=$LASTEXITCODE): $text"
+    }
+}
+
 # 공통 되돌림 실행기(giip #1210, giip #2085 로 attempt/history 파라미터 추가) — REVIEW→READY, note
 # 코멘트, DryRun 로그만. 마커/작성자/본문/로그 라벨은 각 게이트가 넘긴다.
 function Invoke-GateRevert($isn, $marker, $author, $note, $logLabel) {
@@ -163,9 +176,11 @@ function Invoke-GateRevert($isn, $marker, $author, $note, $logLabel) {
     $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("gissue_{0}_note_{1}_{2}.txt" -f $author, $isn, [guid]::NewGuid().ToString('N'))
     try {
         [System.IO.File]::WriteAllText($tmp, $note, (New-Object System.Text.UTF8Encoding $true))
-        & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $MgmtDir 'addIssueComment.ps1') -isn $isn -ContentFile $tmp -issuetype note -author $author 2>&1 | Out-Null
-        & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $MgmtDir 'updateIssueStatus.ps1') -isn $isn -status "READY" -Actor $author -Reason "PR 게이트: $logLabel 판정으로 REVIEW→READY 강제 되돌림 (giip #1210/#2085)" 2>&1 | Out-Null
+        Invoke-IssueWrite $isn @('--comment-file', $tmp)
+        Invoke-IssueWrite $isn @('--status', 'READY')
         Write-SweepLog "REVERTED isn=$isn REVIEW→READY ($logLabel) + note 등록"
+    } catch {
+        Write-SweepLog "[WRITE-FAIL] REVERT isn=$isn ($logLabel): $($_.Exception.Message)"
     } finally {
         Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
     }
@@ -193,7 +208,13 @@ function Set-IssueNeedsDecision($isn, $author, $gateLabel, $reasonLine) {
     $reason = "게이트 누적 에스컬레이션($gateLabel): $reasonLine (giip #2415)"
     $safeReason = ($reason -replace '"', "'") -replace '\r?\n', ' '
     if ($safeReason.Length -gt 400) { $safeReason = $safeReason.Substring(0, 400) }
-    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $MgmtDir 'updateIssueStatus.ps1') -isn $isn -status "NEEDS_DECISION" -Actor $author -Reason $safeReason 2>&1 | Out-Null
+    # 상태 API 는 사유를 받지 않으므로(updateIssueStatus.ps1 은 [ALWAYS COMMENT] 로 남겼다) 사유 코멘트를 먼저 남긴다.
+    try {
+        Invoke-IssueWrite $isn @('--comment', "[STATUS-CHANGE] REVIEW→NEEDS_DECISION: $safeReason", '--status', 'NEEDS_DECISION')
+    } catch {
+        Write-SweepLog "[WRITE-FAIL] STATUS isn=$isn REVIEW→NEEDS_DECISION ($gateLabel): $($_.Exception.Message)"
+        return
+    }
     Write-SweepLog "STATUS isn=$isn REVIEW→NEEDS_DECISION ($gateLabel)"
 }
 
@@ -245,8 +266,11 @@ $historyText
     $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("gissue_{0}_escalate_{1}_{2}.txt" -f $author, $isn, [guid]::NewGuid().ToString('N'))
     try {
         [System.IO.File]::WriteAllText($tmp, $note, (New-Object System.Text.UTF8Encoding $true))
-        & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $MgmtDir 'addIssueComment.ps1') -isn $isn -ContentFile $tmp -issuetype note -author $author 2>&1 | Out-Null
+        Invoke-IssueWrite $isn @('--comment-file', $tmp)
         Write-SweepLog "ESCALATED isn=$isn 사람 확인 필요 코멘트 등록 ($gateLabel, 누적 $totalText 회: $countsText)"
+    } catch {
+        Write-SweepLog "[WRITE-FAIL] ESCALATE isn=$isn ($gateLabel): $($_.Exception.Message)"
+        return
     } finally {
         Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
     }

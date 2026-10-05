@@ -552,6 +552,12 @@ if (-not (Test-Path -LiteralPath $GiipAccountsFile)) {
 }
 # cron 의 기본 PATH 는 /usr/bin:/bin 뿐이라 /usr/local/bin 의 gh 를 못 찾는다(giip #3535). 자식 프로세스도 상속한다.
 if ($IsLinux -and ($env:PATH -split ':') -notcontains '/usr/local/bin') { $env:PATH = "/usr/local/bin:$env:PATH" }
+# cron 은 root 로 돌지만 워크트리/저장소는 dev 소유라 git 이 "dubious ownership" 으로 거부하고, gh pr list 가
+# 매 회차 실패해 PR 병합 확인(merge-sweep)이 멈춘다(giip #3535). 이 프로세스와 자식에게만 적용되는 환경변수로
+# safe.directory 를 열어 둔다(전역 git config 를 건드리지 않는다).
+if ($IsLinux -and -not $env:GIT_CONFIG_COUNT) {
+    $env:GIT_CONFIG_COUNT = '1'; $env:GIT_CONFIG_KEY_0 = 'safe.directory'; $env:GIT_CONFIG_VALUE_0 = '*'
+}
 # (3) 외부 실행파일 — 이 러너는 node(목록/큐 조회) / bash(get-issue.sh) / gh(PR 조회·수정) 에
 #     의존한다. PATH 에 없으면 그 단계만 조용히 실패하므로, 시작 시 한 번 명시적으로 알린다.
 foreach ($dep in @(
@@ -1491,8 +1497,11 @@ function Remove-GissueOrphanWorktrees($csn, $workdir) {
                 $emptyDir = Join-Path ([System.IO.Path]::GetTempPath()) ("gissue_orphanwt_empty_{0}" -f ([guid]::NewGuid().ToString('N')))
                 New-Item -ItemType Directory -Path $emptyDir -Force | Out-Null
                 try {
-                    robocopy $emptyDir $c.Path /MIR /NFL /NDL /NJH /NJS /NC /NS /NP | Out-Null
-                    if ($LASTEXITCODE -ge 8) { throw "robocopy exit $LASTEXITCODE" }
+                    # robocopy 는 Windows MAX_PATH 회피용이다. Linux 에는 robocopy 가 없고 필요도 없다(Remove-Item 만으로 충분).
+                    if (-not $IsLinux) {
+                        robocopy $emptyDir $c.Path /MIR /NFL /NDL /NJH /NJS /NC /NS /NP | Out-Null
+                        if ($LASTEXITCODE -ge 8) { throw "robocopy exit $LASTEXITCODE" }
+                    }
                     Remove-Item -LiteralPath $c.Path -Recurse -Force -ErrorAction Stop
                     Write-Log $csn "[ORPHAN-CLEANUP] isn$($c.Isn) $reasonNote, .worktrees/$(Split-Path -Leaf $c.Path) 삭제"
                 } finally {
