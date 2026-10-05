@@ -8,6 +8,7 @@ const require = createRequire(import.meta.url);
 const { maskLine, readNewLines, lineTs } = require('../lib/log-ship.js');
 
 // 비밀 마스킹
+/* gitguardian ignore all */
 assert.strictEqual(maskLine('a sk=abc123 b'), 'a sk=*** b');
 assert.ok(!maskLine('Authorization: Bearer abc.def').includes('abc'));
 assert.ok(!maskLine('Server=x;Password=P@ss;').includes('P@ss'));
