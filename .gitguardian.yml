@@ -1,0 +1,13 @@
+# GitGuardian Security Scans Configuration
+# https://docs.gitguardian.com
+
+# log-ship.js contains regex patterns (MASKS array) for redacting secrets from logs.
+# These are intentionally detection patterns, NOT actual secrets. Excluded from SAST.
+# Related: giip #3535
+exit_code_config:
+  allow_existing: true
+
+ignored:
+  - paths:
+      - scripts/gissue/lib/log-ship.js
+    reason: "False positive — file contains secret-masking regex patterns (MASKS array), not actual secrets (giip #3535)"
