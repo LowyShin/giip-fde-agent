@@ -2964,6 +2964,17 @@ ${function:Invoke-GissueEngine}
 if ($DryRun) { return }
 
 # ── Phase 2: 모든 CSN 잡을 병렬 대기 (CSN별 $RunTimeoutMin 타임아웃, 서로 블로킹하지 않음) ──
+# 이 CSN 스케줄러 로그를 giip 웹 콘솔(Agent Log Viewer)로 보낸다(giip #3535 후속). lib/log-ship.js 참고.
+# fail-open: 실패해도 경고 한 줄만 남기고 종료 흐름을 막지 않는다.
+function Send-GissueLogsToConsole($csn) {
+    try {
+        $out = & node (Join-Path $Root 'lib/log-ship.js') --csn $csn --logs $LogDir --accounts $GiipAccountsFile 2>&1
+        foreach ($line in @($out)) { if ("$line".Trim()) { Write-Log $csn "$line" } }
+    } catch {
+        Write-Log $csn "[LOG-SHIP][WARN] $($_.Exception.Message)"
+    }
+}
+
 function Complete-Run($r, $status) {
     try { (Receive-Job $r.Job) | Out-File -FilePath (Join-Path $LogDir "gissue_csn$($r.Csn).out.log") -Append -Encoding UTF8 } catch {}
     Write-Log $r.Csn $status
@@ -3002,6 +3013,7 @@ function Complete-Run($r, $status) {
     # (5) 스코프 갭(giip #2440 원인 3) — 어느 CSN 의 workdir 에도 직계로 들어있지 않은 레포는 (4)가
     #     영원히 도달하지 못하므로 하루 1회만 전체 스윕을 추가로 돈다.
     Invoke-GissueWorktreeDailySweep $r.Csn
+    Send-GissueLogsToConsole $r.Csn
     $r.Done = $true
 }
 while ($runs | Where-Object { -not $_.Done }) {
