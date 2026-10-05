@@ -178,10 +178,14 @@ while [ $# -gt 0 ]; do
       STATUS="${2:-}"
       if [ -z "${STATUS}" ]; then echo "❌ --status 뒤에 상태값이 필요합니다(PENDING/READY/IN_PROGRESS/REVIEW/DONE)." >&2; exit 2; fi
       # pApiGiipIssuePutbyAK 는 read-modify-write(title/content 는 ISNULL 로 보존, status만 갱신).
-      curl -s -X PUT "${API_BASE}/giipIssues" \
+      # HTTP 4xx/5xx 면 exit 1 — 예전엔 curl 이 응답 본문만 찍고 0 으로 끝나 상태전이 실패가 호출자(게이트 스윕 등)에게
+      # 보이지 않았다(giip #3535).
+      RESP="$(curl -s -w $'\n%{http_code}' -X PUT "${API_BASE}/giipIssues" \
         -H "Content-Type: application/json" -H "x-api-key: ${SK}" \
-        -d "{\"isn\":${ISN},\"status\":\"${STATUS}\"}"
-      echo
+        -d "{\"isn\":${ISN},\"status\":\"${STATUS}\"}")"
+      HTTP_CODE="${RESP##*$'\n'}"
+      echo "${RESP%$'\n'*}"
+      if [[ ! "${HTTP_CODE}" =~ ^2 ]]; then echo "❌ 상태 전이 실패(HTTP ${HTTP_CODE}): isn=${ISN} status=${STATUS}" >&2; exit 1; fi
       shift 2
       ;;
     *)
