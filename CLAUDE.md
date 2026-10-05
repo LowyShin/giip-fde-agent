@@ -25,6 +25,15 @@ under CSN 70424.
 
 → `.agent/rules/51_giip_product_changes_csn47_only.md`
 
+## PROJECT RESPONSE LANGUAGE — AUTO-RESOLVED FROM CSN
+
+A project's (channel's) AI response language is resolved automatically from that project's
+CSN giipdb info (`tCorp.cLang`), not hardcoded per project. `resolveLangForProject` tries the
+CSN-based cache first, then the manual `project-lang.json` map, then `DEFAULT_LANG`, in that
+order — this is existing, working behavior, not something to reimplement.
+
+→ `.agent/rules/52_project_language_from_csn.md`
+
 ## SOURCE CODE CHANGE DISCIPLINE — MANDATORY
 
 **Whenever source code changes (app code, config, templates), push immediately after that step completes.**
