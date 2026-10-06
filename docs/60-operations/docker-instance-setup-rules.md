@@ -115,4 +115,5 @@ gissue-scheduler cron `-OnlyCsn`↔SSOT · 3종 cron 파일 존재. 전부 PASS 
 
 - 유저 대면 가이드(giipv3): `/{locale}/guides/agent-csn-registration`
 - 배포 동작 원리: [`docker-deployment.md`](./docker-deployment.md)
+- entrypoint.sh 사양서(단계별 동작·실패 처리·알려진 한계): [`docker-entrypoint-spec.md`](./docker-entrypoint-spec.md)
 - 이슈: giip #3405(이 룰), giip #3404(giip-cqe 자체 CSN 등록 코드)
