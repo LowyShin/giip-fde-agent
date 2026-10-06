@@ -1926,11 +1926,27 @@ function Write-SlackBotHealthLog($msg) {
     "[$ts] $msg" | Out-File -FilePath $SlackBotHealthLog -Append -Encoding UTF8
     Write-Output "[slackbot-health] $msg"
 }
-if (-not $DryRun) {
+# giip #3535(감시 중 발견): 이 점검은 slack-bot 이 **설치된** 인스턴스에서만 의미가 있다. docker entrypoint 는 Slack 토큰이 없으면 slack-bot 을
+# 설치(npm install)도 기동도 하지 않는데, 이 점검이 설치 안 된 bot 을 매 회차 pm2 로 띄워 MODULE_NOT_FOUND 로 errored 재시작이 150회 쌓였다.
+# 설치 여부는 node_modules 존재로 판단한다(entrypoint 는 토큰이 있을 때만 설치하고, 직접 설치한 환경에도 있다).
+$SlackBotInstalled = Test-Path -LiteralPath (Join-Path $SlackBotDir 'node_modules')
+# entrypoint 는 pm2 이름을 `giipclaude-bot` 으로 기동한다. 이 점검이 `slack-bot` 만 찾으면 MISSING 으로 오판해 같은 bot 을 한 번 더 띄운다(이중 Slack 연결).
+# 실제로 pm2 에 있는 이름을 찾아 쓰고, 둘 다 없을 때만 예전 이름(slack-bot)으로 신규 기동한다.
+$SlackBotPm2Name = 'slack-bot'
+if ($SlackBotInstalled -and -not $DryRun) {
+    foreach ($candidate in @('giipclaude-bot', 'slack-bot')) {
+        try { $d = pm2 describe $candidate 2>$null } catch { $d = $null }
+        if ($d | Where-Object { $_ -match '│\s*status\s*│' }) { $SlackBotPm2Name = $candidate; break }
+    }
+}
+if (-not $DryRun -and -not $SlackBotInstalled) {
+    Write-SlackBotHealthLog "SKIP: slack-bot 미설치($SlackBotDir 에 node_modules 없음 — Slack 토큰이 없어 entrypoint 가 설치/기동을 생략한 인스턴스) — 점검 생략"
+}
+if (-not $DryRun -and $SlackBotInstalled) {
     try {
         # 주의: `pm2 jlist`(JSON)는 pm2_env.env 에 대소문자만 다른 중복 키가 실려 ConvertFrom-Json 이
         # "duplicated keys" 로 예외를 낸다(실측). `pm2 describe`(표 텍스트)로 우회 — status 줄만 정규식 추출.
-        $describeOut = pm2 describe slack-bot 2>$null
+        $describeOut = pm2 describe $SlackBotPm2Name 2>$null
         $statusLine = $describeOut | Where-Object { $_ -match '│\s*status\s*│\s*(\S+)\s*│' } | Select-Object -First 1
         if (-not $statusLine) {
             # [MISSING] PM2 데몬이 새로 뜨면서 slack-bot 이 프로세스 목록에서 통째로 사라지는 사고가
@@ -1950,17 +1966,19 @@ if (-not $DryRun) {
             $status = $Matches[1]
             if ($status -ne 'online') {
                 Write-SlackBotHealthLog "[WARN] status=$status (online 아님) → pm2 restart 실행"
-                pm2 restart slack-bot 2>&1 | Out-Null
+                pm2 restart $SlackBotPm2Name 2>&1 | Out-Null
                 Write-SlackBotHealthLog "재시작 완료"
             } else {
-                $outLogPath = Join-Path $HOME '.pm2\logs\slack-bot-out.log'
-                $errLogPath = Join-Path $HOME '.pm2\logs\slack-bot-error.log'
+                # Linux 에서는 `\` 가 구분자가 아니라 파일명 문자라 예전 경로는 항상 "없음"이 되어 online 인 bot 을 좀비로 오판해 매번 재시작했다 — Join-Path 로 조립.
+                $pm2LogDir = Join-Path (Join-Path $HOME '.pm2') 'logs'
+                $outLogPath = Join-Path $pm2LogDir "$SlackBotPm2Name-out.log"
+                $errLogPath = Join-Path $pm2LogDir "$SlackBotPm2Name-error.log"
                 $outAgeMin = if (Test-Path $outLogPath) { [int]((Get-Date) - (Get-Item $outLogPath).LastWriteTime).TotalMinutes } else { [int]::MaxValue }
                 $errAgeMin = if (Test-Path $errLogPath) { [int]((Get-Date) - (Get-Item $errLogPath).LastWriteTime).TotalMinutes } else { [int]::MaxValue }
                 $quietMin = [Math]::Min($outAgeMin, $errAgeMin)
                 if ($quietMin -ge $SlackBotStaleMin) {
                     Write-SlackBotHealthLog "[WARN] status=online 이지만 로그 무활동 ${quietMin}분(기준 ${SlackBotStaleMin}분) — 좀비 소켓으로 간주, pm2 restart 실행"
-                    pm2 restart slack-bot 2>&1 | Out-Null
+                    pm2 restart $SlackBotPm2Name 2>&1 | Out-Null
                     Write-SlackBotHealthLog "재시작 완료"
                 } else {
                     Write-SlackBotHealthLog "OK: status=online, 최근 활동 ${quietMin}분 전(기준 ${SlackBotStaleMin}분 미만)"
