@@ -558,6 +558,12 @@ if ($IsLinux -and ($env:PATH -split ':') -notcontains '/usr/local/bin') { $env:P
 if ($IsLinux -and -not $env:GIT_CONFIG_COUNT) {
     $env:GIT_CONFIG_COUNT = '1'; $env:GIT_CONFIG_KEY_0 = 'safe.directory'; $env:GIT_CONFIG_VALUE_0 = '*'
 }
+# cron(root)의 기본 gh 설정 경로(/root/.config/gh)는 dev 가 쓸 수 없어 gh 가 "gh auth login 필요"로
+# 매 회차 인증 실패 → merge-sweep/PR 게이트가 멈춘다(giip #3535 의 git ownership 과 별개인 auth 축).
+# 레포 내부 .gh(= dev 가 `GH_CONFIG_DIR=<repo>/.gh gh auth login` 해 둔 곳, .gitignore 로 커밋 제외)를
+# 쓰게 한다. 이 프로세스와 자식(Start-Job/gh/node)만 상속하며 시스템(/etc·/root) 은 건드리지 않는다.
+# Linux(cron) 한정 — Windows 러너는 기존 사용자 gh 인증(%AppData%)을 그대로 쓴다.
+if ($IsLinux -and -not $env:GH_CONFIG_DIR) { $env:GH_CONFIG_DIR = Join-Path $AgentRepo '.gh' }
 # (3) 외부 실행파일 — 이 러너는 node(목록/큐 조회) / bash(get-issue.sh) / gh(PR 조회·수정) 에
 #     의존한다. PATH 에 없으면 그 단계만 조용히 실패하므로, 시작 시 한 번 명시적으로 알린다.
 foreach ($dep in @(

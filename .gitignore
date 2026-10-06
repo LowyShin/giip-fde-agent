@@ -34,3 +34,6 @@ docker/.env
 
 # per-instance env files written by the giip Docker bootstrap script (contain instance tokens)
 docker/instances/
+
+# gissue 공유 gh 인증 설정 (토큰 포함 — 절대 커밋 금지)
+/.gh/
