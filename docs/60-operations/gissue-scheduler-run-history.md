@@ -2,6 +2,8 @@
 
 > 이 문서는 PR #107 의 분석을 **정정**한다. #107 은 "PowerShell 이 bash 의 `sar_run_start` 를 못 불러서 이력이 없다"고 보고 bash 래퍼를 추가했지만, 그것은 원인이 아니었다.
 
+> **PR #114(봇)** 는 래퍼의 `exec` 만 제거해 종료 trap 이 돌게 했다. 하지만 래퍼는 박스 에이전트(`hostname-machine-id`) 아래에 이력을 쌓고, 이 문서의 수정이 `gissue_csn<CSN>` 아래에 같은 실행을 기록하므로 둘을 같이 두면 **같은 실행이 두 에이전트에 중복 기록**된다. 그래서 우회(래퍼)가 아니라 근본 수정을 택해 래퍼를 제거했다.
+
 ## 증상
 `admin/catquest/schedulers` 에서 gissue 스케줄러(`gissue_csn<CSN>`) 행이 없거나, History 에 실행 이력이 비어 있다.
 
