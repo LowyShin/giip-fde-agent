@@ -2966,6 +2966,20 @@ if ($DryRun) { return }
 # ── Phase 2: 모든 CSN 잡을 병렬 대기 (CSN별 $RunTimeoutMin 타임아웃, 서로 블로킹하지 않음) ──
 # 이 CSN 스케줄러 로그를 giip 웹 콘솔(Agent Log Viewer)로 보낸다(giip #3535 후속). lib/log-ship.js 참고.
 # fail-open: 실패해도 경고 한 줄만 남기고 종료 흐름을 막지 않는다.
+# cron 이 root 로 돌아 저장소에 root 소유 파일이 생기면 dev 세션이 편집하지 못한다(Permission denied). 회차 끝마다 되돌린다.
+# 정본: scripts/fix-root-owned.sh. fail-open(실패해도 종료 흐름을 막지 않는다).
+function Repair-GissueRootOwnedFiles($csn) {
+    if (-not $IsLinux) { return }
+    try {
+        $fix = Join-Path $Root '../fix-root-owned.sh'
+        if (-not (Test-Path $fix)) { return }
+        $out = & bash $fix 2>&1
+        foreach ($line in @($out)) { if ("$line".Trim() -and "$line" -notmatch 'setlocale') { Write-Log $csn "$line" } }
+    } catch {
+        Write-Log $csn "[fix-root-owned][WARN] $($_.Exception.Message)"
+    }
+}
+
 function Send-GissueLogsToConsole($csn) {
     try {
         $out = & node (Join-Path $Root 'lib/log-ship.js') --csn $csn --logs $LogDir --accounts $GiipAccountsFile 2>&1
@@ -3014,6 +3028,7 @@ function Complete-Run($r, $status) {
     #     영원히 도달하지 못하므로 하루 1회만 전체 스윕을 추가로 돈다.
     Invoke-GissueWorktreeDailySweep $r.Csn
     Send-GissueLogsToConsole $r.Csn
+    Repair-GissueRootOwnedFiles $r.Csn
     $r.Done = $true
 }
 while ($runs | Where-Object { -not $_.Done }) {
