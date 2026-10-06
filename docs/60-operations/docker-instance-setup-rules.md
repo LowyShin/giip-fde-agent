@@ -53,6 +53,8 @@ lssn·hostname)의 값을 **코드/문서/주석 어디에도 하드코딩하지
 - **giip-agent** (`/etc/cron.d/giip-agent`) — 이 인스턴스를 살아있는 서버로 등록, 매분 상태 보고.
 - **giip-cqe** (`/etc/cron.d/giip-cqe`) — 배분된 명령(CQE)을 주기적으로 실행. `giipAgent.cnf` 의 sk/lssn 공용.
 - **gissue-scheduler** (`/etc/cron.d/gissue-scheduler`) — 이 CSN 의 이슈를 주기 처리. `-OnlyCsn` 은 SSOT 에서 파생.
+  **root 가 아니라 `dev` 사용자로 돈다**(`GIIP_SCHEDULER_USER`). 엔진이 `claude -p --dangerously-skip-permissions` 를 부르는데 claude 는 root 에서 이 옵션을 거부하므로,
+  root 로 돌리면 이슈가 하나도 처리되지 않는다(giip #3535 실측). `dev` 는 claude 로그인(`~/.claude/.credentials.json`)이 필요하다: `docker exec -it -u dev <컨테이너> claude`.
 
 giip-cqe 자체 CSN 등록 코드는 giip #3404 참고(giip-agent 의 `giipAgent3.sh` 자기등록에 얹혀 감).
 
@@ -108,6 +110,7 @@ gissue-scheduler cron `-OnlyCsn`↔SSOT · 3종 cron 파일 존재. 전부 PASS 
 - [ ] `giipAgent.cnf` 에 이 인스턴스 sk 가 있고, lssn 이 발급됐다(또는 `--register` 로 발급).
 - [ ] `bash scripts/gissue/check-csn-consistency.sh` 가 전 항목 PASS.
 - [ ] `/etc/cron.d/` 에 giip-agent·giip-cqe·gissue-scheduler 3종이 있다.
+- [ ] `gissue-scheduler` cron 의 사용자가 `root` 가 아니다(`grep gissue /etc/cron.d/gissue-scheduler`)이고, 그 사용자에 claude 로그인이 되어 있다.
 - [ ] 시크릿/인스턴스별 파일은 커밋하지 않았다(gitignore 확인).
 - [ ] (PR 자동화 필요 시) `gh` 인증 완료(`GH_TOKEN` 또는 `gh auth login`).
 
