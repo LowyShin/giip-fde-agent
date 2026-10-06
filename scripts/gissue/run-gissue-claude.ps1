@@ -2072,6 +2072,11 @@ foreach ($csn in $map.PSObject.Properties.Name) {
         }
     }
 
+    # 정식 등록 worktree 정리를 시작 시점에도 돈다. 종료 시점(Complete-Run (4))만으로는 회차 도중 이 스크립트가
+    # 바뀌면 낡은 코드 가드(giip #2471)에 걸려 매번 건너뛰게 된다 — 시작 직후엔 방금 찍은 기준 해시라 걸리지 않는다.
+    # lock 확인 뒤에 두어 앞 회차가 아직 쓰는 worktree 를 건드리지 않는다.
+    Invoke-GissueWorktreeCleanup $csn $workdir -DryRunSwitch:$DryRun
+
     # CSN 단위 치환({ISN}/{TITLE} 은 잡 내부 이슈 루프에서 치환한다).
     $guardNote = $script:NestedGuardPromptNote
     function Expand-GissueCsnTokens($tpl) {
@@ -2133,6 +2138,14 @@ foreach ($csn in $map.PSObject.Properties.Name) {
               $issueEngineDeadlineMin, $issueEnginePollMin, $logDir, $csnSk, $runIdKey, $reviewRecheckCooldownHours,
               $projectLang, $divergeFailAlertThreshold, $bashExe)
         Set-Location -Path $workdir
+        # 잡 출력은 회차가 끝나야 out.log 로 회수되므로, 어떤 이슈를 처리했는지는 메인 로그(gissue_csn<csn>.log)에
+        # 바로 남긴다. 바깥 Write-Log 와 같은 형식 — 잡은 별도 프로세스라 그 함수를 상속하지 않는다.
+        function Write-IssueMainLog($msg) {
+            try {
+                $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+                "[$ts] [CSN $csn] $msg" | Out-File -FilePath (Join-Path $logDir "gissue_csn$csn.log") -Append -Encoding UTF8
+            } catch {}
+        }
         # [ENCODING][giip #1204 버그 B] Start-Job 은 별도 프로세스라 바깥 스코프의 콘솔 인코딩 설정이
         # 상속되지 않는다 — 한글 프롬프트를 stdin 파이프로 넘기기 전에 이 잡 스코프에서도 UTF-8 로 고정한다.
         [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -2889,6 +2902,8 @@ foreach ($csn in $map.PSObject.Properties.Name) {
                 }
             }
             Write-Output "[ISSUE] isn=$($issue.Isn) status=$($issue.Status) elapsed=$($issue.ElapsedMin)분 처리 시작"
+            Write-IssueMainLog "[ISSUE] isn=$($issue.Isn) status=$($issue.Status) title=`"$($issue.Title)`" 처리 시작"
+            $issueStartTime = Get-Date
             $issueLangQaSince = (Get-Date).ToUniversalTime().ToString('o')
             $runProcessed++
             # 회차가 105분 예산으로 TIMEOUT 되면 잡이 강제 중단되어 맨 끝의 [RUN-COUNTS] 가 출력되지 않는다 — 그러면 종료 기록의 처리 건수가 0 으로 남는다
@@ -2927,6 +2942,7 @@ ${function:Invoke-GissueEngine}
                 Wait-Job $innerJob -Timeout ($issueEnginePollMin * 60) | Out-Null
                 $issueElapsedMin += $issueEnginePollMin
             }
+            $issueResult = if ($innerJob.State -eq 'Running') { 'TIMEBOX' } else { 'END' }
             if ($innerJob.State -eq 'Running') {
                 # 캡 초과(giip #1565) — 강제 정리 후 다음 이슈로 진행한다(break/return 하지 않는다).
                 Write-Output "[TIMEBOX] isn=$($issue.Isn) 처리가 ${issueEngineDeadlineMin}분 캡을 초과 — 강제 정리 후 다음 이슈로 진행"
@@ -2976,6 +2992,7 @@ ${function:Invoke-GissueEngine}
                     } catch { Write-Output "[WARN][CJK-QA] isn=$($issue.Isn) 게이트 오류($($_.Exception.Message)) — 무시하고 계속" }
                 }
             }
+            Write-IssueMainLog "[ISSUE] isn=$($issue.Isn) title=`"$($issue.Title)`" 처리 종료(result=$issueResult, $([Math]::Round(((Get-Date) - $issueStartTime).TotalMinutes, 1))분)"
             # ── C3: 언어 검사(LANG-QA) ─────────────────────────────────────────────────────
             try {
                 $langQaLang = if ($projectLang) { $projectLang } else { 'ko' }
