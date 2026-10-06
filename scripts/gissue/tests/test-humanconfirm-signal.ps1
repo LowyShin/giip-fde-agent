@@ -162,6 +162,27 @@ $cases = @(
         )
     },
     @{
+        Name = 'giip #2681 — "사용자 테스트 방법" 양식의 "사람이 직접 확인하려면:" 은 안내이지 요청이 아니다(오탐 고정)'
+        Expect = $null
+        Comments = @(
+            (New-Comment 'Lowy Shin' $null '2026-10-06T16:58:31Z' "## 사용자 테스트 방법 (현재 상태 IN_PROGRESS)`n`n사람이 직접 확인하려면:`n`n1. PR 을 연다: https://github.com/LowyShin/giip-fde-agent/pull/117`n`n사람이 직접 확인 후 완료로 판단되면 DONE으로, 문제가 있으면 READY 또는 REVIEW로 전이해 주세요.")
+        )
+    },
+    @{
+        Name = 'giip #2569 — "## 사람이 직접 확인하는 방법" 제목은 안내이지 요청이 아니다(오탐 고정)'
+        Expect = $null
+        Comments = @(
+            (New-Comment 'Lowy Shin' $null '2026-10-06T16:27:51Z' "## 사람이 직접 확인하는 방법`n1. 번호 충돌 해소 확인(DB): SELECT ...")
+        )
+    },
+    @{
+        Name = '안내형 어미를 막아도 진짜 요청 "사람이 직접 확인해 주십시오" 는 정탐으로 남는다(회귀 방지)'
+        Expect = '사람이 직접 확인'
+        Comments = @(
+            (New-Comment 'Lowy Shin' $null '2026-10-06T17:00:00Z' '배포 결과는 사람이 직접 확인해 주십시오.')
+        )
+    },
+    @{
         Name = '사람 코멘트의 "오너 판단 필요" — 요청형 정탐'
         Expect = '오너 판단 필요'
         Comments = @(
