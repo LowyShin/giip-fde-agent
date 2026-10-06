@@ -314,6 +314,60 @@ function ConvertTo-GissueComparablePath([string]$p) {
 }
 
 # ---------------------------------------------------------------------------
+# ScanRoot 안전 가드 (giip 2668 — giip 2660 DryRun 실측, giip 2220/2232 와 같은 계열의 사고 방지).
+#
+# 사고: -RemnantScan 에 **라이브 레포 루트**를 -ScanRoot 로 주면 그 레포의 .git/.agent/wiki/scripts 같은 정상 내부 디렉터리가
+#   "`.git` 없는 2단 자식"이라는 이유로 삭제 후보가 된다(67건, -DryRun 없이 실행하면 라이브 저장소가 지워진다).
+# 원인: 스캔은 ScanRoot 를 "레포들을 담는 상위 폴더"(<루트>/<레포>/<워크트리> 2단 구조)로 가정하는데, 그 가정을 문서화하지도 검증하지도 않았다.
+#       훅 화이트리스트가 이 도구를 항상 허용하므로 훅으로도 걸러지지 않는다 — 도구 자신이 막아야 한다.
+# 가드(원본 lowyworkenv PR 809 의 설계 중 이 저장소 구조에 필요한 부분):
+#   G1. ScanRoot 자체가 git 레포/worktree(`.git` 보유)면 거부한다.
+#   G2. ScanRoot 가 이 CSN 의 라이브 작업 폴더(csn-projects.json 의 workdir)와 같으면 거부한다.
+#   G3. 관리 디렉터리(.git/.agent/.github/.githooks/.husky/.claude)는 후보에서 무조건 제외한다(idle 가드 같은 타이밍에 의존하지 않는다).
+# 거부된 ScanRoot 는 경고를 남기고 건너뛴다(예외로 중단하지 않는다 — 다른 ScanRoot 의 정상 처리는 계속된다).
+# ---------------------------------------------------------------------------
+$script:GissueScanRootManagementDirNames = @('.git', '.agent', '.github', '.githooks', '.husky', '.claude')
+
+function Get-GissueLiveWorkdirs {
+    param([string]$MapFile = (Join-Path $PSScriptRoot 'csn-projects.json'))
+    $out = @()
+    try {
+        if (Test-Path -LiteralPath $MapFile) {
+            $raw = Get-Content -LiteralPath $MapFile -Raw -Encoding UTF8
+            $doc = $raw | ConvertFrom-Json
+            foreach ($prop in @($doc.csn.PSObject.Properties)) {
+                $wd = "$($prop.Value.workdir)"
+                if ($wd) { $out += $wd }
+            }
+        }
+    } catch {}
+    return @($out)
+}
+
+function ConvertTo-GissueNormalPath([string]$Path) {
+    try { return ([System.IO.Path]::GetFullPath($Path)).TrimEnd('\', '/') } catch { return $Path.TrimEnd('\', '/') }
+}
+
+function Test-GissueScanRootSafe {
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        [string[]]$LiveWorkdir = $null
+    )
+    if ($null -eq $LiveWorkdir) { $LiveWorkdir = Get-GissueLiveWorkdirs }
+    if (Test-Path -LiteralPath (Join-Path $Root '.git')) {
+        return [pscustomobject]@{ Safe = $false; Reason = "ScanRoot 자체가 git 레포/worktree 입니다(.git 보유) — 그 안의 정상 디렉터리가 잔해로 오판되므로 거부" }
+    }
+    $rootN = ConvertTo-GissueNormalPath $Root
+    foreach ($wd in @($LiveWorkdir)) {
+        if (-not $wd) { continue }
+        if ([string]::Equals($rootN, (ConvertTo-GissueNormalPath $wd), [System.StringComparison]::OrdinalIgnoreCase)) {
+            return [pscustomobject]@{ Safe = $false; Reason = "ScanRoot 가 라이브 작업 폴더(csn-projects.json workdir=$wd)와 같습니다 — 거부" }
+        }
+    }
+    return [pscustomobject]@{ Safe = $true; Reason = '' }
+}
+
+# ---------------------------------------------------------------------------
 # 고아 worktree 탐지 — **파일시스템에서 출발**하는 경로 (giip #2439).
 #
 # 기존 정리 도구 2종은 전부 `git worktree list` 를 순회한다. 등록정보(`.git/worktrees/<name>`)가
@@ -332,12 +386,15 @@ function ConvertTo-GissueComparablePath([string]$p) {
 function Get-GissueOrphanWorktree {
     param(
         [string[]]$ScanRoot = @('D:\temp\worktrees'),
-        [int]$Depth = 3
+        [int]$Depth = 3,
+        [string[]]$LiveWorkdir = $null
     )
 
     $found = @()
     foreach ($root in $ScanRoot) {
         if (-not (Test-Path -LiteralPath $root)) { continue }
+        $guard = Test-GissueScanRootSafe -Root $root -LiveWorkdir $LiveWorkdir
+        if (-not $guard.Safe) { Write-Warning "[SCANROOT-GUARD] 거부: $root — $($guard.Reason)"; continue }
         $gitEntries = @(Get-ChildItem -LiteralPath $root -Recurse -Force -Depth $Depth -Filter '.git' -ErrorAction SilentlyContinue)
         foreach ($g in $gitEntries) {
             $parent = if ($g -is [System.IO.DirectoryInfo]) { $g.Parent.FullName } else { $g.Directory.FullName }
@@ -408,16 +465,23 @@ function Get-GissueOrphanWorktree {
 function Get-GissueNoGitRemnant {
     param(
         [string[]]$ScanRoot = @('D:\temp\worktrees'),
-        [int]$MaxLinksPerItem = 10
+        [int]$MaxLinksPerItem = 10,
+        [string[]]$LiveWorkdir = $null
     )
     $cands = New-Object System.Collections.ArrayList
     foreach ($root in $ScanRoot) {
         if (-not (Test-Path -LiteralPath $root)) { continue }
+        # giip 2668 G1/G2: 라이브 레포 루트/작업 폴더를 ScanRoot 로 받으면 거부한다.
+        $guard = Test-GissueScanRootSafe -Root $root -LiveWorkdir $LiveWorkdir
+        if (-not $guard.Safe) { Write-Warning "[SCANROOT-GUARD] 거부: $root — $($guard.Reason)"; continue }
         foreach ($d1 in (Get-ChildItem -LiteralPath $root -Directory -Force -ErrorAction SilentlyContinue)) {
+            # giip 2668 G3: 관리 디렉터리(.git/.agent/.github ...)는 후보에서 무조건 제외.
+            if ($script:GissueScanRootManagementDirNames -contains $d1.Name) { continue }
             if (Test-Path -LiteralPath (Join-Path $d1.FullName '.git')) { continue }
             $kids = @(Get-ChildItem -LiteralPath $d1.FullName -Directory -Force -ErrorAction SilentlyContinue)
             if ($kids.Count -eq 0) { [void]$cands.Add($d1.FullName); continue }
             foreach ($k in $kids) {
+                if ($script:GissueScanRootManagementDirNames -contains $k.Name) { continue }
                 if (-not (Test-Path -LiteralPath (Join-Path $k.FullName '.git'))) { [void]$cands.Add($k.FullName) }
             }
         }
