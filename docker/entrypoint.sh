@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # giip-fde-agent container entrypoint: auto clone/pull, register csn/sk/login_id,
-# start slack-bot (pm2) and the hourly-issue-scheduler (cron + pwsh).
+# start slack-bot (pm2) and the hourly-issue-scheduler (cron + pwsh; cron runs as the non-root scheduler user, see below).
 # See docker/README.md for the full env var contract.
 set -euo pipefail
 
@@ -109,11 +109,30 @@ if [ "${GIIP_ENABLE_SCHEDULER:-true}" = "true" ]; then
   # (admin/catquest/schedulers 페이지 Run History에 gissue 스케쥴러 실행이 표시되도록 함)
   # giipAgentLinux(/work/giipAgentLinux/)가 clone된 이후에 실행되므로 sar_run_start/end 함수를 사용할 수 있다.
   CRON_CMD="bash \"$REPO_DIR/scripts/gissue/run-gissue-scheduler-wrapper.sh\"${ONLY_CSN_ARG} >> $REPO_DIR/scripts/gissue/logs/cron.log 2>&1"
+  # giip #3535: 스케줄러 cron 은 root 가 아니라 일반 사용자(dev)로 돌려야 한다. 엔진이 `claude -p --dangerously-skip-permissions` 를
+  # 부르는데 claude 는 root/sudo 에서 이 옵션을 거부한다("--dangerously-skip-permissions cannot be used with root/sudo privileges").
+  # root 로 돌리면 이슈를 "집는" 것처럼 로그만 남고 모든 이슈가 즉시 실패해 큐가 영원히 줄지 않는다(out.log 에서 788회 실측).
+  # 같은 이유로 docs/60-operations/docker-dev-user-and-sudo.md 도 인스턴스에서는 dev 로 claude 를 돌리라고 한다.
+  SCHED_USER="${GIIP_SCHEDULER_USER:-dev}"
+  if ! id "$SCHED_USER" >/dev/null 2>&1; then
+    if useradd -m -s /bin/bash "$SCHED_USER" 2>/dev/null; then
+      echo "[entrypoint] created scheduler user '$SCHED_USER'"
+    else
+      echo "[entrypoint] WARN: 사용자 '$SCHED_USER' 를 만들 수 없어 root 로 스케줄러를 등록합니다 — claude 가 root 에서 거부되어 이슈가 처리되지 않습니다"
+      SCHED_USER="root"
+    fi
+  fi
+  if [ "$SCHED_USER" != "root" ]; then
+    SCHED_HOME="$(getent passwd "$SCHED_USER" | cut -d: -f6)"
+    [ -f "$SCHED_HOME/.claude/.credentials.json" ] || echo "[entrypoint] WARN: $SCHED_USER 의 claude 로그인 정보($SCHED_HOME/.claude/.credentials.json)가 없습니다 — 'docker exec -it -u $SCHED_USER <컨테이너> claude' 로 한 번 로그인해야 스케줄러가 이슈를 처리합니다"
+    # 이 사용자가 저장소/로그/lock 에 쓸 수 있어야 한다(root 로 만든 파일 회수).
+    [ -f "$REPO_DIR/scripts/fix-root-owned.sh" ] && bash "$REPO_DIR/scripts/fix-root-owned.sh" >/dev/null 2>&1 || true
+  fi
   {
     echo "SHELL=/bin/bash"
     # docker 는 프로젝트(CSN)마다 컨테이너를 따로 띄우므로 컨테이너당 스케줄러를 20분마다(:07/:27/:47) 돌린다.
     # 이전 실행이 아직 돌고 있으면 CSN lock 으로 SKIP 되어 겹치지 않는다(run-gissue-claude.ps1 Phase 1).
-    echo "7,27,47 * * * * root cd $REPO_DIR && $CRON_CMD"
+    echo "7,27,47 * * * * $SCHED_USER cd $REPO_DIR && $CRON_CMD"
   } > /etc/cron.d/gissue-scheduler
   chmod 0644 /etc/cron.d/gissue-scheduler
   echo "[entrypoint] registered issue-scheduler cron (every 20 min: :07/:27/:47, wrapper) via /etc/cron.d"

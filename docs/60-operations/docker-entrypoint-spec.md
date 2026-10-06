@@ -17,7 +17,7 @@
 | 항목 | 값 | 근거 |
 |---|---|---|
 | 베이스 이미지 | `mcr.microsoft.com/powershell:7.4-debian-12` (pwsh, git, curl, cron, Node 20, claude CLI, pm2, gh, SqlServer 모듈, `powershell`→`pwsh` 링크) | `docker/Dockerfile` |
-| 실행 사용자 | **root** (Dockerfile 에 `USER` 없음). cron 작업도 root | `docker/Dockerfile`, 아래 cron 줄 |
+| 실행 사용자 | entrypoint 는 **root**(Dockerfile 에 `USER` 없음). **이슈 스케줄러 cron 만 `dev`**(`GIIP_SCHEDULER_USER`)로 돈다. giip-agent/giip-cqe cron 은 root | `docker/Dockerfile`, 아래 cron 줄 |
 | 진입점 | `ENTRYPOINT ["/entrypoint.sh"]` — **이미지에 `COPY` 로 구워진 사본**을 실행한다 | `Dockerfile` 35~40행 |
 | 쉘 옵션 | `set -euo pipefail` — 가드 없이 실패하는 명령은 기동을 중단시킨다(§5 표의 "실패 시") | 5행 |
 | 영속 볼륨 | `/work` 전체(`giip-fde-agent-data`). 재기동해도 clone, 생성 파일, lssn 이 유지된다 | `docker-compose.yml` |
@@ -41,6 +41,7 @@
 | `GIIP_STRICT_CSN` | `false` | `true` 면 CSN/SK 정합성 위반 시 기동 중단(§6) | 5, 7, 8 |
 | `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN` | 없음 | 둘 다 있을 때만 slack-bot 기동 | 6 |
 | `GIIP_ENABLE_SCHEDULER` | `true` | `false` 면 이슈 스케줄러 cron 생략 | 7 |
+| `GIIP_SCHEDULER_USER` | `dev` | 이슈 스케줄러 cron 을 돌릴 일반 사용자. 없으면 `useradd -m` 로 만들고, 만들 수 없으면 root 로 폴백하며 경고(이 경우 이슈가 처리되지 않음) | 7 |
 | `GIIP_ENABLE_AGENT` | `true` | `false` 면 giipAgentLinux/CQE 생략 | 8 |
 | `GIIP_AGENT_DIR` / `GIIP_AGENT_URL` | `/work/giipAgentLinux` / 공식 giipAgentLinux URL | giipAgentLinux clone 위치·출처 | 8 |
 | `GIIP_DB_SERVER` / `_NAME` / `_LOGIN` / `_PASSWORD` | 없음 / `giipdb` | (선택) DB 직접 접속 정보. 단계 11 이 `giipdb/mgmt/dbconfig.json`(0600)을 만든다 | 11 |
@@ -69,7 +70,7 @@
 | 4 | 등록 파일 생성 | `node /setup-registration.js`. 위 §4 의 `csn-projects.json`, `giip-accounts.json`, heartbeat 블록 생성(없을 때만). `logs/` 디렉터리 생성 | 스크립트 오류는 **치명**. 단 heartbeat 등록 실패는 스크립트 안에서 삼키고 다음 기동 때 재시도 |
 | 5 | SSOT CSN 결정 | `lib/ssot-csn.js` 로 `csn-projects.json` 의 **단일 csn 키** 확정 → `EFFECTIVE_CSN`. 확정 못 하면 `GIIP_CSN` 폴백. `GIIP_CSN` 과 SSOT 가 다르면 경고 | 경고. `GIIP_STRICT_CSN=true` 면 **중단** |
 | 6 | slack-bot | 토큰 2개가 모두 있을 때만 `npm install --omit=dev` 후 `pm2 start index.js --name giipclaude-bot` | `npm`/`pm2` 실패는 **치명** |
-| 7 | 이슈 스케줄러 cron | `GIIP_ENABLE_SCHEDULER=true` 일 때 `/etc/cron.d/gissue-scheduler` 작성: `7,27,47 * * * * root cd $REPO_DIR && <CRON_CMD>`. `-OnlyCsn <EFFECTIVE_CSN>`. 작성 후 cron 줄의 `-OnlyCsn` 이 SSOT 와 같은지 재확인 | 불일치는 경고, `STRICT` 면 중단 |
+| 7 | 이슈 스케줄러 cron | `GIIP_ENABLE_SCHEDULER=true` 일 때 `/etc/cron.d/gissue-scheduler` 작성: `7,27,47 * * * * <SCHED_USER> cd $REPO_DIR && <CRON_CMD>`(기본 `dev`, 아래 §5.1).  `-OnlyCsn <EFFECTIVE_CSN>`. 작성 후 cron 줄의 `-OnlyCsn` 이 SSOT 와 같은지 재확인 | 불일치는 경고, `STRICT` 면 중단 |
 | 8 | giipAgentLinux + CQE | `GIIP_ENABLE_AGENT=true` 이고 SK 가 있을 때만. ① SK 결정: `lib/ssot-sk.js`(giip-accounts.json, EFFECTIVE_CSN)가 우선, 실패 시 `GIIP_SK` 폴백 ② giipAgentLinux 를 `main` 으로 pull/clone ③ `giipAgent.cnf` 작성/갱신(§4) ④ cron: `giip-agent`(매 1분 `giipAgent3.sh`), `giip-cqe`(매 5분 `cqe/giipCQE.sh`) | git 실패는 **치명**. cnf sk 가 SSOT 와 다르면 경고 후 갱신, `STRICT` 면 중단. SK 를 못 구하면 이 단계 전체를 **건너뜀**(웹에서 이 컨테이너 상태가 안 보임) |
 | 9 | cron 데몬 | `/etc/cron.d/*` 가 하나라도 있으면 `cron` 을 **한 번만** 기동(중복 기동은 lock 오류) | — |
 | 10 | 정합성 점검 | `scripts/gissue/check-csn-consistency.sh`(3개 cron 의 CSN 일치 확인) | **비차단**: 경고만 |
@@ -82,6 +83,8 @@
   래퍼는 giipAgentLinux 의 `lib/scheduler_agent_run.sh` 를 source 해 `sar_run_start` 로 실행 이력을 `tSchedulerAgentRun` 에 남기고, 마지막에 `pwsh run-gissue-claude.ps1` 을 부른다.
   `giipAgent.cnf` 의 `sk`/`apiaddrv2` 가 없으면 이력 없이 pwsh 를 직접 호출한다.
 - 이전: `pwsh -NoProfile -NonInteractive -File .../run-gissue-claude.ps1 [-OnlyCsn <CSN>]`.
+- **스케줄러 cron 은 root 가 아니라 `dev` 로 돈다(giip #3535).** 엔진이 `claude -p --dangerously-skip-permissions` 를 호출하는데 claude 는 root/sudo 에서 이 옵션을 거부한다(`--dangerously-skip-permissions cannot be used with root/sudo privileges`).
+  root 로 돌리면 로그에는 이슈가 "처리 시작"으로 찍히지만 모든 엔진 호출이 즉시 실패해 큐가 줄지 않는다(실측: `gissue_csn47.out.log` 에 788회). `dev` 에는 claude 로그인 정보(`~/.claude/.credentials.json`)가 있어야 하며 없으면 entrypoint 가 경고한다.
 - **cron 은 컨테이너 env 를 상속하지 않는다**(코드에 env 전달이 없다). 스케줄러가 쓰는 값은 단계 4 가 만든 파일들(`csn-projects.json`, `giip-accounts.json`)과 `giipAgent.cnf` 에서 읽는다.
 - 이전 실행이 아직 돌면 `run-gissue-claude.ps1` 의 CSN lock 이 SKIP 시켜 겹치지 않는다.
 
@@ -101,7 +104,8 @@
 | L3 | 단계 1 은 가드가 없어 일시적 네트워크 장애에도 컨테이너가 종료·재시작을 반복한다 | 관찰이 아닌 코드 읽기 결과. 재현 안 함 |
 | L4 | 단계 2 의 `fetch` 실패가 조용히 지나간다(`eval "$(...)"`). 토큰이 잘못돼도 컨테이너는 env 없이 계속 뜨고, 이후 단계가 값 부족으로 건너뛴다 | 실측(`set -e` 미발동) |
 | L5 | `eval` 로 원격 응답을 실행한다. `JSON.stringify` 로 값을 인용하지만, **GIIP 웹 응답을 신뢰하는 모델**이다 | 설계 판단 필요 |
-| L6 | 모든 cron 이 root 로 돈다. 그 안의 git/claude 가 root 소유 파일을 만든다(단계 11 이 회수) | 근본 수정(사용자 변경)은 미적용 |
+| L6 | giip-agent/giip-cqe cron 은 여전히 root 로 돈다(이슈 스케줄러만 dev). root 로 만든 파일은 단계 11 이 회수한다 | 이슈 스케줄러는 dev 로 수정됨 |
+| L8 | `dev` 의 claude 로그인은 인스턴스마다 한 번 수동으로 해야 한다(`docker exec -it -u dev <컨테이너> claude`). 로그인이 없으면 스케줄러가 이슈를 처리하지 못하고 entrypoint 는 경고만 한다 | 자동화 안 됨 |
 
 ## 8. 검증 방법
 
@@ -129,4 +133,5 @@ docker exec giip-fde-agent bash scripts/gissue/check-csn-consistency.sh   # 3개
 | 2026-10-04 | `ee43e5b` | giip #3405 | `giipAgent.cnf` SK 를 SSOT 에서 파생 |
 | 2026-10-06 | PR #106 | giip #3535 | `fix-root-owned.sh` 호출 |
 | 2026-10-06 | PR #107 | giip #3575 | cron 이 래퍼 호출(§7 L2) |
-| 2026-10-06 | (이 변경) | giip #3535 | 단계 11 을 `fix-root-owned.sh` 단독 호출에서 `bootstrap-instance.sh` 로 확장 |
+| 2026-10-06 | PR #110 | giip #3535 | 단계 11 을 `fix-root-owned.sh` 단독 호출에서 `bootstrap-instance.sh` 로 확장 |
+| 2026-10-06 | (이 변경) | giip #3535 | 스케줄러 cron 사용자를 root 에서 dev 로 변경(claude 가 root 에서 bypass 를 거부해 이슈가 처리되지 않았음) |
