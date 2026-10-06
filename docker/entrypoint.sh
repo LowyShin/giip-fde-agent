@@ -232,6 +232,12 @@ if [ -f "$REPO_DIR/scripts/gissue/check-csn-consistency.sh" ]; then
   bash "$REPO_DIR/scripts/gissue/check-csn-consistency.sh" || echo "[entrypoint] WARN: CSN 정합성 점검에서 경고가 있습니다(위 로그 확인)."
 fi
 
+# root 로 기동해 만들어진 root 소유 파일을 작업 사용자(dev)로 되돌린다(dev 세션의 Permission denied 방지).
+# 스케줄러 회차 끝에서도 같은 스크립트가 돌아 이후 생기는 root 파일을 회수한다. 실패해도 기동은 계속한다.
+if [ -f "$REPO_DIR/scripts/fix-root-owned.sh" ]; then
+  bash "$REPO_DIR/scripts/fix-root-owned.sh" || echo "[entrypoint] WARN: fix-root-owned.sh 실패(무시)"
+fi
+
 echo "[entrypoint] ready. tailing logs."
 touch "$REPO_DIR/scripts/gissue/logs/cron.log"
 mkdir -p /work/giipAgentLinux/log && touch /work/giipAgentLinux/log/cron.log
