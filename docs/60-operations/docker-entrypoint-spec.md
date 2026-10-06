@@ -79,10 +79,8 @@
 
 ### 5.1 스케줄러 cron 명령(단계 7)
 
-- 현재 `main`: `bash "$REPO_DIR/scripts/gissue/run-gissue-scheduler-wrapper.sh" [-OnlyCsn <CSN>] >> .../cron.log 2>&1` (giip #3575, PR #107).
-  래퍼는 giipAgentLinux 의 `lib/scheduler_agent_run.sh` 를 source 해 `sar_run_start` 로 실행 이력을 `tSchedulerAgentRun` 에 남기고, 마지막에 `pwsh run-gissue-claude.ps1` 을 부른다.
-  `giipAgent.cnf` 의 `sk`/`apiaddrv2` 가 없으면 이력 없이 pwsh 를 직접 호출한다.
-- 이전: `pwsh -NoProfile -NonInteractive -File .../run-gissue-claude.ps1 [-OnlyCsn <CSN>]`.
+- 명령: `pwsh -NoProfile -NonInteractive -File .../run-gissue-claude.ps1 [-OnlyCsn <CSN>] >> .../cron.log 2>&1`.
+  실행 이력(`tSchedulerAgentRun`)은 스크립트가 `lib/scheduler-state.ps1` 로 직접 기록한다(giip #3563). 한때(PR #107) 쓰던 bash 래퍼는 제거됐다.
 - **스케줄러 cron 은 root 가 아니라 `dev` 로 돈다(giip #3535).** 엔진이 `claude -p --dangerously-skip-permissions` 를 호출하는데 claude 는 root/sudo 에서 이 옵션을 거부한다(`--dangerously-skip-permissions cannot be used with root/sudo privileges`).
   root 로 돌리면 로그에는 이슈가 "처리 시작"으로 찍히지만 모든 엔진 호출이 즉시 실패해 큐가 줄지 않는다(실측: `gissue_csn47.out.log` 에 788회). `dev` 에는 claude 로그인 정보(`~/.claude/.credentials.json`)가 있어야 하며 없으면 entrypoint 가 경고한다.
 - **cron 은 컨테이너 env 를 상속하지 않는다**(코드에 env 전달이 없다). 스케줄러가 쓰는 값은 단계 4 가 만든 파일들(`csn-projects.json`, `giip-accounts.json`)과 `giipAgent.cnf` 에서 읽는다.
@@ -100,7 +98,7 @@
 | # | 내용 | 상태 |
 |---|---|---|
 | L1 | 이미지에 구워진 entrypoint 라 repo 변경이 기존 컨테이너에 반영되지 않는다(§2) | 설계상 사실 |
-| L2 | **래퍼의 `exec pwsh` 때문에 `trap 'sar_run_end_trap' EXIT` 가 실행되지 않는다**(`exec` 는 셸을 교체해 EXIT trap 이 발동하지 않음, 같은 구조로 실측 확인). 그 결과 실행 시작만 기록되고 종료가 기록되지 않아 이력이 RUNNING/STALE 로 남을 수 있다. 또 이력은 gissue 에이전트(`gissue_csn<CSN>`)가 아니라 박스 에이전트 키(`hostname-machine-id`) 아래에 쌓인다 | **미수정**, PR #107 로 `main` 에 병합됨. 근본 원인은 `run-gissue-claude.ps1` 의 `Record-SchedulerState` 가 디스패처 형식(`sk`/`proc`)을 잘못 쓰는 것(giip #3563) |
+| L2 | (해결됨) 래퍼의 `exec` 문제는 래퍼를 제거하고 근본 원인(호출 형식)을 고쳐 해소했다. 이력은 `gissue_csn<CSN>` 에이전트 아래에 기록된다 | giip #3563 |
 | L3 | 단계 1 은 가드가 없어 일시적 네트워크 장애에도 컨테이너가 종료·재시작을 반복한다 | 관찰이 아닌 코드 읽기 결과. 재현 안 함 |
 | L4 | 단계 2 의 `fetch` 실패가 조용히 지나간다(`eval "$(...)"`). 토큰이 잘못돼도 컨테이너는 env 없이 계속 뜨고, 이후 단계가 값 부족으로 건너뛴다 | 실측(`set -e` 미발동) |
 | L5 | `eval` 로 원격 응답을 실행한다. `JSON.stringify` 로 값을 인용하지만, **GIIP 웹 응답을 신뢰하는 모델**이다 | 설계 판단 필요 |
@@ -132,6 +130,7 @@ docker exec giip-fde-agent bash scripts/gissue/check-csn-consistency.sh   # 3개
 | 2026-09-30 | `058667f`, `f856ab7` | giip #3405 | CSN SSOT 일원화, 하드코딩 제거, gh 영속화 |
 | 2026-10-04 | `ee43e5b` | giip #3405 | `giipAgent.cnf` SK 를 SSOT 에서 파생 |
 | 2026-10-06 | PR #106 | giip #3535 | `fix-root-owned.sh` 호출 |
-| 2026-10-06 | PR #107 | giip #3575 | cron 이 래퍼 호출(§7 L2) |
+| 2026-10-06 | PR #107 | giip #3575 | cron 이 래퍼 호출 |
 | 2026-10-06 | PR #110 | giip #3535 | 단계 11 을 `fix-root-owned.sh` 단독 호출에서 `bootstrap-instance.sh` 로 확장 |
-| 2026-10-06 | (이 변경) | giip #3535 | 스케줄러 cron 사용자를 root 에서 dev 로 변경(claude 가 root 에서 bypass 를 거부해 이슈가 처리되지 않았음) |
+| 2026-10-06 | PR #111 | giip #3535 | 스케줄러 cron 사용자를 root 에서 dev 로 변경(claude 가 root 에서 bypass 를 거부해 이슈가 처리되지 않았음) |
+| 2026-10-06 | (이 변경) | giip #3563 | 래퍼 제거, 근본 원인(`Record-SchedulerState` 호출 형식) 수정으로 cron 은 pwsh 직접 호출 |

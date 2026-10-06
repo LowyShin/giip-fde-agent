@@ -2215,40 +2215,29 @@ foreach ($csn in $map.PSObject.Properties.Name) {
 
         # [giip #1558] gissue 스케줄러 상태를 GIIP 에 기록(SK 인증, giipfaw API 경유).
         # 호출 지점: 잡 시작 시 upsert → runStart → 이슈마다 heartbeat → (Complete-Run 에서) runEnd
+        # giip #3563: 호출 형식(token/text)과 응답 검사는 lib/scheduler-state.ps1 이 맡는다. 예전에는 `sk`/`proc` 폼 키를 보내
+        # 디스패처가 무시하고 help 를 실행했고, 응답도 검사하지 않아 에이전트 등록·이력이 조용히 실패했다.
+        . (Join-Path $root 'lib/scheduler-state.ps1')
         function Record-SchedulerState([string]$Action, [string]$Sk, [string]$ApiUrl, [string]$Csn, [string]$AgentKey, [string]$RunIdKey, [string]$ExecutionMode, [string]$Status, [int]$Processed, [int]$Skipped, [int]$Failed, [string]$Phase, [string]$IssueNum, [string]$Summary) {
             if (-not $Sk) { return }
             try {
-                $form = New-Object System.Collections.Specialized.NameValueCollection
-                $form.Add('sk', $Sk)
-                if ($Action -eq 'upsert') {
-                    $form.Add('proc', 'pApiSchedulerAgentUpsertBySK')
-                    $form.Add('agentKey', $AgentKey)
-                    $form.Add('displayName', "GIIP gissue scheduler CSN $Csn")
-                    $form.Add('hostIdentifier', $env:COMPUTERNAME)
-                    $form.Add('windowsTaskName', 'GIIP_Gissue_Claude')
-                    $form.Add('projectName', "csn$Csn")
-                    $form.Add('scheduleDesc', 'Hourly :07')
-                    $form.Add('isActive', '1')
-                } elseif ($Action -eq 'runStart') {
-                    $form.Add('proc', 'pApiSchedulerAgentRunStartBySK')
-                    $form.Add('runIdKey', $RunIdKey)
-                    $form.Add('agentKey', $AgentKey)
-                    $form.Add('executionMode', $ExecutionMode)
-                    $form.Add('totalIssueCount', '0')
-                } elseif ($Action -eq 'heartbeat') {
-                    $form.Add('proc', 'pApiSchedulerAgentHeartbeatPutBySK')
-                    $form.Add('runIdKey', $RunIdKey)
-                    $form.Add('agentKey', $AgentKey)
-                    $form.Add('processedCount', [string]$Processed)
-                    $form.Add('skippedCount', [string]$Skipped)
-                    $form.Add('failedCount', [string]$Failed)
-                    $form.Add('currentPhase', $Phase)
-                    $form.Add('currentIssueNum', [string]$IssueNum)
-                } else { return }
-                $wc = New-Object System.Net.WebClient
-                $wc.Encoding = [System.Text.Encoding]::UTF8
-                $resp = $wc.UploadValues($ApiUrl, 'POST', $form)
-                $null = [System.Text.Encoding]::UTF8.GetString($resp)
+                switch ($Action) {
+                    'upsert' {
+                        $hostName = if ($env:COMPUTERNAME) { $env:COMPUTERNAME } else { [System.Environment]::MachineName }
+                        $sched = if ($IsLinux) { 'cron :07/:27/:47' } else { 'Hourly :07' }
+                        # @agentKey, @displayName, @hostIdentifier, @windowsTaskName, @projectName, @scheduleDesc, @isActive
+                        $null = Invoke-SchedulerAgentSp -ApiUrl $ApiUrl -Sk $Sk -Name 'SchedulerAgentUpsert' -Values @($AgentKey, "GIIP gissue scheduler CSN $Csn", $hostName, 'GIIP_Gissue_Claude', "csn$Csn", $sched, '1')
+                    }
+                    'runStart' {
+                        # @runIdKey, @agentKey, @executionMode, @totalIssueCount
+                        $null = Invoke-SchedulerAgentSp -ApiUrl $ApiUrl -Sk $Sk -Name 'SchedulerAgentRunStart' -Values @($RunIdKey, $AgentKey, $ExecutionMode, '0')
+                    }
+                    'heartbeat' {
+                        # @runIdKey, @agentKey, @processedCount, @skippedCount, @failedCount, @currentPhase, @currentIssueNum
+                        $null = Invoke-SchedulerAgentSp -ApiUrl $ApiUrl -Sk $Sk -Name 'SchedulerAgentHeartbeatPut' -Values @($RunIdKey, $AgentKey, [string]$Processed, [string]$Skipped, [string]$Failed, $Phase, [string]$IssueNum)
+                    }
+                    default { return }
+                }
             } catch {
                 Write-Output "[WARN][SchedulerState-$Action] 실패: $($_.Exception.Message)"
             }
@@ -2804,6 +2793,7 @@ foreach ($csn in $map.PSObject.Properties.Name) {
         # 레벨에서 결정 — 신뢰도를 높인다). 예산 초과로 못 다룬 이슈는 LLM 호출 없이 스크립트가 직접 note
         # 코멘트를 남기고 다음 :07 로 미룬다.
         $issueLoopDeadline = $jobStartTime.AddMinutes($runTimeoutMin - 5)
+        $runProcessed = 0   # giip #3563: 실제로 엔진 처리를 시작한 이슈 수(종료 기록의 processedCount)
         for ($qi = 0; $qi -lt $issueQueue.Count; $qi++) {
             $issue = $issueQueue[$qi]
             if ((Get-Date) -gt $issueLoopDeadline) {
@@ -2861,6 +2851,7 @@ foreach ($csn in $map.PSObject.Properties.Name) {
                 }
             }
             Write-Output "[ISSUE] isn=$($issue.Isn) status=$($issue.Status) elapsed=$($issue.ElapsedMin)분 처리 시작"
+            $runProcessed++
             try {
                 Record-SchedulerState -Action heartbeat -Sk $csnSk -ApiUrl $apiSk2Url -Csn $csn -AgentKey "gissue_csn$csn" -RunIdKey $runIdKey -ExecutionMode '' -Status '' -Processed $qi -Skipped 0 -Failed 0 -Phase "isn=$($issue.Isn)" -IssueNum $issue.Isn -Summary ''
             } catch {}
@@ -2946,6 +2937,7 @@ ${function:Invoke-GissueEngine}
                 try { Set-GissueReviewRecheckIsn $reviewRecheckStateFile $issue.Isn ((Get-Date).ToUniversalTime().ToString('o')) } catch {}
             }
         }
+        Write-Output "[RUN-COUNTS] processed=$runProcessed"   # giip #3563: Complete-Run 이 읽어 종료 기록에 채운다
     } -ArgumentList $Root, $AgentRepo, $ClaudeModel, $workdir, $waitDeadline, $BusyPollSec, $GiipAccountsFile, $ApiBase, $ApiSk2Url,
                     $ForcedUnblockExcludeRepoNames, $env:MINIMAX_API_KEY, $MiniMaxModel, $MiniMaxBaseUrl, $csn, $MiniMaxContextTokens,
                     $restBranch, $repoMaintenancePromptSub, $pendingIssuePromptSub, $readyIssuePromptSub, $staleIssuePromptSub,
@@ -2989,25 +2981,23 @@ function Send-GissueLogsToConsole($csn) {
     }
 }
 
+. (Join-Path $Root 'lib/scheduler-state.ps1')   # giip #3563: Complete-Run 의 runEnd 호출용(잡 안에서는 별도로 로드)
+
 function Complete-Run($r, $status) {
-    try { (Receive-Job $r.Job) | Out-File -FilePath (Join-Path $LogDir "gissue_csn$($r.Csn).out.log") -Append -Encoding UTF8 } catch {}
+    $jobOut = $null
+    try { $jobOut = Receive-Job $r.Job; $jobOut | Out-File -FilePath (Join-Path $LogDir "gissue_csn$($r.Csn).out.log") -Append -Encoding UTF8 } catch {}
     Write-Log $r.Csn $status
-    # [giip #1558] 실행 종료 기록
+    # [giip #1558] 실행 종료 기록. giip #3563: 형식 수정 + 응답 검사 + 잡이 남긴 [RUN-COUNTS] 로 처리 건수를 채운다.
     if ($r.Sk) {
         try {
-            $form = New-Object System.Collections.Specialized.NameValueCollection
-            $form.Add('sk', $r.Sk)
-            $form.Add('proc', 'pApiSchedulerAgentRunEndBySK')
-            $form.Add('runIdKey', $r.RunIdKey)
-            $form.Add('agentKey', "gissue_csn$($r.Csn)")
-            $form.Add('status', $status)
-            $form.Add('processedCount', [string]$r.ProcessedCount)
-            $form.Add('skippedCount', [string]$r.SkippedCount)
-            $form.Add('failedCount', [string]$r.FailedCount)
-            $form.Add('summary', $status)
-            $wc = New-Object System.Net.WebClient
-            $wc.Encoding = [System.Text.Encoding]::UTF8
-            $null = $wc.UploadValues($ApiSk2Url, 'POST', $form)
+            $processed = 0
+            if ($jobOut) { $m = [regex]::Matches(($jobOut | Out-String), '\[RUN-COUNTS\] processed=(\d+)'); if ($m.Count -gt 0) { $processed = [int]$m[$m.Count - 1].Groups[1].Value } }
+            $r.ProcessedCount = $processed
+            # @runIdKey, @agentKey, @status, @processedCount, @skippedCount, @failedCount, @exitCode, @summary
+            # @exitCode 는 INT 라 NULL 을 넘기면 디스패처가 문자열로 전달해 변환 오류가 난다(실측) — 숫자로 채운다.
+            $runStatus = ConvertTo-SchedulerRunStatus $status
+            $exitCode = if ($runStatus -eq 'SUCCEEDED') { '0' } else { '1' }
+            $null = Invoke-SchedulerAgentSp -ApiUrl $ApiSk2Url -Sk $r.Sk -Name 'SchedulerAgentRunEnd' -Values @($r.RunIdKey, "gissue_csn$($r.Csn)", $runStatus, [string]$r.ProcessedCount, [string]$r.SkippedCount, [string]$r.FailedCount, $exitCode, $status)
         } catch {
             Write-Log $r.Csn "[SchedulerState-runEnd] 실패: $($_.Exception.Message)"
         }
