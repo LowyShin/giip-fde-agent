@@ -27,3 +27,8 @@ Follow `.agent/rules/10_karpathy_guidelines.md` for all coding tasks:
 
 ## CONTEXT
 The full agent context is stored in the `.agent` directory. Always check there for project-specific conventions.
+
+## DOCKER INSTANCE — 시작할 때 부트스트랩 (giip #3535)
+docker 인스턴스에서 작업을 시작하면 먼저 `bash scripts/bootstrap-instance.sh` 를 실행하고 출력의 MISSING/WARN 을 해결한다(멱등, 비밀값 미출력).
+스크립트가 Linux 에서 안 돌면 환경을 먼저 맞추고, 그래도 안 되는 것만 스크립트를 고친다(`$env:TEMP`→`[System.IO.Path]::GetTempPath()`, 백슬래시→`Join-Path`, Windows 전용 호출→`$IsLinux` 분기).
+정본: `docs/60-operations/docker-instance-setup-rules.md` §8, 허브 `giipprj-hub` 의 `KNOW-096`.
