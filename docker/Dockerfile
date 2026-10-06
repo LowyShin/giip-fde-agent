@@ -21,6 +21,15 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# giipdb/mgmt/execSQLFile.ps1 등 DB 직접 접속 스크립트는 Invoke-Sqlcmd(SqlServer 모듈)를 우선 쓴다. sqlcmd/ODBC 설치
+# 없이 pwsh 만으로 동작하고(Linux 에서 실측: giipdb 접속·조회 성공) 스크립트 수정이 필요 없다. 이미지에 구워 컨테이너를
+# 재생성해도 유지한다. 접속 정보(mgmt/dbconfig.json)는 비밀값이라 이미지에 넣지 않고 컨테이너에서 별도로 둔다.
+RUN pwsh -NoProfile -Command "Set-PSRepository PSGallery -InstallationPolicy Trusted; Install-Module SqlServer -Scope AllUsers -Force -AcceptLicense -ErrorAction Stop"
+# Windows 전제로 작성된 스크립트가 `& powershell -File ...` 로 자식 스크립트를 부른다(giipdb/mgmt/updateIssueStatus.ps1,
+# scripts/gissue/pr-gate-sweep.ps1 등). Linux 에는 powershell 실행 파일이 없어 조용히 실패하므로 pwsh 로 연결한다
+# (-ExecutionPolicy 는 Linux 에서 무시되어 같은 인자로 동작한다).
+RUN ln -sf "$(command -v pwsh)" /usr/local/bin/powershell
+
 WORKDIR /work
 
 COPY entrypoint.sh /entrypoint.sh
