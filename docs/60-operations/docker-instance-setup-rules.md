@@ -113,6 +113,31 @@ gissue-scheduler cron `-OnlyCsn`↔SSOT · 3종 cron 파일 존재. 전부 PASS 
 - [ ] `gissue-scheduler` cron 의 사용자가 `root` 가 아니다(`grep gissue /etc/cron.d/gissue-scheduler`)이고, 그 사용자에 claude 로그인이 되어 있다.
 - [ ] 시크릿/인스턴스별 파일은 커밋하지 않았다(gitignore 확인).
 - [ ] (PR 자동화 필요 시) `gh` 인증 완료(`GH_TOKEN` 또는 `gh auth login`).
+- [ ] `bash scripts/bootstrap-instance.sh` 출력에 MISSING 이 없다(§8). DB 직접 접속이 필요하면 `GIIP_DB_*` 를 `.env` 에 넣었다.
+
+## 8. 인스턴스 부트스트랩 — 인스턴스를 옮겨 다녀도 같은 상태 (giip #3535)
+
+**원칙: 인스턴스에는 수동 설정을 남기지 않는다.** 인스턴스가 가진 것은 (1) 이 저장소와 허브(`giipprj-hub`) git 클론, (2) 환경변수/`.env`
+또는 영속 볼륨 `/work/.secrets` 의 비밀값 — 둘뿐이다. 그래서 새 인스턴스를 만들거나 다른 인스턴스로 옮겨도 아래 한 번이면 같은 상태가 된다.
+
+```bash
+bash /work/giip-fde-agent/scripts/bootstrap-instance.sh      # 멱등, 값(SK/비밀번호)은 출력하지 않는다. entrypoint.sh 가 기동 시 자동 실행
+```
+
+| 단계 | 하는 일 | 입력 |
+|---|---|---|
+| 1 | root 소유 파일을 dev 로 회수(`fix-root-owned.sh`) — 스케줄러 회차 끝마다도 실행 | — |
+| 2 | `powershell` → `pwsh` 링크(`& powershell -File` 호출 호환) | root/sudo |
+| 3 | `SqlServer` 모듈(`Invoke-Sqlcmd`) 설치 — sqlcmd/ODBC 불필요 | 네트워크 |
+| 4 | 허브 저장소 clone(없을 때만, 있으면 건드리지 않음) | `GIIP_HUB_URL`, `GIIP_HUB_DIR` |
+| 5 | `giipdb/mgmt/dbconfig.json`(chmod 600) 생성(없을 때만) + `/work/.secrets` 사본 보관 | `GIIP_DB_SERVER/NAME/LOGIN/PASSWORD` 또는 `/work/.secrets/dbconfig.json` |
+| 6 | 허브의 `.agent/scripts/check_instance_env.sh` 로 현재 상태 점검(OK/MISSING/WARN) | — |
+
+- 환경으로 풀리는 것(도구·링크·모듈)은 `docker/Dockerfile` 에도 넣어 이미지에 굽고, 부트스트랩은 안 구워진 이전 이미지에서도 같은 결과를 내는 안전망이다.
+- 스크립트가 Linux 에서 안 돌면 **환경을 먼저 맞추고, 그래도 안 되는 것만 스크립트를 고친다.** 고칠 때는 `$env:TEMP` 대신
+  `[System.IO.Path]::GetTempPath()`, 백슬래시 경로 대신 `Join-Path`, Windows 전용 호출(`robocopy` 등)은 `$IsLinux` 분기. Linux 함정 목록은 허브 KNOW-096.
+- AI 가 새 인스턴스에서 시작할 때: 허브 `AGENTS.md` → `KNOW-096` → 위 부트스트랩 출력의 MISSING/WARN 만 해결한다. API 경로 SK 는 `giipAgent.cnf` 에서 읽고 사용자에게 묻지 않는다.
+  `dbconfig.json` 이 없을 때만 사용자에게 한 번 요청한다.
 
 ## 관련
 

@@ -1,6 +1,6 @@
 # docker/entrypoint.sh 사양서
 
-> **기준**: `main` @ `cb25db5`(2026-10-06). 코드: [`docker/entrypoint.sh`](../../docker/entrypoint.sh) 248줄.
+> **기준**: `main` @ `cb25db5`(2026-10-06) + 부트스트랩 변경(단계 11). 코드: [`docker/entrypoint.sh`](../../docker/entrypoint.sh).
 > **작성 방식**: 이 스크립트의 사양서는 따로 없었다(최초 커밋 `592ec89` 때부터 코드와 `docker-deployment.md` 가 함께 자라왔다).
 > 이 문서는 **현재 코드를 읽고 역설계한 사양**이다. 코드가 바뀌면 이 문서도 같이 고친다. 코드와 어긋나면 **코드가 정본**이다.
 > **관련 문서**: 세팅 룰 [`docker-instance-setup-rules.md`](./docker-instance-setup-rules.md), 배포 설명 [`docker-deployment.md`](./docker-deployment.md), 파일 표 [`docker/README.md`](../../docker/README.md).
@@ -44,6 +44,8 @@
 | `GIIP_SCHEDULER_USER` | `dev` | 이슈 스케줄러 cron 을 돌릴 일반 사용자. 없으면 `useradd -m` 로 만들고, 만들 수 없으면 root 로 폴백하며 경고(이 경우 이슈가 처리되지 않음) | 7 |
 | `GIIP_ENABLE_AGENT` | `true` | `false` 면 giipAgentLinux/CQE 생략 | 8 |
 | `GIIP_AGENT_DIR` / `GIIP_AGENT_URL` | `/work/giipAgentLinux` / 공식 giipAgentLinux URL | giipAgentLinux clone 위치·출처 | 8 |
+| `GIIP_DB_SERVER` / `_NAME` / `_LOGIN` / `_PASSWORD` | 없음 / `giipdb` | (선택) DB 직접 접속 정보. 단계 11 이 `giipdb/mgmt/dbconfig.json`(0600)을 만든다 | 11 |
+| `GIIP_HUB_URL` / `GIIP_HUB_DIR` / `GIIP_SECRETS_DIR` | 공식 `giipprj-hub` URL / `/work/giipprj-hub` / `/work/.secrets` | 허브 저장소 위치와 비밀값 사본 보관 위치 | 11 |
 | `GIIP_LSSN` | `0` | 양의 정수면 `giipAgent.cnf` 의 lssn 사전 배정(giip 2857). 아니면 0(첫 실행 시 자동 발급) | 8 |
 
 ## 4. 출력 — 만들어지는 것
@@ -72,7 +74,7 @@
 | 8 | giipAgentLinux + CQE | `GIIP_ENABLE_AGENT=true` 이고 SK 가 있을 때만. ① SK 결정: `lib/ssot-sk.js`(giip-accounts.json, EFFECTIVE_CSN)가 우선, 실패 시 `GIIP_SK` 폴백 ② giipAgentLinux 를 `main` 으로 pull/clone ③ `giipAgent.cnf` 작성/갱신(§4) ④ cron: `giip-agent`(매 1분 `giipAgent3.sh`), `giip-cqe`(매 5분 `cqe/giipCQE.sh`) | git 실패는 **치명**. cnf sk 가 SSOT 와 다르면 경고 후 갱신, `STRICT` 면 중단. SK 를 못 구하면 이 단계 전체를 **건너뜀**(웹에서 이 컨테이너 상태가 안 보임) |
 | 9 | cron 데몬 | `/etc/cron.d/*` 가 하나라도 있으면 `cron` 을 **한 번만** 기동(중복 기동은 lock 오류) | — |
 | 10 | 정합성 점검 | `scripts/gissue/check-csn-consistency.sh`(3개 cron 의 CSN 일치 확인) | **비차단**: 경고만 |
-| 11 | root 소유 파일 회수 | `scripts/fix-root-owned.sh`(`/work` 의 root 소유 파일을 dev 로 chown) | 실패는 무시 |
+| 11 | 인스턴스 부트스트랩 | `scripts/bootstrap-instance.sh`(여러 번 실행해도 결과가 같음): root 소유 파일 회수, `powershell` 링크, `SqlServer` 모듈, 허브 저장소 clone(없을 때만), `giipdb/mgmt/dbconfig.json` 생성(없을 때만, `GIIP_DB_*` 또는 `/work/.secrets`), 환경 점검. 값은 출력하지 않는다 | 실패는 무시(경고) |
 | 12 | 유지 | 로그 파일들을 만들고 `exec tail -F ...` — 이 프로세스가 PID 1 이 되어 컨테이너가 살아 있다 | — |
 
 ### 5.1 스케줄러 cron 명령(단계 7)
@@ -104,7 +106,6 @@
 | L5 | `eval` 로 원격 응답을 실행한다. `JSON.stringify` 로 값을 인용하지만, **GIIP 웹 응답을 신뢰하는 모델**이다 | 설계 판단 필요 |
 | L6 | giip-agent/giip-cqe cron 은 여전히 root 로 돈다(이슈 스케줄러만 dev). root 로 만든 파일은 단계 11 이 회수한다 | 이슈 스케줄러는 dev 로 수정됨 |
 | L8 | `dev` 의 claude 로그인은 인스턴스마다 한 번 수동으로 해야 한다(`docker exec -it -u dev <컨테이너> claude`). 로그인이 없으면 스케줄러가 이슈를 처리하지 못하고 entrypoint 는 경고만 한다 | 자동화 안 됨 |
-| L7 | `bootstrap-instance.sh`(DB 접속 파일 생성, 허브 clone, 환경 점검)는 `main` 에 **아직 없다**. 단계 11 은 `fix-root-owned.sh` 만 부른다 | 별도 브랜치에만 있음 |
 
 ## 8. 검증 방법
 
@@ -132,4 +133,5 @@ docker exec giip-fde-agent bash scripts/gissue/check-csn-consistency.sh   # 3개
 | 2026-10-04 | `ee43e5b` | giip #3405 | `giipAgent.cnf` SK 를 SSOT 에서 파생 |
 | 2026-10-06 | PR #106 | giip #3535 | `fix-root-owned.sh` 호출 |
 | 2026-10-06 | PR #107 | giip #3575 | cron 이 래퍼 호출(§7 L2) |
+| 2026-10-06 | PR #110 | giip #3535 | 단계 11 을 `fix-root-owned.sh` 단독 호출에서 `bootstrap-instance.sh` 로 확장 |
 | 2026-10-06 | (이 변경) | giip #3535 | 스케줄러 cron 사용자를 root 에서 dev 로 변경(claude 가 root 에서 bypass 를 거부해 이슈가 처리되지 않았음) |
