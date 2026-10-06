@@ -2870,6 +2870,12 @@ foreach ($csn in $map.PSObject.Properties.Name) {
             }
             Write-Output "[ISSUE] isn=$($issue.Isn) status=$($issue.Status) elapsed=$($issue.ElapsedMin)분 처리 시작"
             $runProcessed++
+            # 회차가 105분 예산으로 TIMEOUT 되면 잡이 강제 중단되어 맨 끝의 [RUN-COUNTS] 가 출력되지 않는다 — 그러면 종료 기록의 처리 건수가 0 으로 남는다
+            # (2026-10-06 실측: 일을 하고도 TIMED_OUT/처리 0). 이슈마다 출력해 중단되어도 마지막 값이 남게 한다(Complete-Run 은 마지막 일치를 쓴다).
+            Write-Output "[RUN-COUNTS] processed=$runProcessed"
+            # 출력에만 의존하지 않는다: TIMEOUT 으로 잡이 강제 중단된 두 회차(17:12, 19:12)는 잡 출력이 로그에 남지 않았다(원인 미확정).
+            # 파일은 잡이 죽어도 남으므로 Complete-Run 이 이 값을 읽는다.
+            try { Set-Content -LiteralPath (Join-Path $logDir "run-counts_$runIdKey.txt") -Value $runProcessed -Encoding ASCII } catch {}
             try {
                 Record-SchedulerState -Action heartbeat -Sk $csnSk -ApiUrl $apiSk2Url -Csn $csn -AgentKey "gissue_csn$csn" -RunIdKey $runIdKey -ExecutionMode '' -Status '' -Processed $qi -Skipped 0 -Failed 0 -Phase "isn=$($issue.Isn)" -IssueNum $issue.Isn -Summary ''
             } catch {}
@@ -3010,6 +3016,12 @@ function Complete-Run($r, $status) {
         try {
             $processed = 0
             if ($jobOut) { $m = [regex]::Matches(($jobOut | Out-String), '\[RUN-COUNTS\] processed=(\d+)'); if ($m.Count -gt 0) { $processed = [int]$m[$m.Count - 1].Groups[1].Value } }
+            $countsFile = Join-Path $LogDir "run-counts_$($r.RunIdKey).txt"
+            if ($processed -eq 0 -and (Test-Path -LiteralPath $countsFile)) {
+                $fromFile = 0
+                if ([int]::TryParse(((Get-Content -LiteralPath $countsFile -ErrorAction SilentlyContinue | Select-Object -First 1) -as [string]), [ref]$fromFile)) { $processed = $fromFile }
+            }
+            Remove-Item -LiteralPath $countsFile -Force -ErrorAction SilentlyContinue
             $r.ProcessedCount = $processed
             # @runIdKey, @agentKey, @status, @processedCount, @skippedCount, @failedCount, @exitCode, @summary
             # @exitCode 는 INT 라 NULL 을 넘기면 디스패처가 문자열로 전달해 변환 오류가 난다(실측) — 숫자로 채운다.
