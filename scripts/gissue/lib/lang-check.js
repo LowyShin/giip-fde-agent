@@ -15,6 +15,9 @@
  * @returns {string|null}
  */
 function scriptOf(codePoint) {
+  // 숫자가 아닌 경우
+  if (typeof codePoint !== 'number' || Number.isNaN(codePoint)) return null;
+
   // 한자 (CJK Unified Ideographs, Extension A, Compatibility)
   if (
     (codePoint >= 0x4E00 && codePoint <= 0x9FFF) ||
@@ -86,6 +89,10 @@ function getForbiddenScripts(lang) {
  * @returns {Array<{line:number, col:number, char:string, codePoint:string, script:string, excerpt:string}>}
  */
 function detect(text, lang = 'ko') {
+  // 결함 2: 비문자열 입력 방어
+  if (text == null) return [];
+  if (typeof text !== 'string') text = String(text);
+
   const forbidden = new Set(getForbiddenScripts(lang));
   /** @type {Array<{line:number, col:number, char:string, codePoint:string, script:string, excerpt:string}>} */
   const results = [];
@@ -98,27 +105,35 @@ function detect(text, lang = 'ko') {
     // lang-check:ignore 줄 건너뛰기
     if (line.includes('lang-check:ignore')) continue;
 
-    for (let colIdx = 0; colIdx < line.length; colIdx++) {
-      const char = line[colIdx];
+    // 결함 1: UTF-16 코드 유닛 대신 코드포인트 단위 순회
+    // colUtf16은 excerpt 계산을 위한 UTF-16 코드 유닛 인덱스
+    let colUtf16 = 0;
+    for (const char of line) {
       const codePoint = char.codePointAt(0);
-      if (codePoint === undefined) continue;
+      if (codePoint === undefined) {
+        colUtf16 += char.length;
+        continue;
+      }
 
       const script = scriptOf(codePoint);
       if (script && forbidden.has(script)) {
-        // 앞뒤 20자 발췌
-        const start = Math.max(0, colIdx - 20);
-        const end = Math.min(line.length, colIdx + 21);
+        // 서러게이트 쌍(char.length === 2)이면 완전한 문자로서 1건
+        // excerpt: UTF-16 슬라이스 (기존 col语义 유지)
+        const start = Math.max(0, colUtf16 - 20);
+        const end = Math.min(line.length, colUtf16 + 21);
         const excerpt = line.slice(start, end);
 
         results.push({
           line: lineNum,
-          col: colIdx + 1, // 1부터 시작
+          col: colUtf16 + 1, // 1부터 시작 (UTF-16 코드 유닛 단위)
           char,
           codePoint: 'U+' + codePoint.toString(16).toUpperCase().padStart(4, '0'),
           script,
           excerpt,
         });
       }
+
+      colUtf16 += char.length; // 서러게이트 쌍은 2, 그 외는 1
     }
   }
 
@@ -132,9 +147,9 @@ function detect(text, lang = 'ko') {
 /** @type {Record<string, string>} */
 const DIRECTIVES = {
   ko: `[출력 언어 규칙 — 최우선]
-이 작업에서 네가 쓰는 모든 글(코드 주석, 커밋 메시지, 문서, 테스트 이름, 최종 보고)은 100% 한국어로 쓴다.
-다른 문자가 섞이면 안 된다. 한국어가 어색하면 영어 단어를 그대로 쓰거나 한글로 소리 나는 대로 쓴다.
-코드 식별자와 영어 고유명사는 그대로 둔다.`,
+이 작업에서 네가 쓰는 모든 글(코드 주석, 커밋 메시지, PR 본문, 문서, 이슈 코멘트, 최종 보고)은 100% 한국어(한글)로 쓴다.
+한자, 일본어 가나, 중국어, 러시아어(키릴 문자) 등 다른 문자는 한 글자도 섞지 마라. 한국어가 어색하면 영어 단어를 그대로 쓰거나 한글로 소리 나는 대로 써라(다른 문자로 바꾸지 마라).
+코드 식별자와 영어 고유명사는 그대로 둔다. 이 규칙은 응답 문장에도 적용된다.`,
 
   en: `[Output Language Rules — Highest Priority, Read Before Starting]
 All text you write in this task (code comments, commit messages, documentation, test names, final reports) must be in English.
@@ -172,6 +187,9 @@ function directive(lang = 'ko') {
  * @returns {boolean}
  */
 function isIgnoredPath(filePath) {
+  // 결함 2: 비문자열 입력 방어
+  if (typeof filePath !== 'string') return false;
+
   // package-lock.json, pnpm-lock.yaml
   if (filePath.endsWith('package-lock.json')) return true;
   if (filePath.endsWith('pnpm-lock.yaml')) return true;
@@ -202,7 +220,28 @@ function isIgnoredPath(filePath) {
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
+
+/**
+ * git log 레코드 파서. 해시 앞에 붙은 개행과 필드 앞뒤 공백을 정리한다.
+ * @param {string} logOutput
+ * @returns {Array<{hash:string, subject:string, body:string, raw:string}>}
+ */
+function _parseLogRecords(logOutput) {
+  if (!logOutput || !logOutput.trim()) return [];
+  const rawRecords = logOutput.trim().split('\x1e');
+  const results = [];
+  for (const record of rawRecords) {
+    if (!record.trim()) continue;
+    const parts = record.split('\x1f');
+    if (parts.length < 3) continue;
+    const hash = parts[0].trim();
+    const subject = (parts[1] || '').trim();
+    const body = (parts[2] || '').replace(/\r?\n$/, '').trim();
+    results.push({ hash, subject, body, raw: record });
+  }
+  return results;
+}
 
 /**
  * git 저장소에서 since 이후 커밋과 diff를 검사.
@@ -215,29 +254,46 @@ function checkGit(repoDir, options = {}) {
   /** @type {Array<Object>} */
   const findings = [];
 
+  // since 값에 셸 특수문자(含 세미콜론) 있으면 실행하지 않고 오류 반환
+  if (since && /[;`$|<>]/.test(since)) {
+    return [{ error: `since 값에 셸 특수문자가 포함되어 있습니다: ${since}` }];
+  }
+
   try {
-    // 비병합 커밋 가져오기 (--all 모든 브랜치)
-    const revisionRange = since ? `--since=${since}` : '--all';
-    const logCmd = `git log ${revisionRange} --pretty=format:"%H|%s|%b" --not --remotes`;
-    const logOutput = execSync(logCmd, { cwd: repoDir, encoding: 'utf-8', timeout: 30000 });
+    // 비병합 커밋 가져오기: 모든 브랜치(--all) 대상
+    // 병합 커밋 제외(--no-merges), since 이후 커밋만
+    const logArgs = ['log', '--all', '--no-merges', `--format=%H%x1f%s%x1f%b%x1e`];
+    if (since) {
+      logArgs.push(`--since=${since}`);
+    }
+    const logOutput = execFileSync('git', logArgs, {
+      cwd: repoDir,
+      encoding: 'utf-8',
+      timeout: 30000,
+      maxBuffer: 64 * 1024 * 1024,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
 
-    const commits = logOutput.trim().split('\n').filter(Boolean);
+    if (!logOutput.trim()) {
+      return findings;
+    }
 
-    for (const commitLine of commits) {
+    // _parseLogRecords로 파싱 (개행 정리 + 해시 검증)
+    const records = _parseLogRecords(logOutput);
+
+    for (const record of records) {
       if (findings.length >= maxFindings) break;
 
-      const pipeIdx = commitLine.indexOf('|');
-      if (pipeIdx === -1) continue;
-      const commitHash = commitLine.slice(0, pipeIdx);
-      const commitShort = commitHash.slice(0, 8);
-      const rest = commitLine.slice(pipeIdx + 1);
-      const barIdx = rest.indexOf('|');
-      const subject = barIdx !== -1 ? rest.slice(0, barIdx) : rest;
-      const body = barIdx !== -1 ? rest.slice(barIdx + 1) : '';
+      // 해시 유효성 검증
+      if (!/^[0-9a-f]{40}$/.test(record.hash)) {
+        findings.push({ error: '잘못된 커밋 해시 레코드' });
+        continue;
+      }
 
-      const message = subject + '\n' + body;
+      const commitShort = record.hash.slice(0, 8);
+      const message = record.subject + '\n' + record.body;
 
-      // 메시지 검사
+      // 메시지 검사 (제목 + 본문 전체)
       const messageFindings = detect(message, lang);
       for (const f of messageFindings) {
         if (findings.length >= maxFindings) break;
@@ -254,9 +310,20 @@ function checkGit(repoDir, options = {}) {
       }
 
       // diff 검사
+      let diffOk = true;
       try {
-        const diffCmd = `git show ${commitHash} --unified=0 --diff-filter=AM -- ":(exclude)*.lock" ":(exclude)package-lock.json" ":(exclude)pnpm-lock.yaml"`;
-        const diffOutput = execSync(diffCmd, { cwd: repoDir, encoding: 'utf-8', timeout: 30000, shell: '/bin/bash' });
+        const diffArgs = [
+          'show', record.hash,
+          '--unified=0', '--no-color', '--format=', '--diff-filter=AMR',
+          ':(exclude)*.lock', ':(exclude)package-lock.json', ':(exclude)pnpm-lock.yaml',
+        ];
+        const diffOutput = execFileSync('git', diffArgs, {
+          cwd: repoDir,
+          encoding: 'utf-8',
+          timeout: 30000,
+          maxBuffer: 64 * 1024 * 1024,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
         const diffLines = diffOutput.split('\n');
 
         let currentFile = null;
@@ -316,7 +383,9 @@ function checkGit(repoDir, options = {}) {
           }
         }
       } catch (diffErr) {
-        // diff 오류는 무시 (빈 diff 등)
+        // git show 실패 시 조용히 오류 레코드를 결과에 추가하고 계속
+        findings.push({ error: `커밋 ${commitShort}: ${diffErr.message || diffErr}` });
+        diffOk = false;
       }
     }
   } catch (err) {
@@ -394,20 +463,37 @@ function runCli() {
     let allFindings = [];
     for (const gitDir of gitDirs) {
       const findings = checkGit(gitDir, { since, lang, maxFindings: maxFindings - allFindings.length });
-      if (findings.length === 1 && findings[0].error) {
-        console.error('git 오류 (' + gitDir + '): ' + findings[0].error);
-        process.exit(2);
-      }
       allFindings = allFindings.concat(findings);
       if (allFindings.length >= maxFindings) break;
     }
     allFindings = allFindings.slice(0, maxFindings);
+
+    // error 항목과 금지 문자 항목 분리
+    const errorItems = allFindings.filter(f => f.error);
+    const forbiddenItems = allFindings.filter(f => !f.error);
+
     if (asJson) {
       console.log(JSON.stringify({ findings: allFindings }, null, 2));
     } else {
-      printHumanOutput(allFindings, maxFindings);
+      if (errorItems.length > 0) {
+        console.log(`검사 오류 ${errorItems.length}건`);
+        console.log('  ' + errorItems[0].error);
+      }
+      if (forbiddenItems.length > 0) {
+        printHumanOutput(forbiddenItems, maxFindings);
+      } else if (errorItems.length === 0) {
+        console.log('문제 없음 (0건)');
+      }
     }
-    process.exit(allFindings.length > 0 ? 4 : 0);
+
+    // 금지 문자가 있으면 4, 오류만 있으면 2, 둘 다 있으면 4
+    if (forbiddenItems.length > 0) {
+      process.exit(4);
+    } else if (errorItems.length > 0) {
+      process.exit(2);
+    } else {
+      process.exit(0);
+    }
   } else {
     cliHelp();
     process.exit(2);
@@ -488,6 +574,7 @@ module.exports = {
   directive,
   isIgnoredPath,
   checkGit,
+  _parseLogRecords,
 };
 
 // CLI 실행
