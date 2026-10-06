@@ -6,6 +6,9 @@
 #      (claude 는 root 에서 --dangerously-skip-permissions 를 거부한다)
 #      root 소유인 /work 전체와 시작 디렉토리(FDE_GRANT_DIRS)는 소유자를 바꾸지 않고, 그 사용자를
 #      root 그룹에 넣은 뒤 그룹 읽기/쓰기 권한을 부여해서 읽고 쓸 수 있게 한다.
+#   1-b. (root 구간) 그 사용자에게 NOPASSWD sudo 를 자동 부여한다 (setup-dev-sudo.sh 재사용).
+#        전환된 dev 가 이후 root 권한 작업(예: /usr 전역 npm 패키지 claude 자동업데이트)을 할 수 있게 한다.
+#        끄려면 FDE_GRANT_SUDO=0. (이전엔 setup-dev-sudo.sh 를 수동으로 따로 실행해야 했다.)
 #   2. 그 사용자로 전환해서, remote-control 을 쓰는 경우 claude.ai 로그인 여부를 먼저 확인한다.
 #      (미로그인이면 claude auth login 을 먼저 실행)
 #   3. claude 를 bypass + remote-control 옵션으로 실행한다.
@@ -17,6 +20,7 @@
 #
 # 환경변수:
 #   FDE_USER            전환할 일반 사용자 이름 (기본 dev)
+#   FDE_GRANT_SUDO      1(기본)=root 구간에서 dev 에 NOPASSWD sudo 자동 부여, 0=끔
 #   FDE_REMOTE_CONTROL  1(기본)=remote-control 사용, 0=끔
 #   FDE_MODE            interactive(기본) | server
 #                         interactive: claude --dangerously-skip-permissions --remote-control
@@ -167,6 +171,20 @@ for d in $FDE_GRANT_DIRS; do
     done
   fi
 done
+
+# ---- 5b) dev 에게 NOPASSWD sudo 자동 부여 (root 구간; setup-dev-sudo.sh 재사용) ----
+# 수동 2단계(setup-dev-sudo.sh 별도 실행)를 없애고 부팅 시 자동 적용한다. 전환된 dev 가 이후
+# root 권한 작업(예: /usr 전역 npm 패키지 claude 자동업데이트)을 sudo 로 할 수 있게 한다.
+# 끄려면 FDE_GRANT_SUDO=0. 부팅을 막지 않도록 실패는 경고만 남긴다(설치 실패·네트워크 등).
+if [ "${FDE_GRANT_SUDO:-1}" = "1" ]; then
+  if [ -f "$SELF_DIR/scripts/setup-dev-sudo.sh" ]; then
+    log "dev NOPASSWD sudo 자동 부여 (FDE_GRANT_SUDO=1): setup-dev-sudo.sh"
+    FDE_USER="$FDE_USER" sh "$SELF_DIR/scripts/setup-dev-sudo.sh" \
+      || log "WARN: sudo 자동 부여 실패 — 건너뜀 (수동: sh scripts/setup-dev-sudo.sh)"
+  else
+    log "WARN: $SELF_DIR/scripts/setup-dev-sudo.sh 없음 — sudo 자동 부여 건너뜀"
+  fi
+fi
 
 # ---- 6) 일반 사용자로 전환해 이 스크립트를 다시 실행 (1) 의 경로로 로그인 확인 → claude 기동) ----
 CMD="$(build_cmd)"
