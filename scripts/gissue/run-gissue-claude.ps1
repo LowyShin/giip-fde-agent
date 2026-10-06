@@ -2404,6 +2404,20 @@ foreach ($csn in $map.PSObject.Properties.Name) {
             $env:ANTHROPIC_BASE_URL = $MinimaxBaseUrl
             $env:ANTHROPIC_API_KEY = $MinimaxApiKey
             $env:CLAUDE_CODE_MAX_CONTEXT_TOKENS = $MinimaxContextTokens
+            # ── C1: 출력 언어 머리말 삽입 ─────────────────────────────────────────────────────
+            $langForDirective = if ($projectLang) { $projectLang } else { 'ko' }
+            $langDirective = & node (Join-Path $Root 'lib/lang-check.js') --directive --lang $langForDirective 2>$null | Out-String
+            $langDirective = $langDirective.Trim()
+            if (-not $langDirective) {
+                $langDirective = @(
+                    '[출력 언어 규칙 — 최우선]',
+                    '이 작업에서 네가 쓰는 모든 글(코드 주석, 커밋 메시지, PR 본문, 문서, 이슈 코멘트, 최종 보고)은 100% 한국어(한글)로 쓴다.',
+                    '한자, 일본어 가나, 중국어, 러시아어(키릴 문자) 등 다른 문자는 한 글자도 섞지 마라.',
+                    '한국어가 어색하면 영어 단어를 그대로 쓰거나 한글로 소리 나는 대로 써라.'
+                ) -join "`n"
+            }
+            $PromptText = $langDirective + "`n`n" + $PromptText
+            # ───────────────────────────────────────────────────────────────────────────────
             $mmOutput = $PromptText | & claude -p --dangerously-skip-permissions --add-dir $Root --model $MinimaxModel 2>&1
             $mmExit = $LASTEXITCODE
             $env:ANTHROPIC_BASE_URL = $prevBase; $env:ANTHROPIC_API_KEY = $prevKey
@@ -2869,6 +2883,7 @@ foreach ($csn in $map.PSObject.Properties.Name) {
                 }
             }
             Write-Output "[ISSUE] isn=$($issue.Isn) status=$($issue.Status) elapsed=$($issue.ElapsedMin)분 처리 시작"
+            $issueLangQaSince = (Get-Date).ToUniversalTime().ToString('o')
             $runProcessed++
             # 회차가 105분 예산으로 TIMEOUT 되면 잡이 강제 중단되어 맨 끝의 [RUN-COUNTS] 가 출력되지 않는다 — 그러면 종료 기록의 처리 건수가 0 으로 남는다
             # (2026-10-06 실측: 일을 하고도 TIMED_OUT/처리 0). 이슈마다 출력해 중단되어도 마지막 값이 남게 한다(Complete-Run 은 마지막 일치를 쓴다).
@@ -2955,6 +2970,30 @@ ${function:Invoke-GissueEngine}
                     } catch { Write-Output "[WARN][CJK-QA] isn=$($issue.Isn) 게이트 오류($($_.Exception.Message)) — 무시하고 계속" }
                 }
             }
+            # ── C3: 언어 검사(LANG-QA) ─────────────────────────────────────────────────────
+            try {
+                $langQaLang = if ($projectLang) { $projectLang } else { 'ko' }
+                # 대상 저장소: $workdir 자신과 직계 하위 폴더 중 .git 있는 것
+                $langQaRepos = @($workdir)
+                try {
+                    Get-ChildItem -LiteralPath $workdir -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+                        if (Test-Path (Join-Path $_.FullName '.git')) { $langQaRepos += $_.FullName }
+                    }
+                } catch {}
+                if ($langQaRepos.Count -gt 0) {
+                    $langQaRepoArgs = @()
+                    foreach ($r in $langQaRepos) { $langQaRepoArgs += '--repo'; $langQaRepoArgs += $r }
+                    $langQaResult = & node (Join-Path $root 'lib/lang-qa.js') `
+                        --isn $issue.Isn --csn $csn --since $issueLangQaSince --lang $langQaLang `
+                        --accounts $accountsFile --api-base $apiBase `
+                        @langQaRepoArgs --post 2>&1 | Out-String
+                    $langQaFirstLine = if ($langQaResult.Length -gt 600) { $langQaResult.Substring(0, 600) } else { $langQaResult }
+                    Write-Output "[LANG-QA] isn=$($issue.Isn) $langQaFirstLine"
+                }
+            } catch {
+                Write-Output "[WARN][LANG-QA] isn=$($issue.Isn) 언어 검사 실패($($_.Exception.Message)) — 스케줄러 계속"
+            }
+            # ───────────────────────────────────────────────────────────────────────────────
             # [REVIEW/TESTED 재검증 쿨다운] 실제로 Invoke-GissueEngine 까지 진행한 REVIEW/TESTED 이슈는
             # (TIMEBOX/정상 두 경로 모두 "실제로 처리함"에 해당) 처리 직후 이 시각을 기록한다.
             if ($forceClaude) {

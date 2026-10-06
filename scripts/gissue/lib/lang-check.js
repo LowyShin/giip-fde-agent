@@ -118,7 +118,7 @@ function detect(text, lang = 'ko') {
       const script = scriptOf(codePoint);
       if (script && forbidden.has(script)) {
         // 서러게이트 쌍(char.length === 2)이면 완전한 문자로서 1건
-        // excerpt: UTF-16 슬라이스 (기존 col语义 유지)
+        // excerpt: UTF-16 슬라이스 (기존 col 의미 유지)
         const start = Math.max(0, colUtf16 - 20);
         const end = Math.min(line.length, colUtf16 + 21);
         const excerpt = line.slice(start, end);
@@ -215,6 +215,158 @@ function isIgnoredPath(filePath) {
 }
 
 //────────────────────────────────────────
+// checkWorktree
+//────────────────────────────────────────
+
+/**
+ * git 저장소 dir 의 커밋되지 않은 변경을 검사한다.
+ * (1) git diff HEAD --unified=0 --no-color --diff-filter=AMR 의 추가된 줄
+ * (2) 추적되지 않은 새 파일의 전체 내용
+ * @param {string} repoDir
+ * @param {{lang?:string, maxFindings?:number}} options
+ * @returns {Array<Object>}
+ */
+function checkWorktree(repoDir, options = {}) {
+  const { lang = 'ko', maxFindings = 50 } = options;
+  /** @type {Array<Object>} */
+  const findings = [];
+
+  // 저장소 유효성: .git 가 존재하는지
+  if (!fs.existsSync(path.join(repoDir, '.git'))) {
+    // 새 저장소(커밋 0개)도 허용 — untracked 검사는 동작해야 함
+    // 하지만 .git 자체가 없으면 저장소가 아님
+    return [{ error: `저장소가 아닙니다: ${repoDir}` }];
+  }
+
+  try {
+    // (1) 커밋되지 않은 diff 검사
+    let diffOutput;
+    try {
+      diffOutput = execFileSync(
+        'git',
+        ['diff', 'HEAD', '--unified=0', '--no-color', '--diff-filter=AMR'],
+        { cwd: repoDir, encoding: 'utf-8', timeout: 30000, stdio: ['ignore', 'pipe', 'pipe'] }
+      );
+    } catch (e) {
+      // HEAD 가 없는 새 저장소(커밋 0개)에서는 git diff HEAD 가 오류 → 빈 것으로 처리
+      if (e.message && (e.message.includes('does not exist') || e.message.includes('ambiguous'))) {
+        diffOutput = '';
+      } else {
+        return [{ error: `git diff 실패: ${e.message || e}` }];
+      }
+    }
+
+    let currentFile = null;
+    let inDiff = false;
+    let newFileLineNum = 0;
+
+    const diffLines = (diffOutput || '').split('\n');
+    for (let i = 0; i < diffLines.length; i++) {
+      if (findings.length >= maxFindings) break;
+      const dLine = diffLines[i];
+
+      const fileMatch = dLine.match(/^\+\+\+ b\/(.+)/);
+      if (fileMatch) {
+        currentFile = fileMatch[1];
+        inDiff = false;
+        newFileLineNum = 0;
+        if (isIgnoredPath(currentFile)) currentFile = null;
+        continue;
+      }
+
+      const diffStartMatch = dLine.match(/^@@ -\d+(?:,\d+)? \+(\d+)/);
+      if (diffStartMatch && currentFile) {
+        inDiff = true;
+        newFileLineNum = parseInt(diffStartMatch[1], 10);
+        continue;
+      }
+
+      if (dLine.startsWith('Binary files')) {
+        inDiff = false;
+        continue;
+      }
+
+      // + 줄만 검사 (추가된 줄만)
+      if (inDiff && dLine.startsWith('+') && !dLine.startsWith('+++')) {
+        if (currentFile) {
+          const lineContent = dLine.slice(1);
+          const lineFindings = detect(lineContent, lang);
+          for (const f of lineFindings) {
+            if (findings.length >= maxFindings) break;
+            findings.push({
+              commit: null,
+              kind: 'worktree',
+              file: currentFile,
+              line: newFileLineNum,
+              char: f.char,
+              codePoint: f.codePoint,
+              script: f.script,
+              excerpt: f.excerpt,
+            });
+          }
+        }
+        newFileLineNum++;
+      }
+    }
+
+    // (2) 추적되지 않은 새 파일 검사
+    let lsOutput;
+    try {
+      lsOutput = execFileSync(
+        'git',
+        ['ls-files', '--others', '--exclude-standard'],
+        { cwd: repoDir, encoding: 'utf-8', timeout: 30000, stdio: ['ignore', 'pipe', 'pipe'] }
+      );
+    } catch (e) {
+      findings.push({ error: `git ls-files 실패: ${e.message || e}` });
+      return findings;
+    }
+
+    const untracked = (lsOutput || '').trim().split('\n').filter(Boolean);
+    for (const filePath of untracked) {
+      if (findings.length >= maxFindings) break;
+      if (isIgnoredPath(filePath)) continue;
+
+      const fullPath = path.join(repoDir, filePath);
+      try {
+        const stat = fs.statSync(fullPath);
+        // 2MB 초과 건너뛰기
+        if (stat.size > 2 * 1024 * 1024) continue;
+        // 바이너리 검사: 앞 8000바이트에 NUL 이 있으면 건너뛰기
+        if (stat.size > 0) {
+          const buf = Buffer.alloc(8000);
+          const fd = fs.openSync(fullPath, 'r');
+          const bytesRead = fs.readSync(fd, buf, 0, 8000, 0);
+          fs.closeSync(fd);
+          if (buf.slice(0, bytesRead).includes(0)) continue;
+        }
+
+        const content = fs.readFileSync(fullPath, 'utf-8');
+        const fileFindings = detect(content, lang);
+        for (const f of fileFindings) {
+          if (findings.length >= maxFindings) break;
+          findings.push({
+            commit: null,
+            kind: 'worktree',
+            file: filePath,
+            line: f.line,
+            char: f.char,
+            codePoint: f.codePoint,
+            script: f.script,
+            excerpt: f.excerpt,
+          });
+        }
+      } catch (e) {
+        // 파일 읽기 실패는 무시하고 계속
+      }
+    }
+  } catch (err) {
+    return [{ error: String(err.message || err) }];
+  }
+
+  return findings;
+}
+
 // checkGit
 //────────────────────────────────────────
 
@@ -254,7 +406,7 @@ function checkGit(repoDir, options = {}) {
   /** @type {Array<Object>} */
   const findings = [];
 
-  // since 값에 셸 특수문자(含 세미콜론) 있으면 실행하지 않고 오류 반환
+  // since 값에 셸 특수문자(세미콜론 포함) 있으면 실행하지 않고 오류 반환
   if (since && /[;`$|<>]/.test(since)) {
     return [{ error: `since 값에 셸 특수문자가 포함되어 있습니다: ${since}` }];
   }
@@ -408,6 +560,7 @@ function cliHelp() {
   node lang-check.js --lang <코드> --text-file <파일>
   node lang-check.js --lang <코드> --stdin
   node lang-check.js --lang <코드> --git <저장소경로> --since <ISO시각>
+  node lang-check.js --lang <코드> --worktree <저장소경로>
   node lang-check.js --directive --lang <코드>
   node lang-check.js --json ...
 
@@ -416,6 +569,7 @@ function cliHelp() {
   --text-file <파일> 텍스트 파일 검사
   --stdin           표준입력 검사
   --git <경로>      git 저장소 검사 (여러 번 지정 가능)
+  --worktree <경로> 작업 트리 검사 (커밋되지 않은 변경, 여러 번 지정 가능)
   --since <ISO시각>  검사할 커밋 범위 (ISO 8601)
   --directive       출력 언어 규칙 머리말 출력
   --json            JSON 출력 형식
@@ -432,6 +586,7 @@ function runCli() {
   const textFile = extractFlag('--text-file');
   const stdin = hasFlag('--stdin');
   const gitDirs = extractFlags('--git');
+  const worktreeDirs = extractFlags('--worktree');
   const since = extractFlag('--since');
   const directiveFlag = hasFlag('--directive');
   const asJson = hasFlag('--json');
@@ -487,6 +642,40 @@ function runCli() {
     }
 
     // 금지 문자가 있으면 4, 오류만 있으면 2, 둘 다 있으면 4
+    if (forbiddenItems.length > 0) {
+      process.exit(4);
+    } else if (errorItems.length > 0) {
+      process.exit(2);
+    } else {
+      process.exit(0);
+    }
+  } else if (worktreeDirs.length > 0) {
+    /** @type {Array<Object>} */
+    let allFindings = [];
+    for (const wtDir of worktreeDirs) {
+      const findings = checkWorktree(wtDir, { lang, maxFindings: maxFindings - allFindings.length });
+      allFindings = allFindings.concat(findings);
+      if (allFindings.length >= maxFindings) break;
+    }
+    allFindings = allFindings.slice(0, maxFindings);
+
+    const errorItems = allFindings.filter(f => f.error);
+    const forbiddenItems = allFindings.filter(f => !f.error);
+
+    if (asJson) {
+      console.log(JSON.stringify({ findings: allFindings }, null, 2));
+    } else {
+      if (errorItems.length > 0) {
+        console.log(`검사 오류 ${errorItems.length}건`);
+        console.log('  ' + errorItems[0].error);
+      }
+      if (forbiddenItems.length > 0) {
+        printHumanOutput(forbiddenItems, maxFindings);
+      } else if (errorItems.length === 0) {
+        console.log('문제 없음 (0건)');
+      }
+    }
+
     if (forbiddenItems.length > 0) {
       process.exit(4);
     } else if (errorItems.length > 0) {
@@ -574,6 +763,7 @@ module.exports = {
   directive,
   isIgnoredPath,
   checkGit,
+  checkWorktree,
   _parseLogRecords,
 };
 

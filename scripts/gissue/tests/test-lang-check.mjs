@@ -17,7 +17,7 @@ const __dirname = path.dirname(__filename);
 // CommonJS 모듈 불러오기
 const langCheck = (await import('../lib/lang-check.js')).default;
 
-const { scriptOf, detect, directive, isIgnoredPath, checkGit, _parseLogRecords } = langCheck;
+const { scriptOf, detect, directive, isIgnoredPath, checkGit, checkWorktree, _parseLogRecords } = langCheck;
 
 // 임시 폴더 관리
 const tempDirs = [];
@@ -889,6 +889,196 @@ test('CLI: 존재하지 않는 저장소 경로는 exit 2와 "검사 오류"', (
   } catch (e) {
     assert.strictEqual(e.status, 2, 'exit 2');
     assert.ok(e.stdout.includes('검사 오류'), '검사 오류 문구 있음');
+  }
+});
+
+//────────────────────────────────────────
+// 20. checkWorktree
+//────────────────────────────────────────
+
+test('checkWorktree: 커밋 후 추적 중인 파일에 한자 줄을 추가한 미커밋 변경 검출', () => {
+  const repoDir = createTempDir();
+  try {
+    execSync('git init', { cwd: repoDir });
+    execSync('git config user.name "Test"', { cwd: repoDir });
+    execSync('git config user.email "test@test.com"', { cwd: repoDir });
+
+    const filePath = path.join(repoDir, 'test.txt');
+    fs.writeFileSync(filePath, '안녕하세요\n');
+    execSync('git add test.txt', { cwd: repoDir });
+    execSync('git commit -m "초기 커밋"', { cwd: repoDir });
+
+    // 한자 줄 추가 (미커밋)
+    fs.writeFileSync(filePath, '안녕하세요\n한자 中 미커밋\n');
+    execSync('git add test.txt', { cwd: repoDir });
+
+    const findings = checkWorktree(repoDir, { lang: 'ko' });
+    const errors = findings.filter(f => f.error);
+    if (errors.length > 0) throw new Error('오류: ' + errors[0].error);
+
+    const diffFindings = findings.filter(f => f.kind === 'worktree' && f.file === 'test.txt');
+    assert.ok(diffFindings.length >= 1, '한자 1건 이상');
+    assert.strictEqual(diffFindings[0].char, '中');
+    assert.strictEqual(diffFindings[0].commit, null, 'commit 은 null');
+  } finally {
+    fs.rmSync(repoDir, { recursive: true, force: true });
+  }
+});
+
+test('checkWorktree: 새 untracked 파일 안의 가나 검출', () => {
+  const repoDir = createTempDir();
+  try {
+    execSync('git init', { cwd: repoDir });
+    execSync('git config user.name "Test"', { cwd: repoDir });
+    execSync('git config user.email "test@test.com"', { cwd: repoDir });
+
+    fs.writeFileSync(path.join(repoDir, 'test.txt'), '안녕하세요\n');
+    execSync('git add test.txt', { cwd: repoDir });
+    execSync('git commit -m "초기 커밋"', { cwd: repoDir });
+
+    // untracked 파일에 가나
+    const untrackedPath = path.join(repoDir, 'newext.txt');
+    fs.writeFileSync(untrackedPath, 'あいうえお\n');
+    // git add 하지 않음 — untracked 상태
+
+    const findings = checkWorktree(repoDir, { lang: 'ko' });
+    const errors = findings.filter(f => f.error);
+    if (errors.length > 0) throw new Error('오류: ' + errors[0].error);
+
+    const untrackedFindings = findings.filter(f => f.kind === 'worktree' && f.file === 'newext.txt');
+    assert.ok(untrackedFindings.length >= 1, '가나 1건 이상');
+    assert.strictEqual(untrackedFindings[0].script, 'Kana');
+    assert.strictEqual(untrackedFindings[0].commit, null, 'commit 은 null');
+  } finally {
+    fs.rmSync(repoDir, { recursive: true, force: true });
+  }
+});
+
+test('checkWorktree: 깨끗한 변경은 0건', () => {
+  const repoDir = createTempDir();
+  try {
+    execSync('git init', { cwd: repoDir });
+    execSync('git config user.name "Test"', { cwd: repoDir });
+    execSync('git config user.email "test@test.com"', { cwd: repoDir });
+
+    fs.writeFileSync(path.join(repoDir, 'test.txt'), '안녕하세요\n');
+    execSync('git add test.txt', { cwd: repoDir });
+    execSync('git commit -m "초기 커밋"', { cwd: repoDir });
+
+    const findings = checkWorktree(repoDir, { lang: 'ko' });
+    const errors = findings.filter(f => f.error);
+    if (errors.length > 0) throw new Error('오류: ' + errors[0].error);
+    assert.strictEqual(findings.length, 0, '깨끗하면 0건');
+  } finally {
+    fs.rmSync(repoDir, { recursive: true, force: true });
+  }
+});
+
+test('checkWorktree: package-lock.json 변경은 무시', () => {
+  const repoDir = createTempDir();
+  try {
+    execSync('git init', { cwd: repoDir });
+    execSync('git config user.name "Test"', { cwd: repoDir });
+    execSync('git config user.email "test@test.com"', { cwd: repoDir });
+
+    fs.writeFileSync(path.join(repoDir, 'test.txt'), '안녕하세요\n');
+    execSync('git add test.txt', { cwd: repoDir });
+    execSync('git commit -m "초기 커밋"', { cwd: repoDir });
+
+    // package-lock.json 에 한자 추가 (미커밋)
+    fs.writeFileSync(path.join(repoDir, 'package-lock.json'), '中 추가\n');
+    execSync('git add package-lock.json', { cwd: repoDir });
+
+    const findings = checkWorktree(repoDir, { lang: 'ko' });
+    const errors = findings.filter(f => f.error);
+    if (errors.length > 0) throw new Error('오류: ' + errors[0].error);
+
+    const packageFindings = findings.filter(f => f.file && f.file.includes('package-lock.json'));
+    assert.strictEqual(packageFindings.length, 0, 'package-lock.json 은 무시됨');
+  } finally {
+    fs.rmSync(repoDir, { recursive: true, force: true });
+  }
+});
+
+test('checkWorktree: 커밋 0개인 새 저장소의 untracked 파일 검출', () => {
+  const repoDir = createTempDir();
+  try {
+    execSync('git init', { cwd: repoDir });
+    execSync('git config user.name "Test"', { cwd: repoDir });
+    execSync('git config user.email "test@test.com"', { cwd: repoDir });
+
+    // 첫 커밋 없이 untracked 파일만
+    const untrackedPath = path.join(repoDir, 'new.txt');
+    fs.writeFileSync(untrackedPath, '中 추가\n');
+
+    const findings = checkWorktree(repoDir, { lang: 'ko' });
+    const errors = findings.filter(f => f.error);
+    if (errors.length > 0) throw new Error('오류: ' + errors[0].error);
+
+    const untrackedFindings = findings.filter(f => f.kind === 'worktree');
+    assert.ok(untrackedFindings.length >= 1, 'untracked 파일에서 한자 1건 이상');
+  } finally {
+    fs.rmSync(repoDir, { recursive: true, force: true });
+  }
+});
+
+test('checkWorktree: 저장소가 아닌 폴더는 {error}', () => {
+  const notRepo = createTempDir();
+  try {
+    const findings = checkWorktree(notRepo, { lang: 'ko' });
+    assert.strictEqual(findings.length, 1, '에러 1건');
+    assert.ok(findings[0].error, 'error 필드 있음');
+    assert.ok(findings[0].error.includes('저장소가 아닙니다'), '저장소가 아니라는 오류');
+  } finally {
+    fs.rmSync(notRepo, { recursive: true, force: true });
+  }
+});
+
+test('CLI: --worktree 깨끗한 변경은 exit 0', () => {
+  const repoDir = createTempDir();
+  try {
+    execSync('git init', { cwd: repoDir });
+    execSync('git config user.name "Test"', { cwd: repoDir });
+    execSync('git config user.email "test@test.com"', { cwd: repoDir });
+    fs.writeFileSync(path.join(repoDir, 'test.txt'), '안녕하세요\n');
+    execSync('git add test.txt', { cwd: repoDir });
+    execSync('git commit -m "초기"', { cwd: repoDir });
+
+    const result = execSync(
+      `node ${path.join(__dirname, '../lib/lang-check.js')} --lang ko --worktree ${repoDir}`,
+      { encoding: 'utf-8' }
+    );
+    assert.ok(result.includes('문제 없음'), '문제 없음 출력');
+  } catch (e) {
+    assert.fail('exit 0이어야 함: ' + e.message);
+  } finally {
+    fs.rmSync(repoDir, { recursive: true, force: true });
+  }
+});
+
+test('CLI: --worktree 한자 발견 시 exit 4', () => {
+  const repoDir = createTempDir();
+  try {
+    execSync('git init', { cwd: repoDir });
+    execSync('git config user.name "Test"', { cwd: repoDir });
+    execSync('git config user.email "test@test.com"', { cwd: repoDir });
+    fs.writeFileSync(path.join(repoDir, 'test.txt'), '안녕하세요\n');
+    execSync('git add test.txt', { cwd: repoDir });
+    execSync('git commit -m "초기"', { cwd: repoDir });
+    fs.writeFileSync(path.join(repoDir, 'test.txt'), '한자 中 추가\n');
+    execSync('git add test.txt', { cwd: repoDir });
+
+    try {
+      execSync(
+        `node ${path.join(__dirname, '../lib/lang-check.js')} --lang ko --worktree ${repoDir}`,
+        { encoding: 'utf-8' }
+      );
+      assert.fail('exit 4여야 함');
+    } catch (e) {
+      assert.strictEqual(e.status, 4, 'exit 4');
+    }
+  } finally {
+    fs.rmSync(repoDir, { recursive: true, force: true });
   }
 });
 
