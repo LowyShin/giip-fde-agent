@@ -72,4 +72,10 @@ sar_run_start "scheduled"
 trap 'sar_run_end_trap' EXIT
 
 # 실제 gissue 스케쥴러 실행.
-exec pwsh -NoProfile -NonInteractive -File "$SCRIPT_DIR/run-gissue-claude.ps1" "$@"
+# giip #3575(재개): 여기서 exec를 쓰면 bash 프로세스가 pwsh로 교체되어, 바로 위에서 건
+# trap 'sar_run_end_trap' EXIT가 영영 실행되지 않는다(실행 종료가 tSchedulerAgentRun에
+# 기록되지 않아 이력이 반쪽만 남음). 따라서 exec 없이 호출해 pwsh가 끝난 뒤 스크립트가
+# 정상 종료하면서 EXIT 트랩이 떠서 sar_run_end_trap이 run end를 기록하도록 한다.
+# 스크립트의 종료 코드는 마지막 명령(pwsh)의 종료 코드가 되고, 트랩은 그 값을 $?로 읽어
+# SUCCEEDED/FAILED를 판정한다.
+pwsh -NoProfile -NonInteractive -File "$SCRIPT_DIR/run-gissue-claude.ps1" "$@"
