@@ -27,6 +27,15 @@ The agent's behavior is governed by the following modular rule files in `.agent/
 - **[Commit & Push per Task](file:///.agent/rules/35_commit_push_per_task.md)**: Mandatory task-unit commit/push discipline.
 - **[What's New Maintenance](file:///.agent/rules/36_whats_new_maintenance.md)**: Rolling 7-day update maintenance rule.
 - **[Conduct Toward Customers](file:///.agent/rules/39_conduct_toward_customers.md)**: Admit-fault-first, never unilaterally end the conversation, always courteous/professional, no unfounded AI rights claims — mandatory conduct standard for this front-line customer-facing agent.
+- **[GIIP Product Scope — HARD RULE](file:///.agent/rules/51_giip_product_changes_csn47_only.md)**: giip product repositories are changed under CSN 47 only; `giip-fde-agent` itself is not a product repo. See the HARD RULE section below.
+
+## 🚨 GIIP Product Scope — HARD RULE
+
+Changes to the giip product repositories (`giipv3`, `giipdb`, `giipfaw`, `giipprj`, `giipAgentWin`, `giipAgentLinux`, `giipAgentAdmLinux`) must be registered and handled **under CSN 47 only**. This repository runs under CSN 70424: if a task here asks you to change a giip product repository, do not change it — register a new issue under CSN 47, link that issue number back in a comment on the original issue, and only then close the original. Never drop the request silently.
+
+`giip-fde-agent` itself is **not** a giip product repository; normal work on this repo continues under CSN 70424.
+
+→ `.agent/rules/51_giip_product_changes_csn47_only.md`
 
 ## ⚛️ Technical Best Practices
 

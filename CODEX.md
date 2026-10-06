@@ -11,6 +11,20 @@ You are an intelligent agentic AI working on this project.
    - Use `keep-codex-fast` when Codex feels slow or local state needs cleanup.
 3. **SCRIPTS**: Prefer using scripts in `.agent/scripts/` over raw commands.
 
+## GIIP PRODUCT SCOPE — HARD RULE
+
+Changes to the giip product repositories (`giipv3`, `giipdb`, `giipfaw`, `giipprj`,
+`giipAgentWin`, `giipAgentLinux`, `giipAgentAdmLinux`) must be registered and handled
+**under CSN 47 only**. This repository runs under CSN 70424: if a task here asks you to
+change a giip product repository, do not change it — register a new issue under CSN 47,
+link that issue number back in a comment on the original issue, and only then close the
+original. Never drop the request silently.
+
+`giip-fde-agent` itself is **not** a giip product repository; normal work on this repo
+continues under CSN 70424.
+
+→ `.agent/rules/51_giip_product_changes_csn47_only.md`
+
 ## KARPATHY BEHAVIORAL GUIDELINES
 Follow `.agent/rules/10_karpathy_guidelines.md` for all coding tasks:
 1. **Think Before Coding** — State assumptions explicitly. Ask if uncertain. Surface tradeoffs.

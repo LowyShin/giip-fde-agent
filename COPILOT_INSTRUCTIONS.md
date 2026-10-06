@@ -9,6 +9,13 @@ You are working on the 'antigravity-agent' project.
    - Skills are in `.agent/skills/`.
    - Scripts are in `.agent/scripts/`.
 
+## 🚨 GIIP PRODUCT SCOPE — HARD RULE 🚨
+Changes to the giip product repositories (`giipv3`, `giipdb`, `giipfaw`, `giipprj`, `giipAgentWin`, `giipAgentLinux`, `giipAgentAdmLinux`) must be registered and handled **under CSN 47 only**. This repository runs under CSN 70424: if a task here asks you to change a giip product repository, do not change it — register a new issue under CSN 47, link that issue number back in a comment on the original issue, and only then close the original. Never drop the request silently.
+
+`giip-fde-agent` itself is **not** a giip product repository; normal work on this repo continues under CSN 70424.
+
+→ `.agent/rules/51_giip_product_changes_csn47_only.md`
+
 ## 🛠️ WORKFLOW (Superpowers)
 When asked to implement a feature:
 1. **Plan**: Create or update `implementation_plan.md` (see `.agent/skills/writing-plans`).
