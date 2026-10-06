@@ -104,7 +104,11 @@ if [ "${GIIP_ENABLE_SCHEDULER:-true}" = "true" ]; then
   if [ -n "${EFFECTIVE_CSN:-}" ]; then
     ONLY_CSN_ARG=" -OnlyCsn ${EFFECTIVE_CSN}"
   fi
-  CRON_CMD="pwsh -NoProfile -NonInteractive -File \"$REPO_DIR/scripts/gissue/run-gissue-claude.ps1\"${ONLY_CSN_ARG} >> $REPO_DIR/scripts/gissue/logs/cron.log 2>&1"
+  # giip #3575: pwsh를 직접 호출하는 대신 run-gissue-scheduler-wrapper.sh를 호출한다.
+  # 이 래퍼가 giipAgentLinux의 scheduler_agent_run.sh를 source하여 tSchedulerAgentRun에 실행 이력을 기록한다.
+  # (admin/catquest/schedulers 페이지 Run History에 gissue 스케쥴러 실행이 표시되도록 함)
+  # giipAgentLinux(/work/giipAgentLinux/)가 clone된 이후에 실행되므로 sar_run_start/end 함수를 사용할 수 있다.
+  CRON_CMD="bash \"$REPO_DIR/scripts/gissue/run-gissue-scheduler-wrapper.sh\"${ONLY_CSN_ARG} >> $REPO_DIR/scripts/gissue/logs/cron.log 2>&1"
   {
     echo "SHELL=/bin/bash"
     # docker 는 프로젝트(CSN)마다 컨테이너를 따로 띄우므로 컨테이너당 스케줄러를 20분마다(:07/:27/:47) 돌린다.
@@ -112,7 +116,7 @@ if [ "${GIIP_ENABLE_SCHEDULER:-true}" = "true" ]; then
     echo "7,27,47 * * * * root cd $REPO_DIR && $CRON_CMD"
   } > /etc/cron.d/gissue-scheduler
   chmod 0644 /etc/cron.d/gissue-scheduler
-  echo "[entrypoint] registered issue-scheduler cron (every 20 min: :07/:27/:47, pwsh) via /etc/cron.d"
+  echo "[entrypoint] registered issue-scheduler cron (every 20 min: :07/:27/:47, wrapper) via /etc/cron.d"
   # giip #3405: 방금 쓴 cron 의 -OnlyCsn 이 SSOT 와 일치하는지 재검증(요구사항 2 — cron ↔ csn-projects.json 가드)
   if [ -n "$SSOT_CSN" ]; then
     CRON_CSN="$(grep -oE '\-OnlyCsn [0-9]+' /etc/cron.d/gissue-scheduler | grep -oE '[0-9]+' || true)"
