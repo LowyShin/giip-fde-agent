@@ -104,11 +104,10 @@ if [ "${GIIP_ENABLE_SCHEDULER:-true}" = "true" ]; then
   if [ -n "${EFFECTIVE_CSN:-}" ]; then
     ONLY_CSN_ARG=" -OnlyCsn ${EFFECTIVE_CSN}"
   fi
-  # giip #3575: pwsh를 직접 호출하는 대신 run-gissue-scheduler-wrapper.sh를 호출한다.
-  # 이 래퍼가 giipAgentLinux의 scheduler_agent_run.sh를 source하여 tSchedulerAgentRun에 실행 이력을 기록한다.
-  # (admin/catquest/schedulers 페이지 Run History에 gissue 스케쥴러 실행이 표시되도록 함)
-  # giipAgentLinux(/work/giipAgentLinux/)가 clone된 이후에 실행되므로 sar_run_start/end 함수를 사용할 수 있다.
-  CRON_CMD="bash \"$REPO_DIR/scripts/gissue/run-gissue-scheduler-wrapper.sh\"${ONLY_CSN_ARG} >> $REPO_DIR/scripts/gissue/logs/cron.log 2>&1"
+  # 실행 이력(tSchedulerAgentRun)은 run-gissue-claude.ps1 이 직접 기록한다(giip #3563: lib/scheduler-state.ps1). 예전(giip #3575)에는 bash 래퍼로
+  # 감싸 giipAgentLinux 의 sar_run_* 를 부르는 우회를 썼으나, 근본 원인은 PowerShell 이 bash 함수를 못 불러서가 아니라 호출 형식(sk/proc → token/text)
+  # 오류였고, 래퍼는 `exec` 때문에 종료 trap 이 안 돌아 이력이 RUNNING 으로 남고 박스 에이전트 아래에 섞였다. 그래서 래퍼를 쓰지 않는다.
+  CRON_CMD="pwsh -NoProfile -NonInteractive -File \"$REPO_DIR/scripts/gissue/run-gissue-claude.ps1\"${ONLY_CSN_ARG} >> $REPO_DIR/scripts/gissue/logs/cron.log 2>&1"
   # giip #3535: 스케줄러 cron 은 root 가 아니라 일반 사용자(dev)로 돌려야 한다. 엔진이 `claude -p --dangerously-skip-permissions` 를
   # 부르는데 claude 는 root/sudo 에서 이 옵션을 거부한다("--dangerously-skip-permissions cannot be used with root/sudo privileges").
   # root 로 돌리면 이슈를 "집는" 것처럼 로그만 남고 모든 이슈가 즉시 실패해 큐가 영원히 줄지 않는다(out.log 에서 788회 실측).
@@ -135,7 +134,7 @@ if [ "${GIIP_ENABLE_SCHEDULER:-true}" = "true" ]; then
     echo "7,27,47 * * * * $SCHED_USER cd $REPO_DIR && $CRON_CMD"
   } > /etc/cron.d/gissue-scheduler
   chmod 0644 /etc/cron.d/gissue-scheduler
-  echo "[entrypoint] registered issue-scheduler cron (every 20 min: :07/:27/:47, wrapper) via /etc/cron.d"
+  echo "[entrypoint] registered issue-scheduler cron (every 20 min: :07/:27/:47, pwsh) via /etc/cron.d"
   # giip #3405: 방금 쓴 cron 의 -OnlyCsn 이 SSOT 와 일치하는지 재검증(요구사항 2 — cron ↔ csn-projects.json 가드)
   if [ -n "$SSOT_CSN" ]; then
     CRON_CSN="$(grep -oE '\-OnlyCsn [0-9]+' /etc/cron.d/gissue-scheduler | grep -oE '[0-9]+' || true)"
