@@ -138,6 +138,10 @@ $RunTimeoutMin = 105
 # 자기를 계속 트리거하는 악순환이 생긴다. 최신 코멘트 author 가 봇/게이트 자신이면(=사람의 새 신호
 # 없음) 이 시간 동안 재검증을 건너뛴다. 사람이 새 코멘트를 남기면 쿨다운과 무관하게 즉시 재검증.
 $ReviewRecheckCooldownHours = 4
+# [giip #3554] REVIEW/TESTED 재검증의 per-run 건수 상한. 한 회차에서 REVIEW 를 N 건만 처리하고 나머지는
+# 다음 :07 로 미룸으로써 READY/PENDING 이 매 회차 반드시 1건 이상 착수하게 한다.
+# 0 이면 무제한(기존 동작). 코멘트 이력과 로그에서 REVIEW 처리가 READY 를 굶기는 패턴이 확인되면 줄인다.
+$ReviewRecheckMaxPerRun = 5
 # 다른 프로세스가 workdir 를 점유 중이면(busy) 잡 내부에서 이 시간(분)까지만 폴링 대기하고, 넘으면
 # 강제 언블록하거나 포기한다(2026-07-28 지시: 30분 초과 프로세스/대기는 무조건 중단+로깅).
 $WaitBudgetMin = 30
@@ -2845,6 +2849,20 @@ foreach ($csn in $map.PSObject.Properties.Name) {
         # 코멘트를 남기고 다음 :07 로 미룬다.
         $issueLoopDeadline = $jobStartTime.AddMinutes($runTimeoutMin - 5)
         $runProcessed = 0   # giip #3563: 실제로 엔진 처리를 시작한 이슈 수(종료 기록의 processedCount)
+        # [giip #3554] REVIEW/TESTED per-run cap 카운터 및 상태별 시간 추적
+        $reviewProcessedThisRun = 0
+        $statusTimePending = 0
+        $statusTimeReady = 0
+        $statusTimeStale = 0
+        $statusTimeReview = 0
+        $statusTimeTested = 0
+        $statusCountPending = 0
+        $statusCountReady = 0
+        $statusCountStale = 0
+        $statusCountReview = 0
+        $statusCountTested = 0
+        $statusSkippedReview = 0
+        $loopStartTime = Get-Date
         for ($qi = 0; $qi -lt $issueQueue.Count; $qi++) {
             $issue = $issueQueue[$qi]
             if ((Get-Date) -gt $issueLoopDeadline) {
@@ -2878,6 +2896,12 @@ foreach ($csn in $map.PSObject.Properties.Name) {
             } elseif ($issue.Status -eq 'REVIEW') {
                 "isn=$($issue.Isn) REVIEW 상태 — REVIEW/TESTED 정상 체크는 claude 로만 수행(사용자 지시 2026-08-23, giip #1404/#1407 재발 방지)"
             } else { '' }
+            # [giip #3554] REVIEW/TESTED per-run cap: N 건 처리하면 이후 REVIEW/TESTED 는 쿨다운과 무관하게 skip
+            if ($forceClaude -and $ReviewRecheckMaxPerRun -gt 0 -and $reviewProcessedThisRun -ge $ReviewRecheckMaxPerRun) {
+                Write-Output "[REVIEW-CAP] isn=$($issue.Isn) REVIEW 재검증 회차당 상한($ReviewRecheckMaxPerRun건) 도달 — 이번 실행 스킵"
+                $statusSkippedReview++
+                continue
+            }
             # [REVIEW/TESTED 재검증 쿨다운] 최신 코멘트가 봇/게이트 자신의 것뿐이면(=사람의 새 신호 없음)
             # 마지막 강제재검증 후 $reviewRecheckCooldownHours 시간이 안 지났으면 이번 실행은 건너뛴다.
             if ($forceClaude) {
@@ -2897,10 +2921,16 @@ foreach ($csn in $map.PSObject.Properties.Name) {
                     }
                     if ($withinCooldown) {
                         Write-Output "[REVIEW-SKIP] isn=$($issue.Isn) 마지막 재검증 후 ${reviewRecheckCooldownHours}시간 미만(봇 코멘트만 있음) — 이번 실행 스킵"
+                        $statusSkippedReview++
                         continue
                     }
                 }
             }
+            # [giip #3557] 예산 스킵 카운터 리셋 — 이번 회차에서 실제로 처리되었으므로 0으로 초기화
+            Set-GissueBudgetSkipCount $budgetSkipStateFile $issue.Isn 0
+            # [giip #3554] REVIEW/TESTED per-run 카운터 & 상태별 시간 추적 시작
+            $issueStartTime = Get-Date
+            if ($forceClaude) { $reviewProcessedThisRun++ }
             Write-Output "[ISSUE] isn=$($issue.Isn) status=$($issue.Status) elapsed=$($issue.ElapsedMin)분 처리 시작"
             $runProcessed++
             # 회차가 105분 예산으로 TIMEOUT 되면 잡이 강제 중단되어 맨 끝의 [RUN-COUNTS] 가 출력되지 않는다 — 그러면 종료 기록의 처리 건수가 0 으로 남는다
@@ -2993,7 +3023,19 @@ ${function:Invoke-GissueEngine}
             if ($forceClaude) {
                 try { Set-GissueReviewRecheckIsn $reviewRecheckStateFile $issue.Isn ((Get-Date).ToUniversalTime().ToString('o')) } catch {}
             }
+            # [giip #3554] 상태별 처리 시간 및 건수 누적
+            $issueElapsed = (Get-Date) - $issueStartTime
+            switch ($issue.Status) {
+                'PENDING'           { $statusTimePending += $issueElapsed; $statusCountPending++ }
+                'READY'             { $statusTimeReady += $issueElapsed; $statusCountReady++ }
+                'STALE_IN_PROGRESS' { $statusTimeStale += $issueElapsed; $statusCountStale++ }
+                'REVIEW'           { $statusTimeReview += $issueElapsed; $statusCountReview++ }
+                'TESTED'           { $statusTimeTested += $issueElapsed; $statusCountTested++ }
+            }
         }
+        # [giip #3554] 회차 종료 로그에 상태별 처리 건수/소요 한 줄 요약
+        $totalElapsedMin = [math]::Round(((Get-Date) - $loopStartTime).TotalMinutes, 1)
+        Write-Output "[QUEUE-SUMMARY] PENDING=$statusCountPending($([math]::Round($statusTimePending.TotalMinutes,1))분) READY=$statusCountReady($([math]::Round($statusTimeReady.TotalMinutes,1))분) STALE=$statusCountStale($([math]::Round($statusTimeStale.TotalMinutes,1))분) REVIEW=$statusCountReview($([math]::Round($statusTimeReview.TotalMinutes,1))분) TESTED=$statusCountTested($([math]::Round($statusTimeTested.TotalMinutes,1))분) skipped-review=$statusSkippedReview total=${totalElapsedMin}분"
         Write-Output "[RUN-COUNTS] processed=$runProcessed"   # giip #3563: Complete-Run 이 읽어 종료 기록에 채운다
     } -ArgumentList $Root, $AgentRepo, $ClaudeModel, $workdir, $waitDeadline, $BusyPollSec, $GiipAccountsFile, $ApiBase, $ApiSk2Url,
                     $ForcedUnblockExcludeRepoNames, $env:MINIMAX_API_KEY, $MiniMaxModel, $MiniMaxBaseUrl, $csn, $MiniMaxContextTokens,
