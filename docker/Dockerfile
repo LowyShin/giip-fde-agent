@@ -6,7 +6,7 @@
 FROM mcr.microsoft.com/powershell:7.4-debian-12
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git curl wget procps iproute2 ca-certificates cron gnupg \
+    && apt-get install -y --no-install-recommends git curl wget procps iproute2 ca-certificates cron gnupg tini \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && npm install -g @anthropic-ai/claude-code pm2 \
@@ -37,4 +37,6 @@ COPY fetch-instance-env.sh /fetch-instance-env.sh
 COPY setup-registration.js /setup-registration.js
 RUN chmod +x /entrypoint.sh /fetch-instance-env.sh
 
-ENTRYPOINT ["/entrypoint.sh"]
+# PID 1 을 tini 로 둔다. entrypoint.sh 는 마지막에 `exec tail -F` 로 PID 1 이 되는데, tail 은 고아가 된 자식
+# (cron 회차의 pwsh·git·gh·ssh·chrome-headless 등)을 회수하지 않아 좀비가 계속 쌓였다(2026-10-06 실측 101개).
+ENTRYPOINT ["/usr/bin/tini", "--", "/entrypoint.sh"]
