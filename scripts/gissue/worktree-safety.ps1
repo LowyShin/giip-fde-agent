@@ -520,6 +520,132 @@ function Get-GissueNoGitRemnant {
 }
 
 # ---------------------------------------------------------------------------
+# 레포 루트 직계 고아 후보 탐지 (giip #3590 — giip #2660 후속).
+#
+# 배경: 기존 Get-GissueOrphanWorktree 은 ScanRoot/.worktrees/ 하위만 스캔한다.
+# 레포 루트 직계에 놓인 고아(예: giipv3/giipv3-isn2099)는 66시간 동안 아무도 치우지 못했다.
+#
+# 판정 조건:
+#   - 디렉터리명 (?:isn|giip|issue|pr)-?(\d+) 매칭 → 이 숫자가 후보 isn
+#   - .git 보유 레포이거나 관리 디렉터리(.git/.agent/.github/.githooks/.husky/.claude)면 제외
+#   - git worktree list 미등록 (이 레포 또는 다른 레포 기준)
+#   - mtime 24h 초과 (호출자가 지정, 기본값 24)
+#
+# 출력: Status='RootLevelOrphan' 인 후보 객체. 삭제 판정은 호출자가 rule 55 기준으로 내린다.
+# giip API(issue DONE/부재)는 이 함수에서 호출하지 않는다 — 호출자가 별도 검증한다.
+# ---------------------------------------------------------------------------
+function Get-GissueRootLevelOrphanCandidates {
+    param(
+        [Parameter(Mandatory = $true)][string[]]$RepoRoots,
+        [string[]]$ManagementDirNames = $null,
+        [int]$MinAgeHours = 24,
+        [string[]]$ProtectedPaths = @()
+    )
+    if ($null -eq $ManagementDirNames) {
+        $ManagementDirNames = $script:GissueScanRootManagementDirNames
+    }
+    $cands = @()
+
+    $protectNorm = New-Object 'System.Collections.Generic.HashSet[string]'
+    foreach ($p in @($ProtectedPaths)) {
+        if ($p) {
+            [void]$protectNorm.Add((ConvertTo-GissueComparablePath $p))
+        }
+    }
+
+    $now = Get-Date
+
+    foreach ($root in $RepoRoots) {
+        if (-not (Test-Path -LiteralPath $root)) { continue }
+        $rootFull = try { (Resolve-Path -LiteralPath $root -ErrorAction Stop).Path } catch { $root }
+
+        foreach ($child in (Get-ChildItem -LiteralPath $rootFull -Directory -Force -ErrorAction SilentlyContinue)) {
+            $childFull = $child.FullName
+            $childNorm = ConvertTo-GissueComparablePath $childFull
+
+            # (a) 보호 경로.
+            if ($protectNorm.Contains($childNorm)) { continue }
+
+            # (b) 관리 디렉터리 제외.
+            if ($ManagementDirNames -contains $child.Name) { continue }
+
+            # (c) .git 보유 레포 제외 — .git 이 디렉터리면 독립 클론(고아 아님).
+            $dotGit = Join-Path $childFull '.git'
+            if (Test-Path -LiteralPath $dotGit) {
+                $gitItem = Get-Item -LiteralPath $dotGit -Force -ErrorAction SilentlyContinue
+                if ($null -ne $gitItem -and $gitItem -is [System.IO.DirectoryInfo]) {
+                    continue
+                }
+            }
+
+            # (d) 이름 매칭: (?:isn|giip|issue|pr)-?(\d+)
+            $isn = $null
+            if ($child.Name -match '^(?:isn|giip|issue|pr)-?(\d+)$') {
+                $isn = $Matches[1]
+            } else {
+                continue
+            }
+
+            # (e) mtime 체크.
+            $ageOk = $true
+            if ($MinAgeHours -gt 0) {
+                try {
+                    $lw = (Get-Item -LiteralPath $childFull -Force -ErrorAction Stop).LastWriteTime
+                    $ageHours = ($now - $lw).TotalHours
+                    if ($ageHours -lt $MinAgeHours) { $ageOk = $false }
+                } catch { $ageOk = $false }
+            }
+
+            # (f) worktree 미등록 확인.
+            # .git 파일(gitdir: 포인터)이 있으면 이 루트의 worktree list 에서 찾는다.
+            # 없으면 알려진 모든 레포의 worktree list 를 순회한다.
+            $registered = $false
+            if (Test-Path -LiteralPath $dotGit) {
+                $wtList = @(git -C $rootFull worktree list --porcelain 2>$null)
+                foreach ($line in $wtList) {
+                    if ("$line" -match '^worktree\s+(.+)$') {
+                        $wtPath = $Matches[1].Trim()
+                        if ((ConvertTo-GissueComparablePath $wtPath) -eq $childNorm) {
+                            $registered = $true
+                            break
+                        }
+                    }
+                }
+            } else {
+                foreach ($repoPath in (Get-GissueAllProjectRepoPaths)) {
+                    $wtList = @(git -C $repoPath worktree list --porcelain 2>$null)
+                    foreach ($line in $wtList) {
+                        if ("$line" -match '^worktree\s+(.+)$') {
+                            $wtPath = $Matches[1].Trim()
+                            if ((ConvertTo-GissueComparablePath $wtPath) -eq $childNorm) {
+                                $registered = $true
+                                break
+                            }
+                        }
+                    }
+                    if ($registered) { break }
+                }
+            }
+
+            $lw = $null
+            try { $lw = (Get-Item -LiteralPath $childFull -Force -ErrorAction Stop).LastWriteTime } catch {}
+            $cands += [pscustomobject]@{
+                Path          = $childFull
+                Status        = 'RootLevelOrphan'
+                RepoRoot      = $rootFull
+                RepoLabel     = Split-Path -Leaf $rootFull
+                Name          = $child.Name
+                Isn           = $isn
+                LastWriteTime = $lw
+                AgeOk         = $ageOk
+                Registered    = $registered
+            }
+        }
+    }
+    return @($cands | Sort-Object RepoLabel, Path)
+}
+
+# ---------------------------------------------------------------------------
 # 경로 구분자 소실 탐지 (giip #2439 부수 버그).
 #
 # 실측: giipv3 에 `D:/tempworktreesgiipv3-kb-i18n-labels` 가 worktree 로 등록돼 있고 D: 루트에
