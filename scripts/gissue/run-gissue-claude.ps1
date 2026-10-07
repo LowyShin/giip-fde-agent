@@ -1605,6 +1605,96 @@ if (Get-Command Initialize-GissueCodeFreshness -ErrorAction SilentlyContinue) {
         Write-Output "[WARN][CODE-FRESHNESS] 초기화 실패(가드만 비활성, 본 실행은 계속): $($_.Exception.Message)"
     }
 }
+# [giip #2696] self-pull 전 NOT-ON-MAIN 상태 감지 + 조건부 자동복귀
+Invoke-GissueSelfPullNotOnMainCheck -Log { param($m) Write-Output $m }
+
+# ── [giip #2696] NOT-ON-MAIN 감지 + 조건부 자동복귀 ────────────────────────────────────
+# 배경: PR 머지 후 원격 피처 브랜치가 삭제되면 upstream 이 사라진다(gone). self-pull 의
+# `git pull --ff-only origin main` 이 매 실행 `fatal: Not possible to fast-forward` 로 실패 →
+# 구버전 코드로 영구 기동(실측: 내부 잡 init 7,213자 구버전). 기존 diverge 경고(giip 2667)는
+# ahead/behind 숫자를 보는데, 이 상황은 "로컬 main 은 멀쩡하고 체크아웃된 HEAD 만 다른 브랜치"라
+# 숫자가 `4 0` 으로に出て 경고에 걸리지 않는다.
+
+function Test-GissueBranchOnMain {
+    # 현재 HEAD 브랜치가 main 인지 확인 (bare repo 는 항상 false)
+    param([string]$RepoRoot = $AgentRepo)
+    try {
+        $branch = & git -C $RepoRoot rev-parse --abbrev-ref HEAD 2>$null
+        if ($LASTEXITCODE -ne 0) { return $false }
+        return ($branch -eq 'main')
+    } catch { return $false }
+}
+
+function Test-GissueUpstreamGone {
+    # 현재 브랜치의 upstream ref 가 사라졌는지(gone) 확인
+    param([string]$RepoRoot = $AgentRepo)
+    try {
+        $revList = & git -C $RepoRoot rev-list --left-right --count '@{upstream}...HEAD' 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            # `@{upstream}` 자체를 읽을 수 없으면 upstream 이 없다 → gone
+            return $true
+        }
+        return $false
+    } catch { return $false }
+}
+
+function Test-GissueBranchIsAncestorOfOriginMain {
+    # 현재 브랜치 커밋이 origin/main 의 조상(==이미 머지되어 흡수된 잔해)인지 확인
+    param([string]$RepoRoot = $AgentRepo)
+    try {
+        $head = & git -C $RepoRoot rev-parse HEAD 2>$null
+        if ($LASTEXITCODE -ne 0 -or -not $head) { return $false }
+        $isAncestor = & git -C $RepoRoot merge-base --is-ancestor $head origin/main 2>$null
+        return ($LASTEXITCODE -eq 0)
+    } catch { return $false }
+}
+
+function Invoke-GissueSelfPullNotOnMainCheck {
+    <#
+    .SYNOPSIS
+      self-pull 실행 전 현재 HEAD 가 main 이 아닌 경우 경고/자동복귀를 수행한다.
+      자동 복귀 조건 3가지 (전부 충족 시에만): (a) tracked 변경 0 + (b) upstream gone + (c) ancestor of origin/main
+    #>
+    param(
+        [string]$RepoRoot = $AgentRepo,
+        [scriptblock]$Log = $null
+    )
+    $say = { param($m) if ($Log) { & $Log $m } elseif ($script:Log) { & $script:Log $m } else { Write-Output $m } }
+    if (Test-GissueBranchOnMain -RepoRoot $RepoRoot) {
+        & $say "[SELF-PULL][NOT-ON-MAIN] HEAD=main — 정상 경로, 변경 없음"
+        return
+    }
+    $branch = & git -C $RepoRoot rev-parse --abbrev-ref HEAD 2>$null
+    & $say "[WARN][SELF-PULL][NOT-ON-MAIN] 현재 HEAD=$branch — 이번 실행은 구버전 코드로 돌 수 있습니다"
+    # 조건부 자동복귀: 3조건 전부 충족 시에만
+    $hasChanges = (git -C $RepoRoot status --porcelain 2>$null)
+    $upstreamGone = Test-GissueUpstreamGone -RepoRoot $RepoRoot
+    $isAncestor = Test-GissueBranchIsAncestorOfOriginMain -RepoRoot $RepoRoot
+    if ((-not $hasChanges) -and $upstreamGone -and $isAncestor) {
+        & $say "[INFO][SELF-PULL][NOT-ON-MAIN] 3조건 충족(변경0 + upstream gone + origin/main 조상) — 자동 복귀 시도"
+        try {
+            $coOut = git -C $RepoRoot checkout main 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                $pullOut = git -C $RepoRoot pull --ff-only origin main 2>&1
+                if ($LASTEXITCODE -eq 0) {
+                    & $say "[INFO][SELF-PULL][NOT-ON-MAIN] main 복귀 + pull 성공"
+                } else {
+                    & $say "[WARN][SELF-PULL][NOT-ON-MAIN] main 복귀 후 pull 실패: $($pullOut | Out-String)"
+                }
+            } else {
+                & $say "[WARN][SELF-PULL][NOT-ON-MAIN] checkout main 실패: $($coOut | Out-String)"
+            }
+        } catch {
+            & $say "[WARN][SELF-PULL][NOT-ON-MAIN] 자동복귀 예외: $($_.Exception.Message)"
+        }
+    } else {
+        $reason = @()
+        if ($hasChanges)       { $reason += "tracked 변경 있음" }
+        if (-not $upstreamGone){ $reason += "upstream 존재함" }
+        if (-not $isAncestor)  { $reason += "origin/main 조상 아님(미머지 브랜치)" }
+        & $say "[INFO][SELF-PULL][NOT-ON-MAIN] 자동복귀 생략 — $($reason -join ', ')"
+    }
+}
 
 # ── [giip #2696] NOT-ON-MAIN 자동 감지 + 조건부 자동 복귀 ─────────────────────────────────
 # 배경: 공유 체크아웃이 삭제된 피처 브랜치에 주차되면(git pull --ff-only 가 항상 실패) 구버전
