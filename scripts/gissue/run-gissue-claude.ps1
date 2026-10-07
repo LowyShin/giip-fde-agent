@@ -1275,6 +1275,11 @@ if ($mapRoot.forcedUnblockExcludeRepoNames) {
 }
 $HeartbeatCfg = Get-GissueHeartbeatConfig $mapRoot
 
+# [giip 3615] 소프트 예산: "새 이슈를 시작해도 되는 시간"(하드 타임아웃 $RunTimeoutMin 과 별개). 기본 비활성 = 기존 동작.
+# csn-projects.json 최상위 softBudgetMin 이 환경변수 GISSUE_SOFT_BUDGET_MIN 보다 우선한다(정본·사유: lib/soft-budget.ps1).
+. (Join-Path $Root 'lib/soft-budget.ps1')
+$SoftBudgetMin = Resolve-GissueSoftBudgetMin $mapRoot.softBudgetMin $env:GISSUE_SOFT_BUDGET_MIN
+
 # ── 프로세스 트리 헬퍼 (이름을 빌트인과 겹치지 않게 지어 재귀 함정 회피) ──
 # [giip Docker/Linux 이식] Win32_Process(CIM)는 Windows 전용이라 pwsh/Linux 에는 provider 자체가
 # 없다. PowerShell 5.1 에는 $IsWindows 자동변수가 없으므로(=$null=falsy) "변수가 없으면 Windows"로
@@ -2382,6 +2387,7 @@ foreach ($csn in $map.PSObject.Properties.Name) {
         # 이슈별 엔진 선택을 그대로 재현해 로그로 남긴다(giip #1472) — 저장소 정비 1회 + 이슈별 큐 조회.
         $engineNoteRepo = if ($env:MINIMAX_API_KEY) { "MiniMax($MiniMaxModel) 우선, 폴백 claude($ClaudeModel)" } else { "claude($ClaudeModel)" }
         Write-Log $csn "[DryRun] 저장소 정비 세션 예정 (cwd=$workdir, engine=$engineNoteRepo)"
+        Write-Log $csn "[DryRun][SOFT-BUDGET] 설정 = $(Format-GissueSoftBudgetSetting $SoftBudgetMin $RunTimeoutMin)"
         # {AGENT_REPO} 치환이 실제로 이뤄졌는지 확인할 수 있도록 안전 규칙 로드 경로를 그대로 출력한다
         # (완료조건 2 — 치환자가 그대로 남으면 프롬프트가 존재하지 않는 경로를 가리키게 된다).
         $safetyIdxLine = @($repoMaintenancePromptSub -split "`r?`n" | Where-Object { $_ -match '41_issue_session_safety_index\.md' } | Select-Object -First 1)
@@ -2428,7 +2434,7 @@ foreach ($csn in $map.PSObject.Properties.Name) {
               $restBranch, $repoMaintenancePrompt, $pendingIssuePrompt, $readyIssuePrompt, $staleIssuePrompt,
               $reviewIssuePrompt, $testedIssuePrompt, $runTimeoutMin, $registerIssueScript, $listIssuesScript,
               $issueEngineDeadlineMin, $reviewEngineDeadlineMin, $issueEnginePollMin, $logDir, $csnSk, $runIdKey, $reviewRecheckCooldownHours,
-              $projectLang, $divergeFailAlertThreshold, $bashExe, $presweepScript, $reviewTestedMaxAgeHours)
+              $projectLang, $divergeFailAlertThreshold, $bashExe, $presweepScript, $reviewTestedMaxAgeHours, $softBudgetMin)
         Set-Location -Path $workdir
         # [ENCODING][giip #1204 버그 B] Start-Job 은 별도 프로세스라 바깥 스코프의 콘솔 인코딩 설정이
         # 상속되지 않는다 — 한글 프롬프트를 stdin 파이프로 넘기기 전에 이 잡 스코프에서도 UTF-8 로 고정한다.
@@ -2539,6 +2545,7 @@ foreach ($csn in $map.PSObject.Properties.Name) {
         # giip #3563: 호출 형식(token/text)과 응답 검사는 lib/scheduler-state.ps1 이 맡는다. 예전에는 `sk`/`proc` 폼 키를 보내
         # 디스패처가 무시하고 help 를 실행했고, 응답도 검사하지 않아 에이전트 등록·이력이 조용히 실패했다.
         . (Join-Path $root 'lib/scheduler-state.ps1')
+        . (Join-Path $root 'lib/soft-budget.ps1')   # giip 3615: 소프트 예산 판정(잡 스코프는 메인 함수를 상속하지 않는다)
         function Record-SchedulerState([string]$Action, [string]$Sk, [string]$ApiUrl, [string]$Csn, [string]$AgentKey, [string]$RunIdKey, [string]$ExecutionMode, [string]$Status, [int]$Processed, [int]$Skipped, [int]$Failed, [string]$Phase, [string]$IssueNum, [string]$Summary) {
             if (-not $Sk) { return }
             try {
@@ -3122,6 +3129,7 @@ foreach ($csn in $map.PSObject.Properties.Name) {
         }
         $issueQueue = @(Get-GissueIssueQueue $listIssuesScript $csn $accountsFile $apiBase $reviewTestedMaxAgeHours)  # giip #1665: 방어적 @() 강제
         Write-Output "[QUEUE] CSN $csn 처리 대상 $($issueQueue.Count)건"
+        Write-Output "[SOFT-BUDGET] 설정 = $(Format-GissueSoftBudgetSetting $softBudgetMin $runTimeoutMin)"
 
         # [giip #3557] 예산 스킵 상태 추적 — 동시쓰기 완화를 위해 3회 재시도 패턴 적용 (review_recheck_state.json 과 동일)
         $budgetSkipStateFile = Join-Path $logDir 'budget_skip_state.json'
@@ -3204,6 +3212,16 @@ foreach ($csn in $map.PSObject.Properties.Name) {
                         } catch {}
                     }
                 }
+                break
+            }
+            # [giip 3615] 소프트 예산: 이슈를 "시작하기 직전"에만 판정한다 - 이미 시작한 이슈 세션은 위 while 폴링이 끝까지 기다린다.
+            # 하드 [BUDGET] 분기와 달리 미착수 카운터(budget_skip_state.json)를 올리지 않고 코멘트도 남기지 않는다:
+            # 20분 틱마다 반복되는 정상 동작이라 코멘트로 남기면 같은 note 가 계속 쌓여 이슈가 오염된다. 로그 한 줄만 남긴다.
+            $softElapsedMin = ((Get-Date) - $jobStartTime).TotalMinutes
+            if (-not (Test-GissueSoftBudgetAllowsNewIssue $softBudgetMin $softElapsedMin $runProcessed)) {
+                $softRemain = $issueQueue.Count - $qi
+                $softSkippedList = ($issueQueue[$qi..($issueQueue.Count - 1)].ForEach({ $_.Isn }) -join ',')
+                Write-Output "[SOFT-BUDGET] 소프트 예산 ${softBudgetMin}분 도달(경과 $([math]::Round($softElapsedMin,1))분, 시작한 이슈 ${runProcessed}건) - 새 이슈 미착수, 남은 ${softRemain}건은 다음 틱으로: isn=$softSkippedList"
                 break
             }
             $template = switch ($issue.Status) {
@@ -3379,7 +3397,7 @@ ${function:Invoke-GissueEngine}
                     $restBranch, $repoMaintenancePromptSub, $pendingIssuePromptSub, $readyIssuePromptSub, $staleIssuePromptSub,
                     $reviewIssuePromptSub, $testedIssuePromptSub, $RunTimeoutMin, $RegisterIssueScript, $ListIssuesScript,
                     $IssueEngineDeadlineMin, $ReviewEngineDeadlineMin, $IssueEnginePollMin, $LogDir, $csnSk, $runIdKey, $ReviewRecheckCooldownHours,
-                    $projectLang, $DivergeFailAlertThreshold, $BashExe, $PresweepScript, $reviewTestedMaxAgeHours
+                    $projectLang, $DivergeFailAlertThreshold, $BashExe, $PresweepScript, $reviewTestedMaxAgeHours, $SoftBudgetMin
     $runs += [pscustomobject]@{
         Csn = $csn; Job = $job; Lock = $lock; Done = $false; Workdir = $workdir
         Deadline = (Get-Date).AddMinutes($RunTimeoutMin)
