@@ -46,6 +46,9 @@ powershell.exe -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass `
   브랜치(main/master)와 다르면(예: dev-first 원칙으로 `dev`가 상시 작업 브랜치인 프로젝트) 반드시
   지정합니다 — 안 그러면 busy-check가 이를 매번 "다른 프로세스가 쓰는 중"으로 오판해 30분 대기 후
   강제 언블록(stash+base 체크아웃)을 매 `:07`마다 반복합니다(실측 확인·재현).
+  **`reviewTestedMaxAgeHours`(선택)**: 0보다 크면 REVIEW/TESTED 이슈 중 elapsed(최신 코멘트 시각,
+  없으면 등록일 기준)가 이 시간을 넘은 것은 큐에서 뺍니다. 오래된 REVIEW/TESTED 백로그가 READY 신규 작업을
+  큐 뒤로 밀어내는 CSN에서 씁니다. 생략하거나 0이면 제한 없음(기존 동작)입니다.
   **최상위(csn 바깥) 선택 키 3개**(giip #2645 — 러너에서 이 PC 전용 절대경로를 제거하면서 배포별
   설정으로 외부화한 값들입니다. 전부 생략 가능하고, 생략하면 해당 기능만 조용히 비활성됩니다):
     - `forcedUnblockExcludeRepoNames`: 강제 언블록(병합 여부 불확실해도 stash+base 복귀) 대상에서
