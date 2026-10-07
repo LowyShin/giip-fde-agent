@@ -145,6 +145,9 @@ $BusyPollSec = 60
 # 강제 정리(Stop-Job) 후 스크립트 레벨로만(LLM 재호출 없이) 후속 이슈 등록 + note + READY 복귀한다.
 $IssueEngineDeadlineMin = 40
 $IssueEnginePollMin = 10
+# [giip #3555] REVIEW/TESTED 재검증 전용 캡. READY/PENDING/stale 실작업은 $IssueEngineDeadlineMin(40분) 유지.
+# 근거: REVIEW 재검증(PR 병합 여부·코멘트 확인)은 대부분 수 분 내 완료, 40분 캡은浪费. 제안값 15분.
+$reviewEngineDeadlineMin = 15
 # [giip #1550] 좀비 잡 조기감지: 자식 엔진 프로세스가 이미 다 종료됐는데도 Job.State 가 계속
 # 'Running' 으로 남는 사고가 실측됐다. Job.State 를 신뢰하지 않고 OS 프로세스 레벨에서 "실제 엔진
 # 프로세스가 있는가"만으로 조기 판정한다($WaitBudgetMin=30분보다 넉넉히 크게).
@@ -2124,7 +2127,7 @@ foreach ($csn in $map.PSObject.Properties.Name) {
               $forcedUnblockExcludeRepoNames, $minimaxApiKey, $minimaxModel, $minimaxBaseUrl, $csn, $minimaxContextTokens,
               $restBranch, $repoMaintenancePrompt, $pendingIssuePrompt, $readyIssuePrompt, $staleIssuePrompt,
               $reviewIssuePrompt, $testedIssuePrompt, $runTimeoutMin, $registerIssueScript, $listIssuesScript,
-              $issueEngineDeadlineMin, $issueEnginePollMin, $logDir, $csnSk, $runIdKey, $reviewRecheckCooldownHours,
+              $issueEngineDeadlineMin, $reviewEngineDeadlineMin, $issueEnginePollMin, $logDir, $csnSk, $runIdKey, $reviewRecheckCooldownHours,
               $projectLang, $divergeFailAlertThreshold, $bashExe)
         Set-Location -Path $workdir
         # [ENCODING][giip #1204 버그 B] Start-Job 은 별도 프로세스라 바깥 스코프의 콘솔 인코딩 설정이
@@ -2868,7 +2871,9 @@ foreach ($csn in $map.PSObject.Properties.Name) {
                     }
                 }
             }
-            Write-Output "[ISSUE] isn=$($issue.Isn) status=$($issue.Status) elapsed=$($issue.ElapsedMin)분 처리 시작"
+            # [giip #3555] REVIEW/TESTED 재검증 전용 짧은 캡 적용.
+            $effectiveDeadlineMin = if ($issue.Status -eq 'REVIEW' -or $issue.Status -eq 'TESTED') { $reviewEngineDeadlineMin } else { $issueEngineDeadlineMin }
+            Write-Output "[ISSUE] isn=$($issue.Isn) status=$($issue.Status) elapsed=$($issue.ElapsedMin)분 cap=${effectiveDeadlineMin}분 처리 시작"
             $runProcessed++
             # 회차가 105분 예산으로 TIMEOUT 되면 잡이 강제 중단되어 맨 끝의 [RUN-COUNTS] 가 출력되지 않는다 — 그러면 종료 기록의 처리 건수가 0 으로 남는다
             # (2026-10-06 실측: 일을 하고도 TIMED_OUT/처리 0). 이슈마다 출력해 중단되어도 마지막 값이 남게 한다(Complete-Run 은 마지막 일치를 쓴다).
@@ -2902,21 +2907,21 @@ ${function:Invoke-GissueEngine}
                     -Root $rootInner -Model $modelInner -MinimaxApiKey $minimaxApiKeyInner -MinimaxModel $minimaxModelInner -MinimaxBaseUrl $minimaxBaseUrlInner -MinimaxContextTokens $minimaxContextTokensInner
             } -ArgumentList $workdir, $issuePrompt, $forceClaude, $issueContextLine, $forceReason, $agentRepo, $model, $minimaxApiKey, $minimaxModel, $minimaxBaseUrl, $minimaxContextTokens
             $issueElapsedMin = 0
-            while ($innerJob.State -eq 'Running' -and $issueElapsedMin -lt $issueEngineDeadlineMin) {
+            while ($innerJob.State -eq 'Running' -and $issueElapsedMin -lt $effectiveDeadlineMin) {
                 Wait-Job $innerJob -Timeout ($issueEnginePollMin * 60) | Out-Null
                 $issueElapsedMin += $issueEnginePollMin
             }
             if ($innerJob.State -eq 'Running') {
                 # 캡 초과(giip #1565) — 강제 정리 후 다음 이슈로 진행한다(break/return 하지 않는다).
-                Write-Output "[TIMEBOX] isn=$($issue.Isn) 처리가 ${issueEngineDeadlineMin}분 캡을 초과 — 강제 정리 후 다음 이슈로 진행"
+                Write-Output "[TIMEBOX] isn=$($issue.Isn) 처리가 ${effectiveDeadlineMin}분 캡을 초과 — 강제 정리 후 다음 이슈로 진행"
                 Stop-Job $innerJob -ErrorAction SilentlyContinue
                 # Stop-Job 은 잡 워커를 종료하지만 detach 된 엔진 자식은 고아로 남을 수 있다. 그 고아는
                 # 다음 :07 실행의 Phase 0 reaper 가 회수한다 — 여기서 별도 프로세스 트리 정리는 하지 않는다.
                 Remove-Job $innerJob -Force -ErrorAction SilentlyContinue
                 try {
                     $timeboxGitSnapshot = try { (git -C $workdir status --short 2>&1 | Out-String) } catch { "(git status 캡처 실패: $($_.Exception.Message))" }
-                    $timeboxFollowupTitle = "[후속] $($issue.Title) - ${issueEngineDeadlineMin}분 캡 초과 잔여 작업 (원본 giip #$($issue.Isn))"
-                    $timeboxFollowupBody = "giip #$($issue.Isn) 처리가 시간 캡(${issueEngineDeadlineMin}분)을 초과해 run-gissue-claude.ps1(giip #1565)이 강제 정리했습니다.`n`n원본 이슈 번호: $($issue.Isn)`n원본 제목: $($issue.Title)`n원본 상태(캡 초과 시점): $($issue.Status)`n`nGit 워킹 디렉토리 상태 스냅샷($workdir):`n$timeboxGitSnapshot"
+                    $timeboxFollowupTitle = "[후속] $($issue.Title) - ${effectiveDeadlineMin}분 캡 초과 잔여 작업 (원본 giip #$($issue.Isn))"
+                    $timeboxFollowupBody = "giip #$($issue.Isn) 처리가 시간 캡(${effectiveDeadlineMin}분)을 초과해 run-gissue-claude.ps1(giip #1565)이 강제 정리했습니다.`n`n원본 이슈 번호: $($issue.Isn)`n원본 제목: $($issue.Title)`n원본 상태(캡 초과 시점): $($issue.Status)`n`nGit 워킹 디렉토리 상태 스냅샷($workdir):`n$timeboxGitSnapshot"
                     $timeboxTmp = Join-Path ([System.IO.Path]::GetTempPath()) ("gissue_timebox_followup_{0}_{1}.txt" -f $issue.Isn, [guid]::NewGuid().ToString('N'))
                     $timeboxNewIsn = $null
                     $timeboxRegOut = ''
@@ -2934,7 +2939,7 @@ ${function:Invoke-GissueEngine}
                         Remove-Item -LiteralPath $timeboxTmp -Force -ErrorAction SilentlyContinue
                     }
                     $timeboxNewIsnText = if ($timeboxNewIsn) { "#$timeboxNewIsn" } else { "(등록 실패 또는 응답 파싱 실패 — 로그: $timeboxRegOut)" }
-                    $timeboxNote = "[TIMEBOX] 이슈 1건 처리 시간이 ${issueEngineDeadlineMin}분을 초과해 강제 정리했습니다. 후속 이슈 $timeboxNewIsnText 로 잔여 작업을 분리했습니다. (giip #1565)"
+                    $timeboxNote = "[TIMEBOX] 이슈 1건 처리 시간이 ${effectiveDeadlineMin}분을 초과해 강제 정리했습니다. 후속 이슈 $timeboxNewIsnText 로 잔여 작업을 분리했습니다. (giip #1565)"
                     Add-GissueWatchdogComment $root $accountsFile $apiBase $issue.Isn $timeboxNote $csn
                     # 실패하면 이 이슈가 IN_PROGRESS 에 박힌다 — 반드시 로그에 남긴다(giip #2645).
                     Set-GissueIssueStatusReady $bashExe $root $issue.Isn $csn 'TIMEBOX' | Out-Null
@@ -2966,7 +2971,7 @@ ${function:Invoke-GissueEngine}
                     $ForcedUnblockExcludeRepoNames, $env:MINIMAX_API_KEY, $MiniMaxModel, $MiniMaxBaseUrl, $csn, $MiniMaxContextTokens,
                     $restBranch, $repoMaintenancePromptSub, $pendingIssuePromptSub, $readyIssuePromptSub, $staleIssuePromptSub,
                     $reviewIssuePromptSub, $testedIssuePromptSub, $RunTimeoutMin, $RegisterIssueScript, $ListIssuesScript,
-                    $IssueEngineDeadlineMin, $IssueEnginePollMin, $LogDir, $csnSk, $runIdKey, $ReviewRecheckCooldownHours,
+                    $IssueEngineDeadlineMin, $ReviewEngineDeadlineMin, $IssueEnginePollMin, $LogDir, $csnSk, $runIdKey, $ReviewRecheckCooldownHours,
                     $projectLang, $DivergeFailAlertThreshold, $BashExe
     $runs += [pscustomobject]@{
         Csn = $csn; Job = $job; Lock = $lock; Done = $false; Workdir = $workdir
