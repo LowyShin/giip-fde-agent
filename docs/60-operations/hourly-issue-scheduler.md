@@ -75,6 +75,8 @@ powershell.exe -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass `
   얻습니다(giip #2645) — PENDING / READY≥60분 / IN_PROGRESS≥60분(라벨 `STALE_IN_PROGRESS`) /
   REVIEW·TESTED(최신 코멘트가 `[ACTIONFLOW-TEST]`로 시작하면 제외)를 합쳐
   `qprio → is_user_req DESC → has_comment ASC → elapsedMin DESC` 순으로 정렬해 돌려줍니다.
+  qprio 는 STALE_IN_PROGRESS(0) → PENDING(1) → READY(2) → REVIEW·TESTED(3) 이며, REVIEW·TESTED 재확인은
+  READY 실작업이 모두 끝난 뒤에 처리됩니다.
   이는 lowyworkenv 운영 러너가 giipdb 직접접속(단일 T-SQL, giip #1472/#1560/#1564/#1651)으로 뽑던
   큐와 **같은 정렬 계약**을 API로 재현한 것입니다. 후속 이슈 자동 등록(시간박스 초과 시)은
   `scripts/gissue/register-issue.js`가 담당합니다. CSN 교차오염 방지 게이트(giip #1053/#1079)가 내장돼 있어 별도 조치가 필요 없습니다.
