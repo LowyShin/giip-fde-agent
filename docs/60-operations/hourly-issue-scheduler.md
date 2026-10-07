@@ -49,6 +49,10 @@ powershell.exe -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass `
   **`reviewTestedMaxAgeHours`(선택)**: 0보다 크면 REVIEW/TESTED 이슈 중 elapsed(최신 코멘트 시각,
   없으면 등록일 기준)가 이 시간을 넘은 것은 큐에서 뺍니다. 오래된 REVIEW/TESTED 백로그가 READY 신규 작업을
   큐 뒤로 밀어내는 CSN에서 씁니다. 생략하거나 0이면 제한 없음(기존 동작)입니다.
+  **출력 언어(설정 불필요)**: 각 CSN 회사의 언어(GIIP `tCorp.cLang`)를 자동 조회해 이슈 프롬프트 맨 앞에
+  `[OUTPUT LANGUAGE]` 지시(커밋·PR·GIIP 코멘트·문서를 그 언어로 작성)를 넣습니다. 조회 결과는
+  `slack-bot/.csn-lang-cache.env`(Slack 봇과 공유, 24시간)에 캐시됩니다. 조회 실패 시 지시를 넣지 않습니다(기존 동작).
+  상세: `.agent/rules/52_project_language_from_csn.md`.
   **최상위(csn 바깥) 선택 키 3개**(giip #2645 — 러너에서 이 PC 전용 절대경로를 제거하면서 배포별
   설정으로 외부화한 값들입니다. 전부 생략 가능하고, 생략하면 해당 기능만 조용히 비활성됩니다):
     - `forcedUnblockExcludeRepoNames`: 강제 언블록(병합 여부 불확실해도 stash+base 복귀) 대상에서
