@@ -1662,8 +1662,6 @@ if (Get-Command Initialize-GissueCodeFreshness -ErrorAction SilentlyContinue) {
         Write-Output "[WARN][CODE-FRESHNESS] 초기화 실패(가드만 비활성, 본 실행은 계속): $($_.Exception.Message)"
     }
 }
-# [giip #2696] self-pull 전 NOT-ON-MAIN 상태 감지 + 조건부 자동복귀
-Invoke-GissueSelfPullNotOnMainCheck -Log { param($m) Write-Output $m }
 
 # ── [giip #2696] NOT-ON-MAIN 감지 + 조건부 자동복귀 ────────────────────────────────────
 # 배경: PR 머지 후 원격 피처 브랜치가 삭제되면 upstream 이 사라진다(gone). self-pull 의
