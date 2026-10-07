@@ -114,6 +114,8 @@ $VerifyNestedRepoScript = Join-Path $Root 'verify-nested-repo.ps1'
 $SweepScript      = Join-Path $Root 'pr-gate-sweep.ps1'
 # REVIEW/DONE 사후검증(giip #1123 구현, giip #1364 배선): pr-gate-sweep.ps1 상위 확장.
 $ReviewDoneAuditScript = Join-Path $Root 'review-done-audit.ps1'
+# REVIEW 병합완료 자동 DONE 사전필터(giip #3556): Phase 1에서 Get-GissueIssueQueue 호출 전에 실행.
+$PresweepScript     = Join-Path $Root 'review-merged-presweep.ps1'
 # 귀속 안내 스윕(giip #2459): 머지된 PR 이 "남의 파일 변경"을 함께 담았으면 상호 참조 코멘트를 남긴다.
 $PrAttributionScript = Join-Path $Root 'pr-attribution-sweep.ps1'
 # 정식 등록 worktree 정리 엔진(giip #2220/#2440/#2463) + 낡은 코드 가드(giip #2471).
@@ -401,6 +403,23 @@ function Invoke-GissuePrGateSweep($csn, $workdir) {
     }
 }
 
+# REVIEW 병합완료 자동 DONE 사전필터(giip #3556). Phase 1의 Get-GissueIssueQueue 호출 *이전*에
+# 실행되어 병합완료 REVIEW를 큐 진입 전에 DONE 전환한다.
+# $DryRun=true 이면 -Live 를 붙이지 않아 판정만 하고 상태를 바꾸지 않는다.
+function Invoke-GissuePresweep($csn, $workdir, $DryRun = $false) {
+    if (-not (Test-Path $PresweepScript)) { Write-Log $csn "[PRESWEEP] SKIP: 스크립트 없음($PresweepScript)"; return }
+    $sk = Get-GissueCsnSk $csn
+    if (-not $sk) { Write-Log $csn "[PRESWEEP] SKIP: SK 없음(giip-accounts.json 에 csn=$csn 미등록)"; return }
+    try {
+        $liveFlag = if ($DryRun) { @() } else { @('-Live') }
+        $agentRepoFlag = @('-AgentRepo', $AgentRepo)
+        $out = & $script:GissuePsExe -NoProfile -ExecutionPolicy Bypass -File $PresweepScript -Csn $csn -Workdir $workdir -ApiKey $sk @liveFlag @agentRepoFlag 2>&1
+        foreach ($line in @($out)) { if ("$line".Trim()) { Write-Log $csn "[PRESWEEP] $line" } }
+    } catch {
+        Write-Log $csn "[PRESWEEP] 오류: $($_.Exception.Message)"
+    }
+}
+
 # REVIEW/DONE 사후검증 강제 후처리(giip #1123 구현, giip #1364 배선). -Live 를 명시적으로 넘긴다 —
 # 이 스크립트의 기본값은 판정만 하는 dry-run 이라 실제 조치를 하려면 명시가 필요하다.
 function Invoke-GissueReviewDoneAudit($csn, $workdir) {
@@ -558,12 +577,6 @@ if ($IsLinux -and ($env:PATH -split ':') -notcontains '/usr/local/bin') { $env:P
 if ($IsLinux -and -not $env:GIT_CONFIG_COUNT) {
     $env:GIT_CONFIG_COUNT = '1'; $env:GIT_CONFIG_KEY_0 = 'safe.directory'; $env:GIT_CONFIG_VALUE_0 = '*'
 }
-# cron(root)의 기본 gh 설정 경로(/root/.config/gh)는 dev 가 쓸 수 없어 gh 가 "gh auth login 필요"로
-# 매 회차 인증 실패 → merge-sweep/PR 게이트가 멈춘다(giip #3535 의 git ownership 과 별개인 auth 축).
-# 레포 내부 .gh(= dev 가 `GH_CONFIG_DIR=<repo>/.gh gh auth login` 해 둔 곳, .gitignore 로 커밋 제외)를
-# 쓰게 한다. 이 프로세스와 자식(Start-Job/gh/node)만 상속하며 시스템(/etc·/root) 은 건드리지 않는다.
-# Linux(cron) 한정 — Windows 러너는 기존 사용자 gh 인증(%AppData%)을 그대로 쓴다.
-if ($IsLinux -and -not $env:GH_CONFIG_DIR) { $env:GH_CONFIG_DIR = Join-Path $AgentRepo '.gh' }
 # (3) 외부 실행파일 — 이 러너는 node(목록/큐 조회) / bash(get-issue.sh) / gh(PR 조회·수정) 에
 #     의존한다. PATH 에 없으면 그 단계만 조용히 실패하므로, 시작 시 한 번 명시적으로 알린다.
 foreach ($dep in @(
@@ -2072,11 +2085,6 @@ foreach ($csn in $map.PSObject.Properties.Name) {
         }
     }
 
-    # 정식 등록 worktree 정리를 시작 시점에도 돈다. 종료 시점(Complete-Run (4))만으로는 회차 도중 이 스크립트가
-    # 바뀌면 낡은 코드 가드(giip #2471)에 걸려 매번 건너뛰게 된다 — 시작 직후엔 방금 찍은 기준 해시라 걸리지 않는다.
-    # lock 확인 뒤에 두어 앞 회차가 아직 쓰는 worktree 를 건드리지 않는다.
-    Invoke-GissueWorktreeCleanup $csn $workdir -DryRunSwitch:$DryRun
-
     # CSN 단위 치환({ISN}/{TITLE} 은 잡 내부 이슈 루프에서 치환한다).
     $guardNote = $script:NestedGuardPromptNote
     function Expand-GissueCsnTokens($tpl) {
@@ -2100,6 +2108,9 @@ foreach ($csn in $map.PSObject.Properties.Name) {
         if ($repoMaintenancePromptSub -match '\{(CSN|PROJECT|GISSUE_TOOLS|AGENT_REPO)\}') {
             Write-Log $csn "[DryRun][ERROR] 치환되지 않은 토큰이 프롬프트에 남아 있습니다 — 프롬프트 조립 버그"
         }
+        # giip #3556: REVIEW 병합완료 사전필터 — Get-GissueIssueQueue 호출 *이전에* 실행하여
+        # 병합완료 REVIEW를 DONE 전환함으로써 claude 세션 배정budget 을 절약한다.
+        Invoke-GissuePresweep $csn $workdir -DryRun
         $issueQueueDry = @(Get-GissueIssueQueue $ListIssuesScript $csn $GiipAccountsFile $ApiBase)  # giip #1665: 방어적 @() 강제
         Write-Log $csn "[DryRun] 처리 대상 $($issueQueueDry.Count)건"
         foreach ($dq in $issueQueueDry) {
@@ -2136,16 +2147,8 @@ foreach ($csn in $map.PSObject.Properties.Name) {
               $restBranch, $repoMaintenancePrompt, $pendingIssuePrompt, $readyIssuePrompt, $staleIssuePrompt,
               $reviewIssuePrompt, $testedIssuePrompt, $runTimeoutMin, $registerIssueScript, $listIssuesScript,
               $issueEngineDeadlineMin, $issueEnginePollMin, $logDir, $csnSk, $runIdKey, $reviewRecheckCooldownHours,
-              $projectLang, $divergeFailAlertThreshold, $bashExe)
+              $projectLang, $divergeFailAlertThreshold, $bashExe, $presweepScript)
         Set-Location -Path $workdir
-        # 잡 출력은 회차가 끝나야 out.log 로 회수되므로, 어떤 이슈를 처리했는지는 메인 로그(gissue_csn<csn>.log)에
-        # 바로 남긴다. 바깥 Write-Log 와 같은 형식 — 잡은 별도 프로세스라 그 함수를 상속하지 않는다.
-        function Write-IssueMainLog($msg) {
-            try {
-                $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-                "[$ts] [CSN $csn] $msg" | Out-File -FilePath (Join-Path $logDir "gissue_csn$csn.log") -Append -Encoding UTF8
-            } catch {}
-        }
         # [ENCODING][giip #1204 버그 B] Start-Job 은 별도 프로세스라 바깥 스코프의 콘솔 인코딩 설정이
         # 상속되지 않는다 — 한글 프롬프트를 stdin 파이프로 넘기기 전에 이 잡 스코프에서도 UTF-8 로 고정한다.
         [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -2423,20 +2426,6 @@ foreach ($csn in $map.PSObject.Properties.Name) {
             $env:ANTHROPIC_BASE_URL = $MinimaxBaseUrl
             $env:ANTHROPIC_API_KEY = $MinimaxApiKey
             $env:CLAUDE_CODE_MAX_CONTEXT_TOKENS = $MinimaxContextTokens
-            # ── C1: 출력 언어 머리말 삽입 ─────────────────────────────────────────────────────
-            $langForDirective = if ($projectLang) { $projectLang } else { 'ko' }
-            $langDirective = & node (Join-Path $Root 'lib/lang-check.js') --directive --lang $langForDirective 2>$null | Out-String
-            $langDirective = $langDirective.Trim()
-            if (-not $langDirective) {
-                $langDirective = @(
-                    '[출력 언어 규칙 — 최우선]',
-                    '이 작업에서 네가 쓰는 모든 글(코드 주석, 커밋 메시지, PR 본문, 문서, 이슈 코멘트, 최종 보고)은 100% 한국어(한글)로 쓴다.',
-                    '한자, 일본어 가나, 중국어, 러시아어(키릴 문자) 등 다른 문자는 한 글자도 섞지 마라.',
-                    '한국어가 어색하면 영어 단어를 그대로 쓰거나 한글로 소리 나는 대로 써라.'
-                ) -join "`n"
-            }
-            $PromptText = $langDirective + "`n`n" + $PromptText
-            # ───────────────────────────────────────────────────────────────────────────────
             $mmOutput = $PromptText | & claude -p --dangerously-skip-permissions --add-dir $Root --model $MinimaxModel 2>&1
             $mmExit = $LASTEXITCODE
             $env:ANTHROPIC_BASE_URL = $prevBase; $env:ANTHROPIC_API_KEY = $prevKey
@@ -2835,49 +2824,18 @@ foreach ($csn in $map.PSObject.Properties.Name) {
             }
         }
 
-        # [giip #3557] 예산 스킵 상태 추적 — 동시쓰기 완화를 위해 3회 재시도 패턴 적용 (review_recheck_state.json 과 동일)
-        $budgetSkipStateFile = Join-Path $logDir 'budget_skip_state.json'
-        function Get-GissueBudgetSkipCount($stateFile, $isnKey) {
-            for ($i = 0; $i -lt 3; $i++) {
-                try {
-                    if (-not (Test-Path -LiteralPath $stateFile)) { return 0 }
-                    $raw = Get-Content -LiteralPath $stateFile -Raw -Encoding UTF8
-                    if (-not $raw -or -not $raw.Trim()) { return 0 }
-                    $obj = $raw | ConvertFrom-Json
-                    $result = @{}
-                    if ($obj) {
-                        foreach ($p in $obj.PSObject.Properties) { $result[$p.Name] = $p.Value }
-                    }
-                    return [int]($result["$isnKey"] ?? 0)
-                } catch {
-                    Start-Sleep -Milliseconds (300 * ($i + 1))
-                }
-            }
-            return 0
-        }
-        function Set-GissueBudgetSkipCount($stateFile, $isnKey, $count) {
-            for ($i = 0; $i -lt 3; $i++) {
-                try {
-                    $state = @{}
-                    if (Test-Path -LiteralPath $stateFile) {
-                        $raw = Get-Content -LiteralPath $stateFile -Raw -Encoding UTF8
-                        if ($raw -and $raw.Trim()) {
-                            $obj = $raw | ConvertFrom-Json
-                            if ($obj) {
-                                foreach ($p in $obj.PSObject.Properties) { $state[$p.Name] = $p.Value }
-                            }
-                        }
-                    }
-                    $state["$isnKey"] = $count
-                    ($state | ConvertTo-Json -Depth 3) | Out-File -FilePath $stateFile -Encoding UTF8
-                    return
-                } catch {
-                    Start-Sleep -Milliseconds (300 * ($i + 1))
-                }
-            }
-        }
-
         # (B) 이슈 목록 조회 — PENDING + READY(>=60분) + STALE_IN_PROGRESS(>=60분) + REVIEW/TESTED(dedup) 단일 큐.
+        # giip #3556: REVIEW 병합완료 사전필터 — Get-GissueIssueQueue 호출 *이전에* 실행.
+        # 병합완료 REVIEW를 DONE 전환하여 claude 세션 budget 소모를 방지한다.
+        if (Test-Path $presweepScript) {
+            $sk = $csnSk
+            if ($sk) {
+                try {
+                    $presweepOut = & $script:GissuePsExe -NoProfile -ExecutionPolicy Bypass -File $presweepScript -Csn $csn -Workdir $workdir -ApiKey $sk -Live -AgentRepo $agentRepo 2>&1
+                    foreach ($line in @($presweepOut)) { if ("$line".Trim()) { Write-Output "[PRESWEEP] $line" } }
+                } catch { Write-Output "[PRESWEEP] 오류: $($_.Exception.Message)" }
+            }
+        }
         $issueQueue = @(Get-GissueIssueQueue $listIssuesScript $csn $accountsFile $apiBase)  # giip #1665: 방어적 @() 강제
         Write-Output "[QUEUE] CSN $csn 처리 대상 $($issueQueue.Count)건"
 
@@ -2890,21 +2848,13 @@ foreach ($csn in $map.PSObject.Properties.Name) {
         for ($qi = 0; $qi -lt $issueQueue.Count; $qi++) {
             $issue = $issueQueue[$qi]
             if ((Get-Date) -gt $issueLoopDeadline) {
-                # [giip #3557] 회차 로그에 미처리 isn 목록을 한 줄로 기록 (코멘트 누적 제거)
-                $skippedList = ($issueQueue[$qi..($issueQueue.Count - 1)].ForEach({ $_.Isn }) -join ',')
-                Write-Output "[BUDGET] 실행 시간 예산 소진 — 미처리 $($issueQueue.Count - $qi)건: isn=$skippedList"
-                # 연속 스킵 횟수 관리: 이번 회차에서 스킵된 이슈마다 +1, 3회 이상 스킵된 이슈에만 1회 코멘트
+                Write-Output "[BUDGET] 실행 시간 예산 소진 — 남은 $($issueQueue.Count - $qi)건은 이번 실행에서 처리하지 않고 다음 :07 로 미룸"
                 for ($ri = $qi; $ri -lt $issueQueue.Count; $ri++) {
                     $remain = $issueQueue[$ri]
-                    $prevCount = Get-GissueBudgetSkipCount $budgetSkipStateFile $remain.Isn
-                    $newCount = $prevCount + 1
-                    Set-GissueBudgetSkipCount $budgetSkipStateFile $remain.Isn $newCount
-                    if ($newCount -ge 3) {
-                        try {
-                            $budgetNote = "[BUDGET] 이 이슈(isn=$($remain.Isn))는 예산 소진으로 연속 ${newCount}회 미착수되었습니다. 우선순위 점검이 필요할 수 있습니다."
-                            Add-GissueWatchdogComment $root $accountsFile $apiBase $remain.Isn $budgetNote $csn
-                        } catch {}
-                    }
+                    try {
+                        $budgetNote = "[BUDGET] gissue 스케줄러 실행 시간 예산(${runTimeoutMin}분) 소진으로 이 이슈(isn=$($remain.Isn), status=$($remain.Status))는 이번 실행에서 처리하지 못했습니다. 다음 :07 실행이 이어받습니다."
+                        Add-GissueWatchdogComment $root $accountsFile $apiBase $remain.Isn $budgetNote $csn
+                    } catch {}
                 }
                 break
             }
@@ -2951,12 +2901,7 @@ foreach ($csn in $map.PSObject.Properties.Name) {
                     }
                 }
             }
-            # [giip #3557] 예산 스킵 카운터 리셋 — 이번 회차에서 실제로 처리되었으므로 0으로 초기화
-            Set-GissueBudgetSkipCount $budgetSkipStateFile $issue.Isn 0
             Write-Output "[ISSUE] isn=$($issue.Isn) status=$($issue.Status) elapsed=$($issue.ElapsedMin)분 처리 시작"
-            Write-IssueMainLog "[ISSUE] isn=$($issue.Isn) status=$($issue.Status) title=`"$($issue.Title)`" 처리 시작"
-            $issueStartTime = Get-Date
-            $issueLangQaSince = (Get-Date).ToUniversalTime().ToString('o')
             $runProcessed++
             # 회차가 105분 예산으로 TIMEOUT 되면 잡이 강제 중단되어 맨 끝의 [RUN-COUNTS] 가 출력되지 않는다 — 그러면 종료 기록의 처리 건수가 0 으로 남는다
             # (2026-10-06 실측: 일을 하고도 TIMED_OUT/처리 0). 이슈마다 출력해 중단되어도 마지막 값이 남게 한다(Complete-Run 은 마지막 일치를 쓴다).
@@ -2994,7 +2939,6 @@ ${function:Invoke-GissueEngine}
                 Wait-Job $innerJob -Timeout ($issueEnginePollMin * 60) | Out-Null
                 $issueElapsedMin += $issueEnginePollMin
             }
-            $issueResult = if ($innerJob.State -eq 'Running') { 'TIMEBOX' } else { 'END' }
             if ($innerJob.State -eq 'Running') {
                 # 캡 초과(giip #1565) — 강제 정리 후 다음 이슈로 진행한다(break/return 하지 않는다).
                 Write-Output "[TIMEBOX] isn=$($issue.Isn) 처리가 ${issueEngineDeadlineMin}분 캡을 초과 — 강제 정리 후 다음 이슈로 진행"
@@ -3044,31 +2988,6 @@ ${function:Invoke-GissueEngine}
                     } catch { Write-Output "[WARN][CJK-QA] isn=$($issue.Isn) 게이트 오류($($_.Exception.Message)) — 무시하고 계속" }
                 }
             }
-            Write-IssueMainLog "[ISSUE] isn=$($issue.Isn) title=`"$($issue.Title)`" 처리 종료(result=$issueResult, $([Math]::Round(((Get-Date) - $issueStartTime).TotalMinutes, 1))분)"
-            # ── C3: 언어 검사(LANG-QA) ─────────────────────────────────────────────────────
-            try {
-                $langQaLang = if ($projectLang) { $projectLang } else { 'ko' }
-                # 대상 저장소: $workdir 자신과 직계 하위 폴더 중 .git 있는 것
-                $langQaRepos = @($workdir)
-                try {
-                    Get-ChildItem -LiteralPath $workdir -Directory -ErrorAction SilentlyContinue | ForEach-Object {
-                        if (Test-Path (Join-Path $_.FullName '.git')) { $langQaRepos += $_.FullName }
-                    }
-                } catch {}
-                if ($langQaRepos.Count -gt 0) {
-                    $langQaRepoArgs = @()
-                    foreach ($r in $langQaRepos) { $langQaRepoArgs += '--repo'; $langQaRepoArgs += $r }
-                    $langQaResult = & node (Join-Path $root 'lib/lang-qa.js') `
-                        --isn $issue.Isn --csn $csn --since $issueLangQaSince --lang $langQaLang `
-                        --accounts $accountsFile --api-base $apiBase `
-                        @langQaRepoArgs --post 2>&1 | Out-String
-                    $langQaFirstLine = if ($langQaResult.Length -gt 600) { $langQaResult.Substring(0, 600) } else { $langQaResult }
-                    Write-Output "[LANG-QA] isn=$($issue.Isn) $langQaFirstLine"
-                }
-            } catch {
-                Write-Output "[WARN][LANG-QA] isn=$($issue.Isn) 언어 검사 실패($($_.Exception.Message)) — 스케줄러 계속"
-            }
-            # ───────────────────────────────────────────────────────────────────────────────
             # [REVIEW/TESTED 재검증 쿨다운] 실제로 Invoke-GissueEngine 까지 진행한 REVIEW/TESTED 이슈는
             # (TIMEBOX/정상 두 경로 모두 "실제로 처리함"에 해당) 처리 직후 이 시각을 기록한다.
             if ($forceClaude) {
@@ -3081,7 +3000,7 @@ ${function:Invoke-GissueEngine}
                     $restBranch, $repoMaintenancePromptSub, $pendingIssuePromptSub, $readyIssuePromptSub, $staleIssuePromptSub,
                     $reviewIssuePromptSub, $testedIssuePromptSub, $RunTimeoutMin, $RegisterIssueScript, $ListIssuesScript,
                     $IssueEngineDeadlineMin, $IssueEnginePollMin, $LogDir, $csnSk, $runIdKey, $ReviewRecheckCooldownHours,
-                    $projectLang, $DivergeFailAlertThreshold, $BashExe
+                    $projectLang, $DivergeFailAlertThreshold, $BashExe, $PresweepScript
     $runs += [pscustomobject]@{
         Csn = $csn; Job = $job; Lock = $lock; Done = $false; Workdir = $workdir
         Deadline = (Get-Date).AddMinutes($RunTimeoutMin)
