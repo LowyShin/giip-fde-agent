@@ -114,6 +114,8 @@ $VerifyNestedRepoScript = Join-Path $Root 'verify-nested-repo.ps1'
 $SweepScript      = Join-Path $Root 'pr-gate-sweep.ps1'
 # REVIEW/DONE 사후검증(giip #1123 구현, giip #1364 배선): pr-gate-sweep.ps1 상위 확장.
 $ReviewDoneAuditScript = Join-Path $Root 'review-done-audit.ps1'
+# REVIEW 병합완료 자동 DONE 사전필터(giip #3556): Phase 1에서 Get-GissueIssueQueue 호출 전에 실행.
+$PresweepScript     = Join-Path $Root 'review-merged-presweep.ps1'
 # 귀속 안내 스윕(giip #2459): 머지된 PR 이 "남의 파일 변경"을 함께 담았으면 상호 참조 코멘트를 남긴다.
 $PrAttributionScript = Join-Path $Root 'pr-attribution-sweep.ps1'
 # 정식 등록 worktree 정리 엔진(giip #2220/#2440/#2463) + 낡은 코드 가드(giip #2471).
@@ -401,6 +403,23 @@ function Invoke-GissuePrGateSweep($csn, $workdir) {
         foreach ($line in @($out)) { if ("$line".Trim()) { Write-Log $csn "[PR-GATE-SWEEP] $line" } }
     } catch {
         Write-Log $csn "[PR-GATE-SWEEP] 오류: $($_.Exception.Message)"
+    }
+}
+
+# REVIEW 병합완료 자동 DONE 사전필터(giip #3556). Phase 1의 Get-GissueIssueQueue 호출 *이전*에
+# 실행되어 병합완료 REVIEW를 큐 진입 전에 DONE 전환한다.
+# $DryRun=true 이면 -Live 를 붙이지 않아 판정만 하고 상태를 바꾸지 않는다.
+function Invoke-GissuePresweep($csn, $workdir, $DryRun = $false) {
+    if (-not (Test-Path $PresweepScript)) { Write-Log $csn "[PRESWEEP] SKIP: 스크립트 없음($PresweepScript)"; return }
+    $sk = Get-GissueCsnSk $csn
+    if (-not $sk) { Write-Log $csn "[PRESWEEP] SKIP: SK 없음(giip-accounts.json 에 csn=$csn 미등록)"; return }
+    try {
+        $liveFlag = if ($DryRun) { @() } else { @('-Live') }
+        $agentRepoFlag = @('-AgentRepo', $AgentRepo)
+        $out = & $script:GissuePsExe -NoProfile -ExecutionPolicy Bypass -File $PresweepScript -Csn $csn -Workdir $workdir -ApiKey $sk @liveFlag @agentRepoFlag 2>&1
+        foreach ($line in @($out)) { if ("$line".Trim()) { Write-Log $csn "[PRESWEEP] $line" } }
+    } catch {
+        Write-Log $csn "[PRESWEEP] 오류: $($_.Exception.Message)"
     }
 }
 
@@ -2092,6 +2111,9 @@ foreach ($csn in $map.PSObject.Properties.Name) {
         if ($repoMaintenancePromptSub -match '\{(CSN|PROJECT|GISSUE_TOOLS|AGENT_REPO)\}') {
             Write-Log $csn "[DryRun][ERROR] 치환되지 않은 토큰이 프롬프트에 남아 있습니다 — 프롬프트 조립 버그"
         }
+        # giip #3556: REVIEW 병합완료 사전필터 — Get-GissueIssueQueue 호출 *이전에* 실행하여
+        # 병합완료 REVIEW를 DONE 전환함으로써 claude 세션 배정budget 을 절약한다.
+        Invoke-GissuePresweep $csn $workdir -DryRun
         $issueQueueDry = @(Get-GissueIssueQueue $ListIssuesScript $csn $GiipAccountsFile $ApiBase)  # giip #1665: 방어적 @() 강제
         Write-Log $csn "[DryRun] 처리 대상 $($issueQueueDry.Count)건"
         foreach ($dq in $issueQueueDry) {
@@ -2128,7 +2150,7 @@ foreach ($csn in $map.PSObject.Properties.Name) {
               $restBranch, $repoMaintenancePrompt, $pendingIssuePrompt, $readyIssuePrompt, $staleIssuePrompt,
               $reviewIssuePrompt, $testedIssuePrompt, $runTimeoutMin, $registerIssueScript, $listIssuesScript,
               $issueEngineDeadlineMin, $reviewEngineDeadlineMin, $issueEnginePollMin, $logDir, $csnSk, $runIdKey, $reviewRecheckCooldownHours,
-              $projectLang, $divergeFailAlertThreshold, $bashExe)
+              $projectLang, $divergeFailAlertThreshold, $bashExe, $presweepScript)
         Set-Location -Path $workdir
         # [ENCODING][giip #1204 버그 B] Start-Job 은 별도 프로세스라 바깥 스코프의 콘솔 인코딩 설정이
         # 상속되지 않는다 — 한글 프롬프트를 stdin 파이프로 넘기기 전에 이 잡 스코프에서도 UTF-8 로 고정한다.
@@ -2806,6 +2828,17 @@ foreach ($csn in $map.PSObject.Properties.Name) {
         }
 
         # (B) 이슈 목록 조회 — PENDING + READY(>=60분) + STALE_IN_PROGRESS(>=60분) + REVIEW/TESTED(dedup) 단일 큐.
+        # giip #3556: REVIEW 병합완료 사전필터 — Get-GissueIssueQueue 호출 *이전에* 실행.
+        # 병합완료 REVIEW를 DONE 전환하여 claude 세션 budget 소모를 방지한다.
+        if (Test-Path $presweepScript) {
+            $sk = $csnSk
+            if ($sk) {
+                try {
+                    $presweepOut = & $script:GissuePsExe -NoProfile -ExecutionPolicy Bypass -File $presweepScript -Csn $csn -Workdir $workdir -ApiKey $sk -Live -AgentRepo $agentRepo 2>&1
+                    foreach ($line in @($presweepOut)) { if ("$line".Trim()) { Write-Output "[PRESWEEP] $line" } }
+                } catch { Write-Output "[PRESWEEP] 오류: $($_.Exception.Message)" }
+            }
+        }
         $issueQueue = @(Get-GissueIssueQueue $listIssuesScript $csn $accountsFile $apiBase)  # giip #1665: 방어적 @() 강제
         Write-Output "[QUEUE] CSN $csn 처리 대상 $($issueQueue.Count)건"
 
@@ -2972,7 +3005,7 @@ ${function:Invoke-GissueEngine}
                     $restBranch, $repoMaintenancePromptSub, $pendingIssuePromptSub, $readyIssuePromptSub, $staleIssuePromptSub,
                     $reviewIssuePromptSub, $testedIssuePromptSub, $RunTimeoutMin, $RegisterIssueScript, $ListIssuesScript,
                     $IssueEngineDeadlineMin, $ReviewEngineDeadlineMin, $IssueEnginePollMin, $LogDir, $csnSk, $runIdKey, $ReviewRecheckCooldownHours,
-                    $projectLang, $DivergeFailAlertThreshold, $BashExe
+                    $projectLang, $DivergeFailAlertThreshold, $BashExe, $PresweepScript
     $runs += [pscustomobject]@{
         Csn = $csn; Job = $job; Lock = $lock; Done = $false; Workdir = $workdir
         Deadline = (Get-Date).AddMinutes($RunTimeoutMin)
