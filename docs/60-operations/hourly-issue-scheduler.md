@@ -17,8 +17,19 @@ giip issue 상태머신(PENDING→READY→IN_PROGRESS→REVIEW/DONE, +REVIEW→T
 
 ## 2) 트리거 스펙
 
-- **매시 :07** 시작(임의로 고른 분 — 정각/일반적인 :00, :05, :10 트리거들과 충돌을 피하기 위한 선택).
-- cron 표현식(다른 플랫폼/Linux 참고용): `7 * * * *`
+- **틱 주기는 배포 형태마다 다르다(giip 3615 정정).** 아래 둘을 섞어 읽지 말 것.
+
+  | 배포 형태 | 틱 주기 | 틱 시각 | 정의 위치 |
+  |---|---|---|---|
+  | Windows Task Scheduler(`register-hourly-issue-scheduler.ps1`) | **60분**(기본 `-RepetitionMinutes`) | 매시 `:07` | §8 |
+  | docker 인스턴스(`docker/entrypoint.sh` 가 만드는 cron) | **20분** | 매시 `:07`, `:27`, `:47` (`7,27,47 * * * *`) | `docker-entrypoint-spec.md` §5.1 |
+
+- 시작 분 `:07` 은 임의로 고른 분이다(정각/일반적인 :00, :05, :10 트리거들과 충돌을 피하기 위한 선택).
+- cron 표현식: 60분 주기는 `7 * * * *`, docker 20분 주기는 `7,27,47 * * * *`.
+- **틱 주기 ≠ 실행 길이.** 틱은 "실행을 시작해 보는 시각"일 뿐이다. 러너는 큐가 빌 때까지 이슈를 계속 집기 때문에
+  백로그가 큰 CSN 은 한 번의 실행이 90분 넘게 CSN 락을 쥔다. 그 사이의 틱은 전부 `SKIP: 실행 중` 으로 버려진다.
+  그래서 20분 틱이어도 실제로는 약 2시간에 1번만 일하는 일이 생긴다(실측: 2026-10-06~07 csn 47, `gissue-scheduler-run-history.md`
+  "틱 20분 vs 실행 길이"). 이 간극을 줄이는 장치가 아래 **소프트 예산**이다(§8-1).
 - Windows Task Scheduler 기준: 최초 트리거 `00:07:00` 시작, `1시간마다 반복`, 사실상 무기한 지속
   (`[TimeSpan]::MaxValue`는 ISO8601 직렬화 시 Task Scheduler XML의 duration 상한을 초과해
   `Register-ScheduledTask`가 거부하므로(HRESULT 0x80041318, giip #1275), 실제로는 유효 범위 내
@@ -131,6 +142,7 @@ powershell.exe -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass `
 - **시간 예산 초과분은 LLM 없이 미룹니다**: 잡 전체 예산(`$RunTimeoutMin`, §8)에서 **마지막 5분을
   오버헤드 여유로 남기고**, 그 선을 넘으면 남은 큐 항목은 엔진을 기동하지 않고 스크립트가 직접
   note 코멘트를 남긴 뒤 다음 `:07` 로 넘깁니다. 큐가 길어도 태스크가 통째로 잘리지 않게 하는 장치입니다.
+  (이것이 **하드 예산**이다. 그 앞에 선택적인 **소프트 예산**이 있다 — §8-1.)
 
 ### 5-2) 8단계 — 각 단계가 무엇을 판단하는가
 
@@ -244,6 +256,39 @@ Windows Task Scheduler 등록/해제/확인 스크립트다. `-Action` 셋(기�
   없으면 에러 대신 안내 메시지만 출력(멱등).
 - **`Status`**(기본값, `-RepoRoot` 불필요): `Get-ScheduledTask`+`Get-ScheduledTaskInfo`로 태스크
   이름·State·Enabled·등록된 Action 문자열·LastRunTime·LastTaskResult·NextRunTime을 한 번에 출력한다.
+
+## 8-1) 소프트 예산 `softBudgetMin` — "새 이슈를 시작해도 되는 시간" (giip 3615)
+
+| 구분 | 하드 타임아웃 | 소프트 예산 |
+|---|---|---|
+| 변수/키 | `$RunTimeoutMin` = 105 (코드 상수, 이 문서 §8) | `softBudgetMin`(csn-projects.json 최상위) / 환경변수 `GISSUE_SOFT_BUDGET_MIN` |
+| 뜻 | 잡을 강제로 죽이는 시간 | 이 시간이 지나면 **새 이슈 세션을 시작하지 않는 시간** |
+| 진행 중 이슈 | 죽는다(`TIMEOUT`) | **끝까지 마친다**(중간에 죽이면 `IN_PROGRESS` 가 남고 60분 뒤에야 회수되므로) |
+| 기본값 | 105 | **비활성**(생략/0 = 기존 동작과 완전히 동일) |
+
+동작:
+1. 이슈 1건을 시작하기 **직전**에만 판정한다. 실행 시작(잡이 workdir 를 확보한 시각)부터 경과가 `softBudgetMin` 이상이면 큐 순회를 멈춘다.
+   이미 시작한 이슈 세션은 기존 시간박스(`IssueEngineDeadlineMin` 40분 / REVIEW·TESTED `ReviewEngineDeadlineMin`)까지 끝까지 기다린다.
+2. **한 실행에서 최소 1건은 시작한다.** 저장소 정비 세션이 예산을 다 써도 실행이 "0건 처리"로 끝나는 기아를 막는다.
+3. 남은 큐는 다음 틱이 이어받는다. 이때 **코멘트를 남기지 않는다.** 하드 예산의 `[BUDGET]` 경로는 3회 연속 미착수 이슈에 note 를 다는데,
+   소프트 예산은 20분마다 정상적으로 반복되는 동작이라 같은 note 가 계속 쌓여 이슈가 오염된다. 로그 한 줄(`[SOFT-BUDGET] ... 남은 N건은 다음 틱으로: isn=...`)만 남기고,
+   미착수 카운터(`budget_skip_state.json`)도 올리지 않는다.
+4. 하드 타임아웃, 락 파일 로직, 이슈/PR 처리 로직은 바뀌지 않는다.
+
+설정(우선순위: **csn-projects.json 의 `softBudgetMin` > 환경변수 `GISSUE_SOFT_BUDGET_MIN` > 비활성**):
+- csn-projects.json 값이 환경변수보다 우선하는 이유: docker entrypoint 가 20분 cron 에 기본값(15)을 환경변수로 주입하는데, 이미지 재빌드 없이 파일만 고쳐
+  그 기본값을 바꾸거나(`0` 이면 끔) 덮어쓸 수 있어야 하기 때문이다.
+- 숫자가 아니거나 음수인 값은 무시한다(다음 우선순위로 넘어감).
+- 시작 직후 로그에 설정값이 찍힌다: `[SOFT-BUDGET] 설정 = ...` (`-DryRun` 에서는 `[DryRun][SOFT-BUDGET] 설정 = ...`).
+- 구현·단위 테스트: `scripts/gissue/lib/soft-budget.ps1`, `scripts/gissue/tests/test-soft-budget.ps1`.
+
+권장값: 틱 주기의 약 3/4. 20분 틱이면 15분(docker 기본값), 60분 틱(Windows)이면 비활성 유지(기존 인스턴스에 영향 없음).
+
+**기아 점검(제안만, 미구현)**: 큐 정렬이 `STALE_IN_PROGRESS → PENDING → READY → REVIEW/TESTED` 라서 예산이 짧으면 큐 뒤쪽 REVIEW 재검증이 계속 뒤로 밀릴 수 있다.
+실측 근거와 제안은 `gissue-scheduler-run-history.md` "틱 20분 vs 실행 길이" 참고.
+
+**사후 점검과 다음 틱의 동시 실행**: 락은 `Complete-Run` 첫머리에서 풀리고 그 뒤에 사후 점검(`pr-gate-sweep`, `review-done-audit`, `pr-attribution-sweep`, worktree 정리, 로그 전송)이 돈다.
+즉 소프트 예산으로 실행이 짧아지면 다음 틱이 사후 점검과 겹쳐 시작한다. 코드로 확인한 내용은 `gissue-scheduler-run-history.md` 에 있다.
 
 ## 9) 등록 확인 방법
 

@@ -10,6 +10,9 @@
 
   "_comment_heartbeat": "スケジューラ自身の liveness/実行履歴の発行設定。lssn は tLSvr に登録済みの番号、hostname はその tLSvr の hostname、skFile は sk = \"...\" 形式の agent cfg のパス(git非追跡)。未設定なら heartbeat/実行履歴を発行しない。例: \"heartbeat\": { \"lssn\": \"71291\", \"hostname\": \"Lowy-DP01-gissue-hourly-scheduler\", \"skFile\": \"C:/path/to/giipAgent.cfg\" }",
 
+  "softBudgetMin": 0,
+  "_comment_softBudgetMin": "선택(giip 3615). 새 이슈를 시작해도 되는 시간(분). 0 또는 생략 = 비활성(기존 동작: 큐가 빌 때까지 처리). N(>0) 이면 실행 시작 후 N분이 지난 뒤에는 새 이슈를 시작하지 않고(진행 중 이슈는 끝까지 마침) 남은 이슈는 다음 틱으로 넘긴다. 하드 타임아웃(105분)과 락은 바뀌지 않는다. 20분 주기 docker 인스턴스는 15 안팎을 권장. 환경변수 GISSUE_SOFT_BUDGET_MIN 보다 이 키가 우선하며(0 이면 docker 기본값을 끈다), 한 실행에서 최소 1건은 시작한다.",
+
   "csn": {
     "<CSN番号>": {
       "project": "<プロジェクトフォルダ名(任意のラベル。slack-bot/project-lang.json のキーと一致させると CJK混入QAゲートが有効になる)>",

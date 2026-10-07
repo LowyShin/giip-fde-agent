@@ -85,6 +85,10 @@
   root 로 돌리면 로그에는 이슈가 "처리 시작"으로 찍히지만 모든 엔진 호출이 즉시 실패해 큐가 줄지 않는다(실측: `gissue_csn47.out.log` 에 788회). `dev` 에는 claude 로그인 정보(`~/.claude/.credentials.json`)가 있어야 하며 없으면 entrypoint 가 경고한다.
 - **cron 은 컨테이너 env 를 상속하지 않는다**(코드에 env 전달이 없다). 스케줄러가 쓰는 값은 단계 4 가 만든 파일들(`csn-projects.json`, `giip-accounts.json`)과 `giipAgent.cnf` 에서 읽는다.
 - 이전 실행이 아직 돌면 `run-gissue-claude.ps1` 의 CSN lock 이 SKIP 시켜 겹치지 않는다.
+- **소프트 예산 기본값 주입(giip 3615)**: cron 명령 앞에 `GISSUE_SOFT_BUDGET_MIN=<분>` 을 붙인다(cron 은 컨테이너 env 를 상속하지 않으므로 명령에 직접 넣는다).
+  값은 컨테이너 env `GISSUE_SOFT_BUDGET_MIN`, 없으면 **15**(20분 틱의 약 3/4), 숫자가 아니면 15. `0` 이면 비활성.
+  의미는 `hourly-issue-scheduler.md` §8-1. 이미지 재빌드 없이 쓰려면 `scripts/gissue/csn-projects.json` 최상위 `softBudgetMin` 에 적는다(환경변수보다 우선, `0` 이면 끔).
+  ⚠️ **entrypoint 변경(기본값 15 주입)은 이미지 재빌드가 필요하다**(위 단계 7 설명대로 cron 명령은 baked entrypoint 가 만든다). 재빌드 전에는 csn-projects.json 키만 효과가 있다.
 
 ## 6. 불변식(지켜져야 하는 것)
 
@@ -134,3 +138,4 @@ docker exec giip-fde-agent bash scripts/gissue/check-csn-consistency.sh   # 3개
 | 2026-10-06 | PR #110 | giip #3535 | 단계 11 을 `fix-root-owned.sh` 단독 호출에서 `bootstrap-instance.sh` 로 확장 |
 | 2026-10-06 | PR #111 | giip #3535 | 스케줄러 cron 사용자를 root 에서 dev 로 변경(claude 가 root 에서 bypass 를 거부해 이슈가 처리되지 않았음) |
 | 2026-10-06 | (이 변경) | giip #3563 | 래퍼 제거, 근본 원인(`Record-SchedulerState` 호출 형식) 수정으로 cron 은 pwsh 직접 호출 |
+| 2026-10-07 | (giip 3615 PR) | giip 3615 | 스케줄러 cron 에 `GISSUE_SOFT_BUDGET_MIN`(기본 15) 주입 — 이미지 재빌드 필요 |

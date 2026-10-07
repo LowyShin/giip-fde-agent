@@ -107,7 +107,14 @@ if [ "${GIIP_ENABLE_SCHEDULER:-true}" = "true" ]; then
   # 실행 이력(tSchedulerAgentRun)은 run-gissue-claude.ps1 이 직접 기록한다(giip #3563: lib/scheduler-state.ps1). 예전(giip #3575)에는 bash 래퍼로
   # 감싸 giipAgentLinux 의 sar_run_* 를 부르는 우회를 썼으나, 근본 원인은 PowerShell 이 bash 함수를 못 불러서가 아니라 호출 형식(sk/proc → token/text)
   # 오류였고, 래퍼는 `exec` 때문에 종료 trap 이 안 돌아 이력이 RUNNING 으로 남고 박스 에이전트 아래에 섞였다. 그래서 래퍼를 쓰지 않는다.
-  CRON_CMD="pwsh -NoProfile -NonInteractive -File \"$REPO_DIR/scripts/gissue/run-gissue-claude.ps1\"${ONLY_CSN_ARG} >> $REPO_DIR/scripts/gissue/logs/cron.log 2>&1"
+  # giip 3615: 소프트 예산 — "새 이슈를 시작해도 되는 시간(분)". cron 이 20분 주기라서, 큐가 빌 때까지 90분+ 도는 실행 하나가 락을 쥐고 있으면
+  # 그동안의 틱이 전부 "SKIP: 실행 중"으로 버려진다. 15분이 지나면 새 이슈를 집지 않고(진행 중 이슈는 끝까지), 다음 틱이 이어받는다.
+  # 기본 15분(20분 주기의 약 3/4). 컨테이너 환경변수 GISSUE_SOFT_BUDGET_MIN 으로 바꾸고 0 이면 끈다. 숫자가 아니면 15.
+  # 이미지 재빌드 없이 쓰려면 scripts/gissue/csn-projects.json 최상위 "softBudgetMin" 에 적는다(이 값이 환경변수보다 우선, 0 이면 끔).
+  # ⚠️ 이 entrypoint 변경(기본값 15 주입)은 이미지 재빌드가 필요하다. 재빌드 전에는 csn-projects.json 키만 효과가 있다.
+  SOFT_BUDGET_MIN="${GISSUE_SOFT_BUDGET_MIN:-15}"
+  [[ "$SOFT_BUDGET_MIN" =~ ^[0-9]+$ ]] || SOFT_BUDGET_MIN=15
+  CRON_CMD="GISSUE_SOFT_BUDGET_MIN=${SOFT_BUDGET_MIN} pwsh -NoProfile -NonInteractive -File \"$REPO_DIR/scripts/gissue/run-gissue-claude.ps1\"${ONLY_CSN_ARG} >> $REPO_DIR/scripts/gissue/logs/cron.log 2>&1"
   # giip #3535: 스케줄러 cron 은 root 가 아니라 일반 사용자(dev)로 돌려야 한다. 엔진이 `claude -p --dangerously-skip-permissions` 를
   # 부르는데 claude 는 root/sudo 에서 이 옵션을 거부한다("--dangerously-skip-permissions cannot be used with root/sudo privileges").
   # root 로 돌리면 이슈를 "집는" 것처럼 로그만 남고 모든 이슈가 즉시 실패해 큐가 영원히 줄지 않는다(out.log 에서 788회 실측).
