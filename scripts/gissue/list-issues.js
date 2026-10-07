@@ -36,7 +36,7 @@
 //   REVIEW / TESTED    : 최신 코멘트가 '[ACTIONFLOW-TEST]' 로 시작하지 않는 것만([G] dedup)
 // elapsed 기준: 최신 코멘트 시각(없으면 이슈 등록일). 단 [USER-REQUEST] 코멘트가 있는 이슈는
 //   등록일 기준(사용자 직접 요청이 봇 코멘트로 계속 젊어지지 않게 — SQL 의 is_user_req CASE 동일).
-// 정렬: qprio(0=STALE_IN_PROGRESS, 1=PENDING, 2=READY/REVIEW/TESTED)
+// 정렬: qprio(0=STALE_IN_PROGRESS, 1=PENDING, 2=READY, 3=REVIEW/TESTED — 재확인은 READY 실작업 이후)
 //       → is_user_req DESC → has_comment ASC(코멘트 없는 신생 이슈 우선, giip #1651)
 //       → elapsedMin DESC(가장 오래 정지/대기한 것 우선)
 // 출력(--queue --json): [{isn, title, status, elapsedMin, lastAuthor}, ...]
@@ -141,8 +141,9 @@ const QUEUE_SPEC = [
   { status: 'IN_PROGRESS', label: 'STALE_IN_PROGRESS', qprio: 0, minAge: 60, dedup: false },
   { status: 'PENDING',     label: 'PENDING',           qprio: 1, minAge: 0,  dedup: false },
   { status: 'READY',       label: 'READY',             qprio: 2, minAge: 60, dedup: false },
-  { status: 'REVIEW',      label: 'REVIEW',            qprio: 2, minAge: 0,  dedup: true },
-  { status: 'TESTED',      label: 'TESTED',            qprio: 2, minAge: 0,  dedup: true },
+  // REVIEW/TESTED 재확인은 READY 실작업 뒤로 보낸다(qprio 3) — 오래된 재확인 백로그가 READY 를 밀어내지 않게.
+  { status: 'REVIEW',      label: 'REVIEW',            qprio: 3, minAge: 0,  dedup: true },
+  { status: 'TESTED',      label: 'TESTED',            qprio: 3, minAge: 0,  dedup: true },
 ];
 
 function minutesSince(value) {

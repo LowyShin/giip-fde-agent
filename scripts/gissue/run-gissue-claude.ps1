@@ -1388,7 +1388,7 @@ function Get-GissueAllProjectRepoPaths($mapObj) {
 # 접속하는 execSQLFile.ps1 + 단일 T-SQL(UNION ALL + qprio/is_user_req/has_comment/elapsed_min ORDER BY)
 # 로 뽑는다. 이 레포에는 DB 직접접근이 없으므로 **같은 우선순위 계약을 list-issues.js --queue 가
 # giipfaw API(giipIssues + giipIssueComments)로 재현**한다. 정렬 계약은 SQL 과 동일하다:
-#   qprio(0=STALE_IN_PROGRESS, 1=PENDING, 2=READY/REVIEW/TESTED)
+#   qprio(0=STALE_IN_PROGRESS, 1=PENDING, 2=READY, 3=REVIEW/TESTED — 재확인은 READY 실작업 이후)
 #   → is_user_req DESC([USER-REQUEST] 코멘트가 있는 이슈 우선)
 #   → has_comment ASC(코멘트 없는 신생 이슈 우선, giip #1651)
 #   → elapsed_min DESC(가장 오래 정지/대기한 것 우선)
