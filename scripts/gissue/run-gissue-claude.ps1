@@ -2802,6 +2802,48 @@ foreach ($csn in $map.PSObject.Properties.Name) {
             }
         }
 
+        # [giip #3557] 예산 스킵 상태 추적 — 동시쓰기 완화를 위해 3회 재시도 패턴 적용 (review_recheck_state.json 과 동일)
+        $budgetSkipStateFile = Join-Path $logDir 'budget_skip_state.json'
+        function Get-GissueBudgetSkipCount($stateFile, $isnKey) {
+            for ($i = 0; $i -lt 3; $i++) {
+                try {
+                    if (-not (Test-Path -LiteralPath $stateFile)) { return 0 }
+                    $raw = Get-Content -LiteralPath $stateFile -Raw -Encoding UTF8
+                    if (-not $raw -or -not $raw.Trim()) { return 0 }
+                    $obj = $raw | ConvertFrom-Json
+                    $result = @{}
+                    if ($obj) {
+                        foreach ($p in $obj.PSObject.Properties) { $result[$p.Name] = $p.Value }
+                    }
+                    return [int]($result["$isnKey"] ?? 0)
+                } catch {
+                    Start-Sleep -Milliseconds (300 * ($i + 1))
+                }
+            }
+            return 0
+        }
+        function Set-GissueBudgetSkipCount($stateFile, $isnKey, $count) {
+            for ($i = 0; $i -lt 3; $i++) {
+                try {
+                    $state = @{}
+                    if (Test-Path -LiteralPath $stateFile) {
+                        $raw = Get-Content -LiteralPath $stateFile -Raw -Encoding UTF8
+                        if ($raw -and $raw.Trim()) {
+                            $obj = $raw | ConvertFrom-Json
+                            if ($obj) {
+                                foreach ($p in $obj.PSObject.Properties) { $state[$p.Name] = $p.Value }
+                            }
+                        }
+                    }
+                    $state["$isnKey"] = $count
+                    ($state | ConvertTo-Json -Depth 3) | Out-File -FilePath $stateFile -Encoding UTF8
+                    return
+                } catch {
+                    Start-Sleep -Milliseconds (300 * ($i + 1))
+                }
+            }
+        }
+
         # (B) 이슈 목록 조회 — PENDING + READY(>=60분) + STALE_IN_PROGRESS(>=60분) + REVIEW/TESTED(dedup) 단일 큐.
         $issueQueue = @(Get-GissueIssueQueue $listIssuesScript $csn $accountsFile $apiBase)  # giip #1665: 방어적 @() 강제
         Write-Output "[QUEUE] CSN $csn 처리 대상 $($issueQueue.Count)건"
@@ -2815,13 +2857,21 @@ foreach ($csn in $map.PSObject.Properties.Name) {
         for ($qi = 0; $qi -lt $issueQueue.Count; $qi++) {
             $issue = $issueQueue[$qi]
             if ((Get-Date) -gt $issueLoopDeadline) {
-                Write-Output "[BUDGET] 실행 시간 예산 소진 — 남은 $($issueQueue.Count - $qi)건은 이번 실행에서 처리하지 않고 다음 :07 로 미룸"
+                # [giip #3557] 회차 로그에 미처리 isn 목록을 한 줄로 기록 (코멘트 누적 제거)
+                $skippedList = ($issueQueue[$qi..($issueQueue.Count - 1)].ForEach({ $_.Isn }) -join ',')
+                Write-Output "[BUDGET] 실행 시간 예산 소진 — 미처리 $($issueQueue.Count - $qi)건: isn=$skippedList"
+                # 연속 스킵 횟수 관리: 이번 회차에서 스킵된 이슈마다 +1, 3회 이상 스킵된 이슈에만 1회 코멘트
                 for ($ri = $qi; $ri -lt $issueQueue.Count; $ri++) {
                     $remain = $issueQueue[$ri]
-                    try {
-                        $budgetNote = "[BUDGET] gissue 스케줄러 실행 시간 예산(${runTimeoutMin}분) 소진으로 이 이슈(isn=$($remain.Isn), status=$($remain.Status))는 이번 실행에서 처리하지 못했습니다. 다음 :07 실행이 이어받습니다."
-                        Add-GissueWatchdogComment $root $accountsFile $apiBase $remain.Isn $budgetNote $csn
-                    } catch {}
+                    $prevCount = Get-GissueBudgetSkipCount $budgetSkipStateFile $remain.Isn
+                    $newCount = $prevCount + 1
+                    Set-GissueBudgetSkipCount $budgetSkipStateFile $remain.Isn $newCount
+                    if ($newCount -ge 3) {
+                        try {
+                            $budgetNote = "[BUDGET] 이 이슈(isn=$($remain.Isn))는 예산 소진으로 연속 ${newCount}회 미착수되었습니다. 우선순위 점검이 필요할 수 있습니다."
+                            Add-GissueWatchdogComment $root $accountsFile $apiBase $remain.Isn $budgetNote $csn
+                        } catch {}
+                    }
                 }
                 break
             }
@@ -2868,6 +2918,8 @@ foreach ($csn in $map.PSObject.Properties.Name) {
                     }
                 }
             }
+            # [giip #3557] 예산 스킵 카운터 리셋 — 이번 회차에서 실제로 처리되었으므로 0으로 초기화
+            Set-GissueBudgetSkipCount $budgetSkipStateFile $issue.Isn 0
             Write-Output "[ISSUE] isn=$($issue.Isn) status=$($issue.Status) elapsed=$($issue.ElapsedMin)분 처리 시작"
             $runProcessed++
             # 회차가 105분 예산으로 TIMEOUT 되면 잡이 강제 중단되어 맨 끝의 [RUN-COUNTS] 가 출력되지 않는다 — 그러면 종료 기록의 처리 건수가 0 으로 남는다
