@@ -142,6 +142,15 @@ if [ "${GIIP_ENABLE_SCHEDULER:-true}" = "true" ]; then
   } > /etc/cron.d/gissue-scheduler
   chmod 0644 /etc/cron.d/gissue-scheduler
   echo "[entrypoint] registered issue-scheduler cron (every 20 min: :07/:27/:47, pwsh) via /etc/cron.d"
+  # giip 3617: admin/feedback AI 판정 cron(20분, :12/:32/:52 — 스케줄러 틱과 겹치지 않게). 스크립트는 csn-projects.json 의
+  # pageFeedbackAnalyze.enabled 가 true 일 때만 동작하고(기본 비활성: "[SKIP] 비활성" 한 줄 후 종료), 켜기 전에는 DB 호출이 없다.
+  # 스케줄러와 같은 사용자(GIIP_SCHEDULER_USER, 기본 dev)로 돈다. ⚠️ 이 변경은 이미지 재빌드가 필요하다.
+  {
+    echo "SHELL=/bin/bash"
+    echo "12,32,52 * * * * $SCHED_USER cd $REPO_DIR && [ -f scripts/gissue/page-feedback-analyze.ps1 ] && pwsh -NoProfile -NonInteractive -File \"$REPO_DIR/scripts/gissue/page-feedback-analyze.ps1\" >> $REPO_DIR/scripts/gissue/logs/feedback-analyze.log 2>&1"
+  } > /etc/cron.d/gissue-feedback-analyzer
+  chmod 0644 /etc/cron.d/gissue-feedback-analyzer
+  echo "[entrypoint] registered feedback-analyzer cron (every 20 min: :12/:32/:52, pwsh) via /etc/cron.d"
   # giip #3405: 방금 쓴 cron 의 -OnlyCsn 이 SSOT 와 일치하는지 재검증(요구사항 2 — cron ↔ csn-projects.json 가드)
   if [ -n "$SSOT_CSN" ]; then
     CRON_CSN="$(grep -oE '\-OnlyCsn [0-9]+' /etc/cron.d/gissue-scheduler | grep -oE '[0-9]+' || true)"
