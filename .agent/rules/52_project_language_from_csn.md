@@ -80,6 +80,23 @@ function resolveLangForProject(projectName) {
   않았다 — 전송 오류가 길게 방치되지 않아야 하기 때문이다. 혼동 방지: 두 TTL 은 서로 다른 값이고
   이번 변경은 성공 TTL 에만 적용된다.
 
+## gissue 스케줄러(run-gissue-claude.ps1) 경로
+
+PowerShell 스케줄러는 node 의 `resolveLangForProject` 를 동기로 부를 수 없어서 같은 규칙을 PS 로
+이식해 쓴다(`Get-GissueCsnLang` / `Get-GissueCsnLangFromApi`). 별도 언어 결정 로직을 새로 만든 것이
+아니라 아래처럼 **같은 캐시 파일·같은 API·같은 정규화·같은 TTL** 을 공유한다.
+
+- ① `slack-bot/.csn-lang-cache.env` 의 `CSN_<n>_LANG` / `CSN_<n>_LANG_AT` 을 먼저 읽고, 24시간 안의
+  값이면 그대로 쓴다(API 호출 없음).
+- 캐시 미스/만료면 `giipApiSk2` `CorpLangGet <csn>`(corpLangGet 과 동일)으로 조회 →
+  `normalizeLangCode` 와 같은 규칙으로 정규화 → 성공 값만 같은 파일에 기록한다(실패는 기록하지 않음).
+- ② `project-lang.json` 수동 맵은 ①이 없을 때만 쓴다.
+- **③ 은 다르다**: 스케줄러는 `DEFAULT_LANG('ko')` 로 폴백하지 않고 **언어 지시를 아예 넣지 않는다**
+  (도입 전 동작 그대로 — 조회 실패가 기존 결과물 언어를 바꾸지 않게).
+- 결정된 언어는 ⓐ 이슈 프롬프트 맨 앞의 `[OUTPUT LANGUAGE]` 지시(커밋·PR·GIIP 코멘트·문서 작성 언어)와
+  ⓑ 기존 CJK 혼입 QA 게이트(`projectLang='ja'` 일 때만)에 함께 쓰인다. 회차 로그에
+  `[LANG] 출력 언어=... (csn cLang=...)` 한 줄을 남긴다.
+
 ## 상호참조
 
 - `slack-bot/csn-lang-cache.js` — `peekCachedLangCode(csn)`(동기 피크), `prefetch(account, csn)`
@@ -87,6 +104,7 @@ function resolveLangForProject(projectName) {
 - `slack-bot/config.js` — `resolveLangForProject(projectName)`(219~235행), `DEFAULT_LANG`(172행),
   `loadProjectLangMap()`(192~194행).
 - `slack-bot/giip-api.js` — `corpLangGet(account, csn)`(266~289행, SP `pApiCorpLangGetbySk` 호출).
+- `scripts/gissue/run-gissue-claude.ps1` — `Get-GissueCsnLang` / `Get-GissueCsnLangFromApi`(스케줄러 이식판, 위 절).
 - `slack-bot/handlers.js` `triggerCsnLangPrefetch`(48~59행), `slack-bot/giip-task.js`
   `maybeCreateIssue`(54~58행) — prefetch 호출 지점.
 - [`10_karpathy_guidelines.md`](10_karpathy_guidelines.md) — surgical changes 원칙, 이 문서가

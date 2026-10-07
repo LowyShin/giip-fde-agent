@@ -125,6 +125,8 @@ $CodeFreshnessLib   = Join-Path $Root 'code-freshness.ps1'
 $GiipAccountsFile = Join-Path $Root '..\..\slack-bot\.secrets\giip-accounts.json'  # CSN→SK
 $ProjectCsnFile   = Join-Path $Root '..\..\slack-bot\project-csn.json'   # 미매핑 CSN 감시 후보 목록
 $ProjectLangFile  = Join-Path $Root '..\..\slack-bot\project-lang.json'  # giip #2047: CJK 혼입 QA 게이트 스코핑
+$CsnLangCacheFile = Join-Path $Root '..\..\slack-bot\.csn-lang-cache.env'  # CSN→언어 영속 캐시(slack-bot csn-lang-cache.js 와 공유)
+$CsnLangCacheTtlMs = 24 * 60 * 60 * 1000  # csn-lang-cache.js SUCCESS_TTL_MS 와 동일(24시간)
 $SlackBotDir      = Join-Path $Root '..\..\slack-bot'  # pm2 "MISSING" 워치독이 신규 기동할 때 쓰는 cwd
 $LockMaxAgeHr = 2   # 이 시간보다 오래된 lock 은 stale 로 보고 자동 제거
 # [giip #1572, 2026-08-27 실측] Windows Task Scheduler 의 ExecutionTimeLimit(2시간)과 정확히 같으면
@@ -289,6 +291,61 @@ function Get-GissueCsnSk($csn) {
             if ("$($ch.Value.csn)" -eq "$csn" -and $ch.Value.sk) { return $ch.Value.sk }
         }
         if ($acc.default -and "$($acc.default.csn)" -eq "$csn" -and $acc.default.sk) { return $acc.default.sk }
+    } catch {}
+    return $null
+}
+
+# 이 CSN 회사의 언어(giipdb tCorp.cLang)를 언어코드(ko/ja/en/zh-CN/zh-TW)로 돌려준다.
+# slack-bot 의 csn-lang-cache.js 와 같은 영속 캐시(slack-bot/.csn-lang-cache.env, dotenv 형식
+# CSN_<n>_LANG / CSN_<n>_LANG_AT(epoch ms), git-ignored)를 먼저 읽고, 24시간 안의 값이면 그대로 쓴다.
+# 없거나 만료면 giip-api.js#corpLangGet 과 같은 API 로 조회해 normalizeLangCode 와 같은 규칙으로
+# 정규화한 뒤 캐시에 써 둔다(규칙 52: 언어는 CSN 에서 자동 결정 — 레포에 프로젝트별 언어를 하드코딩하지 않는다).
+# 실패·미상은 항상 $null(throw 금지, 실패는 캐시에 쓰지 않는다) — 호출측은 기존 동작(언어 지시 없음)으로 폴백한다.
+function Get-GissueCsnLang($csn, $sk) {
+    $n = [int]$csn
+    $nowMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    $kv = [ordered]@{}
+    # .NET 파일 API 는 '\' 를 Linux 에서 구분자로 보지 않으므로 OS 구분자로 정규화한 절대경로를 쓴다.
+    $cacheFile = [System.IO.Path]::GetFullPath(($CsnLangCacheFile -replace '[\\/]', [string][System.IO.Path]::DirectorySeparatorChar))
+    try {
+        if (Test-Path -LiteralPath $cacheFile) {
+            foreach ($line in (Get-Content -LiteralPath $cacheFile -Encoding UTF8)) {
+                $t = "$line".Trim()
+                if (-not $t -or $t.StartsWith('#')) { continue }
+                $eq = $t.IndexOf('=')
+                if ($eq -lt 1) { continue }
+                $kv[$t.Substring(0, $eq)] = $t.Substring($eq + 1)
+            }
+        }
+        $cached = $kv["CSN_${n}_LANG"]
+        $at = 0L; [void][long]::TryParse("$($kv["CSN_${n}_LANG_AT"])", [ref]$at)
+        if ($cached -and ($nowMs - $at) -lt $CsnLangCacheTtlMs) { return "$cached" }
+    } catch {}
+    $code = Get-GissueCsnLangFromApi $n $sk
+    if ($code) {
+        try {
+            $kv["CSN_${n}_LANG"] = $code
+            $kv["CSN_${n}_LANG_AT"] = "$nowMs"
+            $lines = foreach ($k in $kv.Keys) { "$k=$($kv[$k])" }
+            [System.IO.File]::WriteAllLines($cacheFile, [string[]]$lines, (New-Object System.Text.UTF8Encoding($false)))
+        } catch {}
+    }
+    return $code
+}
+
+function Get-GissueCsnLangFromApi($n, $sk) {
+    if (-not $sk) { return $null }
+    try {
+        $form = @{ text = "CorpLangGet $n"; token = $sk; usertoken = $sk }
+        $resp = Invoke-RestMethod -Uri $ApiSk2Url -Method Post -Headers @{ 'x-api-key' = $sk } `
+            -ContentType 'application/x-www-form-urlencoded' -Body $form -TimeoutSec 20 -ErrorAction Stop
+        $row = if ($resp -and $resp.data) { @($resp.data)[0] } else { $null }
+        if (-not $row -or "$($row.RstVal)" -ne '200' -or -not $row.cLang) { return $null }
+        $s = "$($row.cLang)".Trim()
+        if ($s -match '^zh-CN') { return 'zh-CN' }
+        if ($s -match '^zh-TW') { return 'zh-TW' }
+        $short = ($s -split '[-_]')[0].ToLower()
+        if ($short -in @('ko', 'ja', 'en')) { return $short }
     } catch {}
     return $null
 }
@@ -2258,6 +2315,12 @@ foreach ($csn in $map.PSObject.Properties.Name) {
             }
         }
     } catch { $projectLang = '' }
+    # CSN 회사 언어(tCorp.cLang)가 확인되면 project-lang.json 수동맵보다 우선한다(slack-bot
+    # config.resolveLangForProject 와 같은 우선순위, 규칙 52). 이 값은 CJK QA 게이트와 함께
+    # 이슈 프롬프트의 출력 언어 지시에도 쓰인다. 미확인이면 기존 값 그대로(=기존 동작).
+    $csnLang = Get-GissueCsnLang $csn (Get-GissueCsnSk $csn)
+    if ($csnLang) { $projectLang = $csnLang }
+    Write-Log $csn "[LANG] 출력 언어=$(if ($projectLang) { $projectLang } else { '(미지정)' }) (csn cLang=$(if ($csnLang) { $csnLang } else { '미확인' }))"
     $lock = Join-Path $LogDir "gissue_csn$csn.lock"
 
     if (-not (Test-GissuePathSafe $workdir)) { Write-Log $csn "SKIP: workdir 없음 ($workdir) — csn-projects.json 의 workdir 경로를 확인하세요"; continue }
@@ -3156,6 +3219,11 @@ foreach ($csn in $map.PSObject.Properties.Name) {
                 continue
             }
             $issuePrompt = $template.Replace('{ISN}', "$($issue.Isn)").Replace('{TITLE}', "$($issue.Title)")
+            # 출력 언어 지시(CSN 회사 언어 또는 project-lang.json). 미지정이면 프롬프트를 바꾸지 않는다(기존 동작).
+            $langName = switch ($projectLang) { 'ko' { 'Korean' } 'ja' { 'Japanese' } 'en' { 'English' } 'zh-CN' { 'Simplified Chinese' } 'zh-TW' { 'Traditional Chinese' } default { '' } }
+            if ($langName) {
+                $issuePrompt = "[OUTPUT LANGUAGE] This project's language is $langName ($projectLang). Write every human-facing artifact you produce in ${langName}: commit messages, PR titles and bodies, GIIP issue comments, and report/result/task documents. Keep code identifiers, file paths, command lines and quoted error text as they are. The instructions below may be written in another language; that does not change the output language.`n`n" + $issuePrompt
+            }
             $issueContextLine = "$($issue.Isn)|$($issue.Title)|$($issue.Status)|$($issue.ElapsedMin)"
             $forceClaude = ($issue.Status -eq 'REVIEW' -or $issue.Status -eq 'TESTED')
             $forceReason = if ($issue.Status -eq 'TESTED') {
