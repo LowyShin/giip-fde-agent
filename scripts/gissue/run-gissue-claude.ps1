@@ -1582,6 +1582,98 @@ if (Get-Command Initialize-GissueCodeFreshness -ErrorAction SilentlyContinue) {
     }
 }
 
+# ── [giip #2696] NOT-ON-MAIN 자동 감지 + 조건부 자동 복귀 ─────────────────────────────────
+# 배경: 공유 체크아웃이 삭제된 피처 브랜치에 주차되면(git pull --ff-only 가 항상 실패) 구버전
+# 코드로 영구 기동하는 침묵 고장이 발생한다. 기존 diverge 경고(giip #2667)는 ahead/behind 숫자를
+# 보는데, 이 상황은 "로컬 main 은 멀쩡하고 HEAD 만 다른 브랜치"라 숫자가 4/0 으로 경고에 걸리지 않는다.
+function Test-GissueBranchOnMain {
+    # 현재 브랜치가 'main' 인지 확인한다.
+    param([string]$RepoRoot)
+    $branch = & git -C $RepoRoot branch --show-current 2>$null
+    if ($LASTEXITCODE -ne 0) { return $false }
+    return ($branch -eq 'main')
+}
+
+function Test-GissueUpstreamGone {
+    # 현재 브랜치의 upstream ref 가 사라졌는지 확인한다(git rev-parse --abbrev-ref @{upstream} 실패 = gone).
+    param([string]$RepoRoot)
+    $upstream = & git -C $RepoRoot rev-parse --abbrev-ref '@{upstream}' 2>$null
+    if ($LASTEXITCODE -ne 0) { return $true }   # upstream 이 없으면 gone
+    return $false
+}
+
+function Test-GissueBranchIsAncestorOfOriginMain {
+    # 현재 브랜치의 HEAD 가 origin/main 의 조상(ancestor)인지 확인한다(==이미 머지됨).
+    param([string]$RepoRoot)
+    $head = & git -C $RepoRoot rev-parse HEAD 2>$null
+    if ($LASTEXITCODE -ne 0) { return $false }
+    $isAncestor = & git -C $RepoRoot merge-base --is-ancestor $head origin/main 2>$null
+    return ($LASTEXITCODE -eq 0 -and $isAncestor -eq $true)
+}
+
+function Invoke-GissueSelfPullNotOnMainCheck {
+    # 실행 시작 시점에서 에이전트 레포($AgentRepo)의 HEAD 가 main 이 아닌 경우 경고/자동 복귀한다.
+    # 자동 복귀 조건: (a) tracked 변경 0  (b) upstream gone  (c) 현재 브랜치가 origin/main 의 조상
+    #   → 3조건 전부 충족 시: checkout main + git pull --ff-only origin main
+    #   → 하나라도 불충족 시: 경고만 [WARN][SELF-PULL][NOT-ON-MAIN] 출력 후 계속
+    param(
+        [string]$RepoRoot,
+        [scriptblock]$Log = $null
+    )
+    $say = { param($m) if ($Log) { &$Log $m } elseif ($m) { Write-Output $m } }
+    if (-not $RepoRoot -or -not (Test-Path -LiteralPath (Join-Path $RepoRoot '.git'))) {
+        &$say "[WARN][SELF-PULL][NOT-ON-MAIN] RepoRoot 이 유효하지 않아 체크를 건너뜁니다."
+        return
+    }
+    # 항상 fetch: upstream 존재 판정과 ancestor 판정에 필요
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    & git -C $RepoRoot fetch origin main --quiet 2>&1 | Out-Null
+    $ErrorActionPreference = $prevEap
+
+    if (Test-GissueBranchOnMain -RepoRoot $RepoRoot) { return }   # main 위 — 문제없음
+
+    $currentBranch = & git -C $RepoRoot branch --show-current 2>$null
+    &$say "[WARN][SELF-PULL][NOT-ON-MAIN] 현재 HEAD=<$currentBranch> — 이번 실행은 구버전 코드로 돌 수 있습니다."
+
+    $trackedDirty = & git -C $RepoRoot status --porcelain 2>$null
+    $hasTrackedChanges = $trackedDirty -and ($trackedDirty.Trim() -ne '')
+    $upstreamGone = Test-GissueUpstreamGone -RepoRoot $RepoRoot
+    $isAncestor = Test-GissueBranchIsAncestorOfOriginMain -RepoRoot $RepoRoot
+
+    if ($hasTrackedChanges) {
+        &$say "[WARN][SELF-PULL][NOT-ON-MAIN] tracked 변경이 있어 자동 복귀를 건너뜁니다. (a) 미커밋 변경 있음"
+        return
+    }
+    if (-not $upstreamGone) {
+        &$say "[WARN][SELF-PULL][NOT-ON-MAIN] upstream 이 아직 살아 있어 자동 복귀를 건너뜁니다. (b) upstream 존재함"
+        return
+    }
+    if (-not $isAncestor) {
+        &$say "[WARN][SELF-PULL][NOT-ON-MAIN] 현재 브랜치가 origin/main 의 조상이 아니므로 자동 복귀를 건너뜁니다. (c) 미머지 커밋 보유 가능성"
+        return
+    }
+
+    # 3조건 전부 충족 — 자동 복귀 시도
+    &$say "[INFO][SELF-PULL][NOT-ON-MAIN] 3조건 전부 충족(upstream gone + ancestor + clean) — main 으로 자동 복귀 시도"
+    $coOut = & git -C $RepoRoot checkout main 2>&1
+    $coExit = $LASTEXITCODE
+    if ($coExit -ne 0) {
+        &$say "[ERROR][SELF-PULL][NOT-ON-MAIN] checkout main 실패(exit=$coExit): $($coOut | Out-String)"
+        return
+    }
+    $pullOut = & git -C $RepoRoot pull --ff-only origin main 2>&1
+    $pullExit = $LASTEXITCODE
+    if ($pullExit -ne 0) {
+        &$say "[ERROR][SELF-PULL][NOT-ON-MAIN] pull --ff-only origin main 실패(exit=$pullExit): $($pullOut | Out-String)"
+    } else {
+        &$say "[INFO][SELF-PULL][NOT-ON-MAIN] main 복귀 + pull 성공 — 이제 최신 코드로 실행됩니다."
+    }
+}
+
+# 에이전트 레포의 NOT-ON-MAIN 상태 체크 (이 함수 호출은 Phase 1 사전점검 보다 먼저 수행)
+Invoke-GissueSelfPullNotOnMainCheck -RepoRoot $AgentRepo -Log { param($m) Write-Output $m }
+
 function Invoke-GissueWorktreeCleanup($csn, $workdir, [switch]$DryRunSwitch, [int]$MinIdleMinutes = -1) {
     if (-not $script:WorktreeEngineLoaded) { return }
     try {
