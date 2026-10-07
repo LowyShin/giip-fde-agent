@@ -72,6 +72,8 @@ const ACCOUNTS_FILE = args['accounts-file'] || path.join(SCRIPT_DIR, '..', '..',
 const STATUSES = String(args.status || '').split(',').map((s) => s.trim()).filter(Boolean);
 const MIN_AGE_MIN = args['min-age-minutes'] ? Number(args['min-age-minutes']) : 0;
 const HOURS_BACK = args['hours-back'] ? Number(args['hours-back']) : 0;
+// --queue 전용(선택): >0 이면 REVIEW/TESTED 중 elapsed 가 이 값(분)을 넘은 것은 큐에서 뺀다. 미지정=제한 없음.
+const REVIEW_TESTED_MAX_AGE_MIN = args['review-tested-max-age-minutes'] ? Number(args['review-tested-max-age-minutes']) : 0;
 const AS_JSON = !!args.json;
 const QUEUE_MODE = !!args.queue;
 
@@ -210,6 +212,8 @@ async function runQueue() {
       // (이 파일 상단 --min-age-minutes 정책과 동일).
       if (elapsed === null) elapsed = Number.MAX_SAFE_INTEGER;
       if (spec.minAge > 0 && elapsed < spec.minAge) continue;
+      // REVIEW/TESTED(dedup 대상) 의 최대 경과시간 제한 — 타임스탬프를 못 얻은 경우(MAX_SAFE_INTEGER)는 누락 방지로 유지.
+      if (spec.dedup && REVIEW_TESTED_MAX_AGE_MIN > 0 && elapsed !== Number.MAX_SAFE_INTEGER && elapsed > REVIEW_TESTED_MAX_AGE_MIN) continue;
 
       rows.push({
         isn,

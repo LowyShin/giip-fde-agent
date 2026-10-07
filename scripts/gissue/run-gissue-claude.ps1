@@ -1395,10 +1395,13 @@ function Get-GissueAllProjectRepoPaths($mapObj) {
 # 반환 계약(호출부가 의존): Isn / Title / Status / ElapsedMin / LastAuthor 5필드 pscustomobject 배열.
 # 메인 스코프(DryRun 용)와 Start-Job 스크립트블록(잡 스코프, 실제 실행용) 양쪽에 동일 정의를 둔다 —
 # 잡은 별도 프로세스라 메인 스코프 함수를 상속하지 못한다(기존 busy-repo 헬퍼와 같은 컨벤션).
-function Get-GissueIssueQueue($listIssuesScript, $csn, $accountsFile, $apiBase) {
+function Get-GissueIssueQueue($listIssuesScript, $csn, $accountsFile, $apiBase, $reviewTestedMaxAgeHours = 0) {
     $issues = @()
     try {
-        $raw = & node $listIssuesScript --csn $csn --queue --accounts-file $accountsFile --api-base $apiBase --json 2>&1
+        $maxAgeArgs = @()
+        # csn-projects.json 의 선택적 reviewTestedMaxAgeHours(>0): REVIEW/TESTED 중 elapsed 가 이 시간을 넘은 것은 큐에서 뺀다.
+        $maxAgeH = 0.0; if ([double]::TryParse("$reviewTestedMaxAgeHours", [ref]$maxAgeH) -and $maxAgeH -gt 0) { $maxAgeArgs = @('--review-tested-max-age-minutes', [string][int]($maxAgeH * 60)) }
+        $raw = & node $listIssuesScript --csn $csn --queue --accounts-file $accountsFile --api-base $apiBase @maxAgeArgs --json 2>&1
         if ($LASTEXITCODE -ne 0) {
             Write-Output "[WARN] 이슈 큐 조회 실패(csn=$csn, exit=$LASTEXITCODE): $(($raw | Out-String).Trim())"
             return $issues
@@ -2034,6 +2037,8 @@ foreach ($csn in $map.PSObject.Properties.Name) {
     # 이 CSN 프로젝트의 "정상 휴지 브랜치"(csn-projects.json 의 선택적 restBranch). 원격 기본 브랜치와
     # 상시 작업 브랜치가 다른 프로젝트(dev-first 등)에서 busy-check 오탐을 막는다.
     $restBranch = $entry.restBranch
+    # 선택적 reviewTestedMaxAgeHours(>0 일 때만 적용, 미설정=제한 없음 — 기존 동작 유지).
+    $reviewTestedMaxAgeHours = $entry.reviewTestedMaxAgeHours
     # [giip #2047] 이 CSN 프로젝트가 project-lang.json 에 등록된 순수 단일언어 규칙이 있는지 조회.
     # 등록 안 된 프로젝트는 빈 문자열로 남아 CJK QA 게이트가 스킵된다(비용 절감 스코핑).
     $projectLang = ''
@@ -2118,7 +2123,7 @@ foreach ($csn in $map.PSObject.Properties.Name) {
         # giip #3556: REVIEW 병합완료 사전필터 — Get-GissueIssueQueue 호출 *이전에* 실행하여
         # 병합완료 REVIEW를 DONE 전환함으로써 claude 세션 배정budget 을 절약한다.
         Invoke-GissuePresweep $csn $workdir -DryRun
-        $issueQueueDry = @(Get-GissueIssueQueue $ListIssuesScript $csn $GiipAccountsFile $ApiBase)  # giip #1665: 방어적 @() 강제
+        $issueQueueDry = @(Get-GissueIssueQueue $ListIssuesScript $csn $GiipAccountsFile $ApiBase $reviewTestedMaxAgeHours)  # giip #1665: 방어적 @() 강제
         Write-Log $csn "[DryRun] 처리 대상 $($issueQueueDry.Count)건"
         foreach ($dq in $issueQueueDry) {
             $engineNoteIssue = if ($dq.Status -eq 'TESTED') {
@@ -2154,7 +2159,7 @@ foreach ($csn in $map.PSObject.Properties.Name) {
               $restBranch, $repoMaintenancePrompt, $pendingIssuePrompt, $readyIssuePrompt, $staleIssuePrompt,
               $reviewIssuePrompt, $testedIssuePrompt, $runTimeoutMin, $registerIssueScript, $listIssuesScript,
               $issueEngineDeadlineMin, $reviewEngineDeadlineMin, $issueEnginePollMin, $logDir, $csnSk, $runIdKey, $reviewRecheckCooldownHours,
-              $projectLang, $divergeFailAlertThreshold, $bashExe, $presweepScript)
+              $projectLang, $divergeFailAlertThreshold, $bashExe, $presweepScript, $reviewTestedMaxAgeHours)
         Set-Location -Path $workdir
         # [ENCODING][giip #1204 버그 B] Start-Job 은 별도 프로세스라 바깥 스코프의 콘솔 인코딩 설정이
         # 상속되지 않는다 — 한글 프롬프트를 stdin 파이프로 넘기기 전에 이 잡 스코프에서도 UTF-8 로 고정한다.
@@ -2388,10 +2393,13 @@ foreach ($csn in $map.PSObject.Properties.Name) {
         }
 
         # ── 이슈 우선순위 큐 조회(잡 스코프 사본 — 메인 스코프 정의와 동일 계약) ──────────────
-        function Get-GissueIssueQueue($listIssuesScript, $csn, $accountsFile, $apiBase) {
+        function Get-GissueIssueQueue($listIssuesScript, $csn, $accountsFile, $apiBase, $reviewTestedMaxAgeHours = 0) {
             $issues = @()
             try {
-                $raw = & node $listIssuesScript --csn $csn --queue --accounts-file $accountsFile --api-base $apiBase --json 2>&1
+                $maxAgeArgs = @()
+                # csn-projects.json 의 선택적 reviewTestedMaxAgeHours(>0): REVIEW/TESTED 중 elapsed 가 이 시간을 넘은 것은 큐에서 뺀다.
+                $maxAgeH = 0.0; if ([double]::TryParse("$reviewTestedMaxAgeHours", [ref]$maxAgeH) -and $maxAgeH -gt 0) { $maxAgeArgs = @('--review-tested-max-age-minutes', [string][int]($maxAgeH * 60)) }
+                $raw = & node $listIssuesScript --csn $csn --queue --accounts-file $accountsFile --api-base $apiBase @maxAgeArgs --json 2>&1
                 if ($LASTEXITCODE -ne 0) {
                     Write-Output "[WARN] 이슈 큐 조회 실패(csn=$csn, exit=$LASTEXITCODE): $(($raw | Out-String).Trim())"
                     return $issues
@@ -2843,7 +2851,7 @@ foreach ($csn in $map.PSObject.Properties.Name) {
                 } catch { Write-Output "[PRESWEEP] 오류: $($_.Exception.Message)" }
             }
         }
-        $issueQueue = @(Get-GissueIssueQueue $listIssuesScript $csn $accountsFile $apiBase)  # giip #1665: 방어적 @() 강제
+        $issueQueue = @(Get-GissueIssueQueue $listIssuesScript $csn $accountsFile $apiBase $reviewTestedMaxAgeHours)  # giip #1665: 방어적 @() 강제
         Write-Output "[QUEUE] CSN $csn 처리 대상 $($issueQueue.Count)건"
 
         # (C) 이슈별 순회 처리. 잡 전체 예산(${runTimeoutMin}분) 중 마지막 5분은 오버헤드 여유로 남기고,
@@ -3047,7 +3055,7 @@ ${function:Invoke-GissueEngine}
                     $restBranch, $repoMaintenancePromptSub, $pendingIssuePromptSub, $readyIssuePromptSub, $staleIssuePromptSub,
                     $reviewIssuePromptSub, $testedIssuePromptSub, $RunTimeoutMin, $RegisterIssueScript, $ListIssuesScript,
                     $IssueEngineDeadlineMin, $ReviewEngineDeadlineMin, $IssueEnginePollMin, $LogDir, $csnSk, $runIdKey, $ReviewRecheckCooldownHours,
-                    $projectLang, $DivergeFailAlertThreshold, $BashExe, $PresweepScript
+                    $projectLang, $DivergeFailAlertThreshold, $BashExe, $PresweepScript, $reviewTestedMaxAgeHours
     $runs += [pscustomobject]@{
         Csn = $csn; Job = $job; Lock = $lock; Done = $false; Workdir = $workdir
         Deadline = (Get-Date).AddMinutes($RunTimeoutMin)

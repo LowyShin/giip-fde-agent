@@ -15,6 +15,7 @@
       "project": "<プロジェクトフォルダ名(任意のラベル。slack-bot/project-lang.json のキーと一致させると CJK混入QAゲートが有効になる)>",
       "workdir": "<このCSNの対象プロジェクトの絶対パス>",
       "restBranch": "<省略可 — このプロジェクトの常用作業ブランチが git リモートの既定ブランチ(main/master)と異なる場合のみ指定(例: dev-first運用のプロジェクトなら \"dev\")。指定しないと busy-check がその状態を毎回 BUSY と誤認し、強制アンブロックを繰り返す。>",
+      "reviewTestedMaxAgeHours": "<省略可 — 0より大きい数値を指定すると、REVIEW/TESTED のうち elapsed(最新コメント時刻、無ければ登録日)がこの時間を超えたものをキューから除外する。省略/0 は無制限(既存動作)。>",
       "enabled": true,
       "note": "<このCSN/プロジェクト固有の注意事項・聖域(コード修正禁止)ファイルなどをここに記録>"
     }
