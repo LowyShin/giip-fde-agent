@@ -1497,6 +1497,30 @@ function Remove-GissueOrphanWorktrees($csn, $workdir) {
                 $candidates += [pscustomobject]@{ Path = $item.FullName; Isn = $m.Groups[1].Value; AgeHr = ((Get-Date) - $item.LastWriteTime).TotalHours }
             }
         }
+
+        # ── giip #3590: 레포 루트 직계 고아 스캔 (.worktrees/ 하위가 아닌 레포 루트 직계) ──
+        # 2단계 이상 레포 구조(<workdir>/<repo>/)에서 <repo> 루트 직계에 놓인 고아를 별도로 탐지한다.
+        # 판정: 이름 (?:isn|giip|issue|pr)-?(\d+) 매칭 + worktree list 미등록 + 이슈 DONE/부재 + mtime 24h+.
+        # 이 스캔은 cleanup-worktrees.ps1 의 -RootLevelScan 모드를 호출한다.
+        $cleanupScript = Join-Path $PSScriptRoot 'cleanup-worktrees.ps1'
+        if ((Test-Path -LiteralPath $cleanupScript) -and $repoPaths.Count -gt 0) {
+            try {
+                $rlRoots = @($repoPaths | Where-Object { Test-Path -LiteralPath (Join-Path $_ '.git') })
+                if ($rlRoots.Count -gt 0) {
+                    Write-Log $csn "[ORPHAN-CLEANUP] 레포 루트 직계 스캔 시작 (roots=$($rlRoots.Count)개, DryRun=$($DryRun.IsPresent))"
+                    $rlOut = & $script:GissuePsExe -NoProfile -ExecutionPolicy Bypass -File $cleanupScript `
+                        -RootLevelScan -RepoRoots $rlRoots -Csn $csn `
+                        -ProtectRecentMinutes 60 -DryRun:$DryRun 2>&1
+                    foreach ($line in @($rlOut)) {
+                        if ("$line".Trim()) { Write-Log $csn "[ORPHAN-CLEANUP][ROOT-LEVEL] $line" }
+                    }
+                }
+            } catch {
+                Write-Log $csn "[ORPHAN-CLEANUP][ROOT-LEVEL] WARN: 예외 — $($_.Exception.Message)"
+            }
+        }
+        # ── 레포 루트 직계 스캔 종료 ──
+
         if (-not $candidates) { return }
 
         $sk = Get-GissueCsnSk $csn

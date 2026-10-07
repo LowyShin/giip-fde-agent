@@ -82,13 +82,20 @@ param(
     [Parameter(Mandatory = $true, ParameterSetName = 'Orphan')][switch]$OrphanScan,
     # giip #2449: `.git` 이 아예 없는 잔해 회수.
     [Parameter(Mandatory = $true, ParameterSetName = 'Remnant')][switch]$RemnantScan,
+    # giip #3590: 레포 루트 직계 고아 후보 회수. -RepoRoots 로 스캔할 레포 루트 배열을 받는다.
+    [Parameter(Mandatory = $true, ParameterSetName = 'RootLevel')][switch]$RootLevelScan,
     # -OnlyPath: 그 경로의 worktree 1건만 처리(핀포인트 정리/절차 검증용).
     [string]$OnlyPath,
     # -MinIdleMinutes: 트리 안 파일이 최근 N분 이내에 바뀜 worktree 는 "작업 중"으로 보고
     #   건너뛴다(기본 120분, 0 이면 비활성). giip #2440 후속 안전장치.
     [int]$MinIdleMinutes = 120,
     [Parameter(ParameterSetName = 'Orphan')]
-    [Parameter(ParameterSetName = 'Remnant')][string[]]$ScanRoot = @('D:\temp\worktrees'),
+    [Parameter(ParameterSetName = 'Remnant')]
+    [Parameter(ParameterSetName = 'RootLevel')][string[]]$ScanRoot = @('D:\temp\worktrees'),
+    # -RepoRoots: RootLevelScan 모드에서 스캔할 레포 루트 배열. 각 경로의 직계 자식을 훑는다.
+    [Parameter(ParameterSetName = 'RootLevel')][string[]]$RepoRoots = @(),
+    # -Csn: RootLevelScan 모드에서 giip 이슈 DONE/부재 확인용 CSN.
+    [Parameter(ParameterSetName = 'RootLevel')][int]$Csn = 0,
     [string[]]$Protect = @(),
     # -ProtectFile (giip #2449): 보호 경로를 **파일에서** 읽는다(한 줄에 하나, `#` 주석/빈 줄 무시).
     #   왜 필요한가: `powershell.exe -File script.ps1 -Protect "a","b"` 형태는 셸(bash/cmd)이 따옴표를
@@ -97,7 +104,8 @@ param(
     #   "제외 지정 경로가 삭제된" 사고와 같은 실패 계열이라 셸 인용에 의존하지 않는 경로를 만든다.
     [string]$ProtectFile,
     [Parameter(ParameterSetName = 'Orphan')]
-    [Parameter(ParameterSetName = 'Remnant')][int]$ProtectRecentMinutes = 60,
+    [Parameter(ParameterSetName = 'Remnant')]
+    [Parameter(ParameterSetName = 'RootLevel')][int]$ProtectRecentMinutes = 60,
     # 콘솔 코드페이지(CP949)가 한글 로그를 '?' 로 뭉개서 rule 55 §5 의 과정 검증 로그를 남길 수 없다.
     # -LogFile 을 주면 같은 내용을 UTF-8 로 따로 적는다.
     [string]$LogFile,
@@ -208,6 +216,209 @@ if ($RemnantScan) {
         ManualReview = $rr.ManualReview
         Aborted      = $rr.Aborted
         AbortReason  = $rr.AbortReason
+    }
+    exit 0
+}
+
+# ===========================================================================
+# -RootLevelScan 모드 (giip #3590) — 레포 루트 직계 고아 후보 회수.
+# giip 2660 후속: .worktrees/ 하위가 아닌 레포 루트 직계에 놓인 고아를 회수한다.
+# 판정: 이름 (?:isn|giip|issue|pr)-?(\d+) 매칭 + worktree list 미등록 + 이슈 DONE/부재 + mtime 24h 초과.
+# 삭제: rule 55 절차(링크 선검사 → §2-예외 3조건 → 대상 건전성 → 정션만 제거 → 사후 재검증 → 디렉터리 삭제).
+# ===========================================================================
+if ($RootLevelScan) {
+    if ($RepoRoots.Count -eq 0) {
+        Write-CleanupLog "ERROR: -RootLevelScan 에는 -RepoRoots (스캔할 레포 루트 배열)가 필요합니다."
+        exit 1
+    }
+    if ($Csn -le 0) {
+        Write-CleanupLog "ERROR: -RootLevelScan 에는 -Csn (giip CSN 번호)이 필요합니다."
+        exit 1
+    }
+    Write-CleanupLog "=== 레포 루트 직계 고아 스캔 시작 (RepoRoots=$($RepoRoots -join ', '), DryRun=$($DryRun.IsPresent)) ==="
+
+    # 1) 후보 탐지 (파일시스템 기준 — 이름 매칭 + worktree list 미등록 + mtime 24h).
+    $candidates = Get-GissueRootLevelOrphanCandidates -RepoRoots $RepoRoots `
+        -ManagementDirNames $script:GissueScanRootManagementDirNames `
+        -MinAgeHours 24 `
+        -ProtectedPaths $Protect
+    Write-CleanupLog "루트 레벨 후보 $($candidates.Count)건 발견"
+
+    # 2) 각 후보별 giip 이슈 DONE/부재 확인 + rule 55 삭제 절차.
+    $rlRemoved = @(); $rlManual = @(); $rlProtected = @()
+    $rlAbort = $false; $rlAbortReason = $null
+
+    foreach ($c in $candidates) {
+        if ($rlAbort) { break }
+
+        # (a) worktree list 미등록 확인.
+        if ($c.Registered) {
+            Write-CleanupLog "SKIP(등록됨): $($c.Path) — worktree list 에 존재"
+            continue
+        }
+
+        # (b) mtime 24h 초과 확인.
+        if (-not $c.AgeOk) {
+            Write-CleanupLog "SKIP(mtime 24h 미만): $($c.Path)"
+            continue
+        }
+
+        # (c) giip 이슈 DONE/부재 확인.
+        $issueStatus = $null
+        $issueDoneOrAbsent = $false
+        if ($c.Isn) {
+            $getIssueScript = Join-Path $PSScriptRoot 'get-issue.sh'
+            if (Test-Path -LiteralPath $getIssueScript) {
+                try {
+                    $raw = bash $getIssueScript $c.Isn $Csn 2>&1
+                    if ($LASTEXITCODE -eq 0 -and $raw) {
+                        $json = $raw | ConvertFrom-Json
+                        if ($null -ne $json.issue) {
+                            $issueStatus = $json.issue.status
+                            $issueDoneOrAbsent = ($issueStatus -eq 'DONE')
+                        }
+                    } else {
+                        # 이슈가 없으면 부재 → DONE/부재 조건 충족
+                        $issueDoneOrAbsent = $true
+                    }
+                } catch {
+                    Write-CleanupLog "WARN: 이슈 $c.Isn 상태 조회 실패 — $($_.Exception.Message) — 후보 보류"
+                    $rlManual += [pscustomobject]@{ Path = $c.Path; Reason = "이슈 $c.Isn 상태 조회 실패: $($_.Exception.Message)" }
+                    continue
+                }
+            } else {
+                Write-CleanupLog "WARN: get-issue.sh 없음 — 이슈 $c.Isn 상태 확인 불가, 후보 보류"
+                $rlManual += [pscustomobject]@{ Path = $c.Path; Reason = "get-issue.sh 없어 이슈 $c.Isn 상태 확인 불가" }
+                continue
+            }
+        }
+
+        if ($null -ne $issueStatus -and -not $issueDoneOrAbsent) {
+            Write-CleanupLog "SKIP(이슈 OPEN): $($c.Path) — 이슈 $c.Isn 상태=$issueStatus"
+            continue
+        }
+        # 이슈가 없거나 DONE → 삭제 진행.
+
+        # (d) rule 55 §1-2 링크 선검사.
+        $linkScan = Get-GissueWorktreeLinkScan -Path $c.Path -MaxLinks 2
+        $exemption = $null
+        if ($linkScan.ScanFailed -or $linkScan.Links.Count -gt 0) {
+            $exemption = Get-GissueJunctionExemption -WorktreePath $c.Path -ExtraLiveRoots @() -Scan $linkScan
+            if (-not $exemption.Eligible) {
+                Write-CleanupLog "MANUAL-REVIEW(심볼릭 링크/정션 — rule 55 §1-2): $($c.Path) — $($exemption.Reason)"
+                $rlManual += [pscustomobject]@{ Path = $c.Path; Reason = "링크/정션 포함 — 자동삭제 금지(rule 55 §1-2): $($exemption.Reason)"; Links = $exemption.Reason }
+                continue
+            }
+            Write-CleanupLog "LINK-EXEMPT(rule 55 §2-예외, giip #2438): $($c.Path) — $($exemption.Reason)"
+        }
+
+        if ($DryRun) {
+            if ($exemption) {
+                Write-CleanupLog "[DRY-RUN] 삭제 예정(루트레벨 고아, rule 55 §2-예외 적용): $($c.Path) / 정션=$($exemption.JunctionPath) -> $($exemption.TargetPath)"
+            } else {
+                Write-CleanupLog "[DRY-RUN] 삭제 예정(루트레벨 고아, 링크 없음): $($c.Path)"
+            }
+            $rlRemoved += [pscustomobject]@{ Path = $c.Path; Exempt = [bool]$exemption }
+            continue
+        }
+
+        # (e) rule 55 §3 재검증 대상 — 인접 nested repo 스냅샷.
+        $verifyRepos = @()
+        foreach ($root in $RepoRoots) {
+            if ($root -and (Test-Path -LiteralPath (Join-Path $root '.git'))) { [void]$verifyRepos.Add($root) }
+        }
+        $verifyRepos = @($verifyRepos | Where-Object { $_ } | Select-Object -Unique)
+        if ($verifyRepos.Count -eq 0) {
+            Write-CleanupLog "CRITICAL: 인접 nested repo 재검증 대상 0개 — rule 55 §3 검증 불가로 삭제 중단: $($c.Path)"
+            $rlAbort = $true; $rlAbortReason = '재검증 대상 0개'
+            break
+        }
+        $preSnap = Get-GissueRepoIntegritySnapshot $verifyRepos
+
+        # (f) §2-예외 적용 시: 대상 사전검증 → 정션만 제거 → 사후검증.
+        if ($exemption) {
+            $preHealth = Test-GissueJunctionTargetHealthy -TargetPath $exemption.TargetPath -TargetRepoRoot $exemption.TargetRepoRoot
+            if (-not $preHealth.Ok) {
+                Write-CleanupLog "MANUAL-REVIEW(정션 대상 사전검증 실패): $($c.Path) — $($preHealth.Detail)"
+                $rlManual += [pscustomobject]@{ Path = $c.Path; Reason = "정션 대상 사전검증 실패: $($preHealth.Detail)" }
+                continue
+            }
+            Write-CleanupLog "  정션 대상 사전검증 OK — $($preHealth.Detail)"
+            $rmJunction = Remove-GissueJunctionOnly -JunctionPath $exemption.JunctionPath
+            if (-not $rmJunction.Ok) {
+                Write-CleanupLog "MANUAL-REVIEW(정션 제거 실패): $($c.Path) — $($rmJunction.Detail)"
+                $rlManual += [pscustomobject]@{ Path = $c.Path; Reason = "정션 제거 실패: $($rmJunction.Detail)" }
+                continue
+            }
+            Write-CleanupLog "  $($rmJunction.Detail)"
+            $postHealth = Test-GissueJunctionTargetHealthy -TargetPath $exemption.TargetPath -TargetRepoRoot $exemption.TargetRepoRoot
+            if (-not $postHealth.Ok) {
+                Write-CleanupLog "CRITICAL: 정션 제거 후 대상 비정상 — 즉시 중단: $($c.Path) — $($postHealth.Detail)"
+                $rlAbort = $true; $rlAbortReason = "정션 제거 후 대상 검증 실패: $($postHealth.Detail)"
+                break
+            }
+            Write-CleanupLog "  정션 대상 사후검증 OK"
+        }
+
+        # (g) 삭제 직전 2차 링크 재검사.
+        $reScan = Get-GissueWorktreeLinkScan -Path $c.Path -MaxLinks 1
+        if ($reScan.ScanFailed -or $reScan.Links.Count -gt 0) {
+            Write-CleanupLog "MANUAL-REVIEW(삭제 직전 2차 링크 검사): $($c.Path)"
+            $rlManual += [pscustomobject]@{ Path = $c.Path; Reason = '삭제 직전 2차 링크 검사에서 링크 발견/스캔실패' }
+            continue
+        }
+
+        # (h) 디렉터리 삭제.
+        $del = Remove-GissueDirectoryTreeSafely -Path $c.Path -Log { param($m) Write-CleanupLog $m }
+        if (-not $del.Ok) {
+            Write-CleanupLog "WARN: 삭제 실패($($c.Path)) — $($del.Detail)"
+            $rlManual += [pscustomobject]@{ Path = $c.Path; Reason = "삭제 실패: $($del.Detail)" }
+        }
+
+        # (i) rule 55 §3 삭제 직후 인접 repo 재검증.
+        $postSnap = Get-GissueRepoIntegritySnapshot $verifyRepos
+        $integrity = Compare-GissueRepoIntegrity $preSnap $postSnap
+        foreach ($w in $integrity.Warnings) { Write-CleanupLog "WARN(rule 55 §3, giip #2466): $w" }
+        $violations = @($integrity.Violations)
+        if ($violations.Count -gt 0) {
+            foreach ($v in $violations) { Write-CleanupLog "CRITICAL: '$($c.Path)' 삭제 직후 — $v" }
+            Write-CleanupLog "CRITICAL: 즉시 중단."
+            $rlAbort = $true; $rlAbortReason = ($violations -join ' / ')
+            break
+        }
+        if ($exemption) {
+            $finalHealth = Test-GissueJunctionTargetHealthy -TargetPath $exemption.TargetPath -TargetRepoRoot $exemption.TargetRepoRoot
+            if (-not $finalHealth.Ok) {
+                Write-CleanupLog "CRITICAL: 삭제 후 정션 대상 비정상 — 즉시 중단: $($c.Path) — $($finalHealth.Detail)"
+                $rlAbort = $true; $rlAbortReason = "삭제 후 정션 대상 검증 실패: $($finalHealth.Detail)"
+                break
+            }
+            Write-CleanupLog "  삭제 후 정션 대상 재검증 OK"
+        }
+        if ($del.Ok) {
+            Write-CleanupLog "삭제됨(루트레벨 고아, 인접 레포 $($verifyRepos.Count)개 재검증 통과): $($c.Path)"
+            $rlRemoved += [pscustomobject]@{ Path = $c.Path; Exempt = [bool]$exemption }
+        }
+    }
+
+    if ($rlAbort) {
+        Write-CleanupLog "=== 중단됨(rule 55): $rlAbortReason ==="
+    }
+    Write-CleanupLog "=== 루트레벨 정리 요약: 삭제 $($rlRemoved.Count)건 / 수동확인 $($rlManual.Count)건 / 보호 $($rlProtected.Count)건 (전체 $($candidates.Count)건) ==="
+    if ($rlManual.Count -gt 0) {
+        Write-CleanupLog '--- 수동확인 필요 목록 ---'
+        foreach ($m in $rlManual) { Write-CleanupLog "  - $($m.Path) :: $($m.Reason)" }
+    }
+
+    [pscustomobject]@{
+        Mode         = 'RootLevelScan'
+        DryRun       = [bool]$DryRun.IsPresent
+        ScannedTotal = $candidates.Count
+        Removed      = $rlRemoved
+        ManualReview = $rlManual
+        Protected    = $rlProtected
+        Aborted      = $rlAbort
+        AbortReason  = $rlAbortReason
     }
     exit 0
 }
