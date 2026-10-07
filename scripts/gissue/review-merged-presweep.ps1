@@ -92,7 +92,7 @@ $HumanConfirmQuoteChars = @('"', "'", '`', '‘', '’', '“', '”', '「', '�
 
 function Test-IsBotComment($c) {
     $author = "$($c.author)".Trim()
-    if ($BotAuthors -eq $author) { return $true }
+    if ($BotAuthors -contains $author) { return $true }
     foreach ($p in $BotAuthorPrefixes) {
         if ($author.StartsWith($p, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
     }
@@ -368,8 +368,14 @@ $listJson = $listOut | Out-String
 $issues = @()
 try {
     $parsed = $listJson | ConvertFrom-Json
-    if ($parsed.issues) { $issues = @($parsed.issues) }
-    elseif ($parsed -is [array]) { $issues = $parsed }
+    # list-issues.js --json 은 벌거벗은 배열([{...}])을 반환한다. 배열 분기를 먼저 본다.
+    # (giip #3556 후속) $ErrorActionPreference='Stop' 하에서 배열 $parsed 에 대한 멤버열거
+    # $parsed.issues 는 존재하지 않는 속성인데도 truthy(요소 수만큼의 $null 배열)로 평가되어
+    # if($parsed.issues) 가 먼저 참이 되고 @($parsed.issues) 가 빈/널 배열이 되는 바람에
+    # REVIEW 전수가 항상 0건이 되던 버그를 고친다. 객체-래핑({issues:[...]}) 케이스는 속성
+    # 존재를 PSObject 로 정확히 확인한 뒤에만 쓴다.
+    if ($parsed -is [array]) { $issues = @($parsed) }
+    elseif ($parsed -and $parsed.PSObject.Properties['issues']) { $issues = @($parsed.issues) }
     else { $issues = @($parsed) }
 } catch {
     Write-PresweepLog "REVIEW 목록 JSON 파싱 실패: $($_.Exception.Message)"
