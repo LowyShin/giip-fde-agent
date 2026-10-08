@@ -130,7 +130,15 @@ function Invoke-PfaApi([string]$Sk, [string]$Name, [hashtable]$Json) {
     $wc = New-Object System.Net.WebClient
     $wc.Encoding = [System.Text.Encoding]::UTF8
     $raw = [System.Text.Encoding]::UTF8.GetString($wc.UploadValues("$($script:PfaApiUrl)?code=$(Resolve-PfaFunctionCode)", 'POST', $form))
-    $parsed = $raw | ConvertFrom-Json
+    # 디스패처는 결과셋이 없으면 JSON 이 아니라 평문("Api executed successfully, but no results returned.")을,
+    # 오류도 평문("Error executing api: ...")을 돌려준다. JSON 이 아니면 오류는 예외로, 빈 결과는 빈 배열로 처리한다
+    # (큐가 비면 PageFeedbackIssueQueueList 가 이 평문을 돌려주므로 정상 운영에서도 반드시 필요하다).
+    $trimmed = ($raw | Out-String).Trim()
+    if ($trimmed -notmatch '^[\[{]') {
+        if ($trimmed -match '(?i)error executing api|exception|could not find') { throw "giipApi '$Name' 오류: $trimmed" }
+        return , @()
+    }
+    $parsed = $trimmed | ConvertFrom-Json
     $rows = if ($parsed -is [array]) { $parsed } elseif ($parsed.data) { @($parsed.data) } else { @($parsed) }
     return , @($rows)
 }
