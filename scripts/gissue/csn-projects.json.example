@@ -2,6 +2,9 @@
   "_comment": "CSN → 処理プロジェクトフォルダのマッピング。この例をコピーして csn-projects.json(gitignore対象)として実データを入れる。新CSN追加 = csn に項目を1つ追加するだけ。詳細は README.md / docs/60-operations/hourly-issue-scheduler.md §4 参照。",
   "_comment_optional_top_level": "以下の最上位キー3つ(forcedUnblockExcludeRepoNames / guardRepos / heartbeat)は全て省略可(giip #2645)。省略するとその機能だけが静かに無効になり、スケジューラ本体の動作には影響しない。ランナーからこのPC固有の絶対パスを排除するために外部化した設定。",
 
+  "_comment_pageFeedbackAnalyze": "giip 3617: admin/feedback AI判定(page-feedback-analyze.ps1, cron :12/:32/:52)の制御。キーが無いか enabled!=true なら無効(DB呼び出し0)。dryRun=true はキュー照会とAI判定の出力のみでDB記録・Issue登録はしない。CSN 47専用インスタンスだけで有効化すること。",
+  "pageFeedbackAnalyze": { "enabled": false, "dryRun": true, "batch": 5, "maxMinutes": 15 },
+
   "forcedUnblockExcludeRepoNames": [],
   "_comment_forcedUnblock": "強制アンブロック(マージ有無が不確実でも stash -u + base 復帰)の対象から除外する nested リポジトリの【フォルダ名】配列。聖域(コード修正禁止)リポジトリがある配置で指定する。マージが『確認された』安全な自動解除([AUTO-UNBLOCK])はこの例外と無関係に適用され続ける。",
 
