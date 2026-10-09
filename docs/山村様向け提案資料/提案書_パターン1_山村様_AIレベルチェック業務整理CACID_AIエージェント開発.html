@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="giip-isn" content="3629">
+<meta name="proposal-pattern" content="pattern1">
+<title>ご提案書（パターン1）AIレベルチェック＋業務整理＋CACID AIエージェント開発 — 山村様</title>
+<style>
+  :root { --main:#0b4a8f; --accent:#1e88e5; --ink:#222; --muted:#666; --line:#e2e8f0; }
+  * { box-sizing:border-box; }
+  body { font-family:"Hiragino Kaku Gothic ProN","Meiryo","Noto Sans JP",sans-serif; color:var(--ink); line-height:1.8; margin:0; background:#f7f9fc; }
+  .page { max-width:960px; margin:0 auto; padding:0 24px 80px; }
+  .cover { background:linear-gradient(135deg,var(--main),var(--accent)); color:#fff; padding:96px 48px; border-radius:0 0 24px 24px; }
+  .cover .draft { display:inline-block; background:#ffd54f; color:#5d4037; font-weight:700; padding:4px 14px; border-radius:999px; font-size:13px; letter-spacing:.08em; }
+  .cover h1 { font-size:30px; margin:20px 0 8px; line-height:1.4; }
+  .cover h2 { font-size:17px; font-weight:400; margin:0; opacity:.92; }
+  .cover .meta { margin-top:32px; font-size:14px; opacity:.9; }
+  h2.sec { color:var(--main); border-left:6px solid var(--accent); padding-left:12px; margin-top:48px; font-size:22px; }
+  h3 { color:#0b4a8f; margin-top:28px; font-size:17px; }
+  table { border-collapse:collapse; width:100%; margin:16px 0; background:#fff; }
+  th,td { border:1px solid var(--line); padding:10px 12px; text-align:left; vertical-align:top; font-size:14px; }
+  th { background:#eef4fb; color:var(--main); }
+  .toc { background:#fff; border:1px solid var(--line); border-radius:12px; padding:20px 28px; margin-top:32px; }
+  .toc ol { margin:0; padding-left:20px; }
+  .toc a { color:var(--accent); text-decoration:none; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:12px; padding:16px 20px; margin:12px 0; }
+  .note { background:#fff8e1; border:1px solid #ffe082; border-radius:10px; padding:14px 18px; font-size:13.5px; color:#6d4c00; }
+  ul { padding-left:22px; }
+  .foot { margin-top:64px; padding-top:20px; border-top:1px solid var(--line); color:var(--muted); font-size:13px; }
+  .pill { display:inline-block; background:#e3f2fd; color:#0b4a8f; border-radius:999px; padding:2px 10px; font-size:12px; margin-right:6px; }
+</style>
+</head>
+<body>
+<header class="cover">
+  <span class="draft">DRAFT / 草案</span>
+  <h1>ご提案書（パターン1）<br>AIレベルチェック ＋ 業務整理 ＋ CACID AIエージェント開発</h1>
+  <h2>Google Workspace 全社展開と個人情報セキュリティ強化を支える伴走型DX支援</h2>
+  <div class="meta">
+    ご提案先：山村様 ／ 作成：CACI-GWUS<br>
+    提案説明会（予定）：2026年10月22日 午前
+  </div>
+</header>
+
+<div class="page">
+  <div class="note">
+    <strong>本書は草案（DRAFT）です。</strong>山崎様からの設計書・仕様書等の資料受領確認後に、スコープ・工数・概算費用・スケジュールを確定いたします。数値・期間は暫定の目安であり、正式見積りは別途ご提示します。
+  </div>
+
+  <nav class="toc">
+    <strong>目次</strong>
+    <ol>
+      <li><a href="#summary">エグゼクティブサマリー</a></li>
+      <li><a href="#background">ご提案の背景と課題認識</a></li>
+      <li><a href="#approach">ご提案の全体像（3本柱）</a></li>
+      <li><a href="#scope">提供スコープ詳細</a></li>
+      <li><a href="#plan">進め方とスケジュール</a></li>
+      <li><a href="#effect">期待される効果</a></li>
+      <li><a href="#estimate">概算・前提条件</a></li>
+      <li><a href="#next">次のステップ</a></li>
+    </ol>
+  </nav>
+
+  <h2 class="sec" id="summary">1. エグゼクティブサマリー</h2>
+  <p>山村様では現在、<strong>Google Workspace の全社展開</strong>を進められる一方で、<strong>個人情報の取扱いに関するセキュリティ面のご不安</strong>を抱えていらっしゃると伺っております。本パターン1では、現状を可視化する「AIレベルチェック」から始め、業務プロセスを整理し、さらに <strong>CACID による AIエージェント開発</strong>までを一気通貫でご支援します。単なるツール導入にとどまらず、<em>安全に・実務で使える AI 活用</em>を定着させることをゴールとします。</p>
+
+  <h2 class="sec" id="background">2. ご提案の背景と課題認識</h2>
+  <table>
+    <tr><th>観点</th><th>現状の課題（想定）</th><th>本提案での対応</th></tr>
+    <tr><td>基盤</td><td>Google Workspace を全社展開中だが、活用度・定着度が部門でばらつく</td><td>AIレベルチェックで活用状況を定量把握</td></tr>
+    <tr><td>セキュリティ</td><td>個人情報取扱いに対する統制・運用ルールが未整備、漏えいリスクへの不安</td><td>業務整理と合わせてデータ取扱いの整流化・ガードレール設計</td></tr>
+    <tr><td>業務効率</td><td>属人化・手作業が多く、AI活用の入口が見えない</td><td>業務整理で自動化候補を特定し AIエージェント化</td></tr>
+  </table>
+  <div class="note">※ 課題認識は現時点のヒアリング範囲での想定です。資料受領後に精緻化します。</div>
+
+  <h2 class="sec" id="approach">3. ご提案の全体像（3本柱）</h2>
+  <div class="card"><h3>① AIレベルチェック</h3>現状のAI/クラウド活用度・データ取扱い・リテラシーをアセスメントし、<strong>定量スコアと改善ロードマップ</strong>を提示します。</div>
+  <div class="card"><h3>② 業務整理</h3>主要業務プロセスを棚卸し・可視化し、<strong>セキュリティリスクと自動化候補</strong>を特定します。個人情報フローの整流化もここで設計します。</div>
+  <div class="card"><h3>③ CACID AIエージェント開発</h3>②で特定した高効果領域に対し、<strong>実務で動く AIエージェント</strong>を CACID として設計・開発・導入します。</div>
+
+  <h2 class="sec" id="scope">4. 提供スコープ詳細</h2>
+  <table>
+    <tr><th>フェーズ</th><th>主な成果物</th><th>目安期間</th></tr>
+    <tr><td>Ph1 AIレベルチェック</td><td>アセスメント結果報告、改善ロードマップ</td><td>約2〜3週間</td></tr>
+    <tr><td>Ph2 業務整理</td><td>業務フロー図、リスク台帳、自動化候補一覧</td><td>約3〜4週間</td></tr>
+    <tr><td>Ph3 AIエージェント開発</td><td>要件定義、PoC、本番エージェント、運用手順</td><td>約6〜12週間（範囲により変動）</td></tr>
+  </table>
+  <div class="note">期間はパターン1フルスコープの暫定目安です。対象業務数・データ連携範囲により増減します。</div>
+
+  <h2 class="sec" id="plan">5. 進め方とスケジュール</h2>
+  <ul>
+    <li><span class="pill">キックオフ</span>体制・ゴール・情報取扱い範囲の合意</li>
+    <li><span class="pill">隔週定例</span>進捗共有と意思決定（伴走型）</li>
+    <li><span class="pill">段階リリース</span>PoC → 小さく導入 → 横展開</li>
+  </ul>
+
+  <h2 class="sec" id="effect">6. 期待される効果</h2>
+  <ul>
+    <li>Google Workspace 活用度の底上げと部門間ばらつきの解消</li>
+    <li>個人情報フローの可視化・統制によるセキュリティ不安の低減</li>
+    <li>反復業務のAIエージェント化による工数削減と属人化解消</li>
+  </ul>
+
+  <h2 class="sec" id="estimate">7. 概算・前提条件</h2>
+  <div class="note">
+    概算費用は資料受領・スコープ確定後に正式見積りとしてご提示します（本書では金額を記載しません）。<br>
+    前提：対象部門・対象業務・取扱う個人情報の範囲が事前に共有されること。
+  </div>
+
+  <h2 class="sec" id="next">8. 次のステップ</h2>
+  <ol>
+    <li>山崎様からの設計書・仕様書等の資料受領確認</li>
+    <li>スコープ・工数・概算費用の確定</li>
+    <li>2026年10月22日午前の提案説明会にてご説明</li>
+  </ol>
+
+  <div class="foot">
+    CACI-GWUS ／ 山村様向けご提案書（パターン1・草案） ／ 関連: GIIP isn=3629<br>
+    本書は社内ドラフトです。対外提出前に数値・費用・固有名詞の最終確認を行ってください。
+  </div>
+</div>
+</body>
+</html>
