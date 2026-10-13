@@ -38,6 +38,7 @@
 | [49_human_confirmation_false_positive.md](49_human_confirmation_false_positive.md) | "사람 확인 필요" 탐지 시 주어·시제 구분(오탐이 잘 지킨 이슈를 벌준다) | #2424 #2457 |
 | [50_bot_pr_scope_discipline.md](50_bot_pr_scope_discipline.md) | 봇 PR 은 이슈 범위 밖 파일을 쓸어담지 않는다 | #2424 #2459 |
 | [51_giip_product_changes_csn47_only.md](51_giip_product_changes_csn47_only.md) | giip 제품 레포(`giipv3`/`giipdb`/`giipfaw` 등) 변경은 CSN 47 로만. 이 레포 자신은 대상 아님 | giip 2679 (사용자 직접 지시) |
+| [53_pre_push_pure_source_guard.md](53_pre_push_pure_source_guard.md) | 고객 웹 레포 push 직전에 순수 소스 가드 테스트 실행, FAIL 이면 push 금지 | giip 3773 (=#3748 재발 4회차) |
 
 코멘트 작성 시각을 추정하지 않는 규칙은 신설하지 않고 기존
 [`PROTOCOL_PROGRESS_COMMENT.md`](PROTOCOL_PROGRESS_COMMENT.md) 의 "시각(When)" 절을 확장했다
