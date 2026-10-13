@@ -36,3 +36,10 @@ CLAIM-388: PROD 未反映 검출은 "브랜치 소스 존재" 와 "공개 도메
 - **observed_at**: 20261013
 - **invalidated_at**: null
 - **confidence**: high
+
+CLAIM-389: CLAIM-387/388 의 증상·분리 절차는 [1/2](isn 3787) PR #149 가 main 에 머지된(2026-10-13T16:47Z) **이후 시점(17:17Z)에도 그대로 성립**함을, 兄弟 [2/2](isn 3788)에서 독립 재실측으로 확인했다. 즉 공개 도메인 라우팅/稼働 이미지 신선도 가설은 시간 경과·昇格 鎖 완결과 무관하게 지속되는 "配信層" 문제이지, 추가 昇格으로 해소되는 "소스 미반영" 문제가 아니다.
+- **evidence**: isn 3788 재실측 — `bc16f815`(giip-3089)=main 祖先(`git merge-base --is-ancestor` 참), `main..dev=0`/`dev..main=1621`, `so-tesk-ynav` main/stg/dev 모두 5, main deploy run 38410349540 headSha=`e9fe269b` success. App Service `vgt-smart-order-prod` tesk-yearnav.css=200(bogus=404 검증)·/health/=200. 공개 `smart-order.online` 既定 SNI=000(証明書 불일치)·`-k`=404(`/`·`/health/`·css 전부). `tesk.html` 에 tenant/feature_flag/env_settings/getattr(settings) 出し分け grep=0. `az` 는 bash·pwsh 양쪽 재시도 "not recognized"로 보류.
+- **source**: `.agent/tasks/giip-3788.md`, giip isn 3788, [[CLAIM-387]], [[CLAIM-388]]
+- **observed_at**: 20261013
+- **invalidated_at**: null
+- **confidence**: medium
