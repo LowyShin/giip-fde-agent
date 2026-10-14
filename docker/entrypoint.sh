@@ -8,6 +8,9 @@ REPO_DIR="${REPO_DIR:-/work/giip-fde-agent}"
 REPO_URL="${REPO_URL:-https://github.com/LowyShin/giip-fde-agent.git}"
 REPO_BRANCH="${REPO_BRANCH:-main}"
 
+# 볼륨의 repo 는 스케줄러 사용자(dev) 소유로 회수되므로(fix-root-owned.sh) root 로 도는 entrypoint 의 git 이 재기동 때
+# "detected dubious ownership" 으로 실패해 컨테이너가 Restarting(128) 루프에 빠진다. root 전용 전역 설정이다.
+git config --global --add safe.directory '*' || true
 echo "[entrypoint] repo: $REPO_URL ($REPO_BRANCH) -> $REPO_DIR"
 if [ -d "$REPO_DIR/.git" ]; then
   git -C "$REPO_DIR" fetch origin "$REPO_BRANCH"
