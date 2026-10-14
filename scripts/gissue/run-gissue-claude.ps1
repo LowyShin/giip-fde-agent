@@ -71,8 +71,8 @@ $env:GIIP_ACTOR = 'ai.dp01.gissue-scheduler'
 # PowerShell 5.1 기본 콘솔 코드페이지로 인코딩되어 UTF-8 과 어긋나 한글이 깨질 수 있다. 이 스크립트
 # 자신(메인 프로세스)의 기본값을 고정하고, 실제 엔진 호출은 Start-Job(별도 프로세스) 안에서 일어나므로
 # 그 스코프에도 동일하게 설정한다 — 아래 Start-Job -ScriptBlock 진입부(Set-Location 직후) 참고.
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$OutputEncoding = [System.Text.Encoding]::UTF8
+if ([Console]::OutputEncoding.WebName -ne 'utf-8') { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 }
+if ($OutputEncoding.WebName -ne 'utf-8') { $OutputEncoding = [System.Text.Encoding]::UTF8 }
 $Root         = Split-Path -Parent $MyInvocation.MyCommand.Path
 # giip #2465: 이슈 처리 세션 안전 규칙(.agent/rules/41_issue_session_safety_index.md)이 있는 레포 루트.
 # $Root 는 <레포>/scripts/gissue 이므로 두 단계 위가 레포 루트다. 프롬프트의 {AGENT_REPO} 로 치환된다.
@@ -2436,8 +2436,13 @@ foreach ($csn in $map.PSObject.Properties.Name) {
         Set-Location -Path $workdir
         # [ENCODING][giip #1204 버그 B] Start-Job 은 별도 프로세스라 바깥 스코프의 콘솔 인코딩 설정이
         # 상속되지 않는다 — 한글 프롬프트를 stdin 파이프로 넘기기 전에 이 잡 스코프에서도 UTF-8 로 고정한다.
-        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-        $OutputEncoding = [System.Text.Encoding]::UTF8
+        # [ENCODING][giip #3800 후속] 이미 utf-8 인데도 무조건 재대입하면, 이 컨테이너의 PowerShell 7.4/Linux
+        # 조합에서 Start-Job 자식 프로세스의 표준출력 스트림이 재초기화되며 그 직후 첫 외부 프로세스 호출이
+        # 간헐적으로 "Broken pipe" 로 죽는 레이스가 실측 재현됐다(10회 중 4~7회 재현, claude CLI 호출까지
+        # 걸리면 이번 틱 전체가 조용히 무출력으로 끝난다 — [RECEIVE-JOB-ERROR] 가 안 찍힌 이유: Job 자체는
+        # Completed 로 끝나고 예외는 스크립트 내부 try/catch 에 묻힌다). 이미 같은 값이면 건드리지 않는다.
+        if ([Console]::OutputEncoding.WebName -ne 'utf-8') { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 }
+        if ($OutputEncoding.WebName -ne 'utf-8') { $OutputEncoding = [System.Text.Encoding]::UTF8 }
         $script:DivergeFailAlertThreshold = $divergeFailAlertThreshold
 
         # [ENCODING][giip #1073] watchdog 코멘트 안전 등록 헬퍼 — giipfaw API 경유(DB 직접 접근 불필요).
@@ -3312,8 +3317,10 @@ ${function:Invoke-GissueEngine}
             $innerJob = Start-Job -InitializationScript $innerEngineInit -ScriptBlock {
                 param($workdirInner, $promptText, $forceClaudeInner, $issueContextLineInner, $forceReasonInner, $rootInner, $modelInner, $minimaxApiKeyInner, $minimaxModelInner, $minimaxBaseUrlInner, $minimaxContextTokensInner)
                 Set-Location -Path $workdirInner
-                [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-                $OutputEncoding = [System.Text.Encoding]::UTF8
+                # [ENCODING][giip #3800 후속] 바깥 per-CSN 잡과 동일한 Broken-pipe 레이스 방지 — 이미 utf-8
+                # 이면 재대입하지 않는다(상세 사유는 바깥 잡 진입부 주석 참고).
+                if ([Console]::OutputEncoding.WebName -ne 'utf-8') { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 }
+                if ($OutputEncoding.WebName -ne 'utf-8') { $OutputEncoding = [System.Text.Encoding]::UTF8 }
                 Invoke-GissueEngine -PromptText $promptText -ForceClaude:$forceClaudeInner -IssueContextLine $issueContextLineInner -ForceReason $forceReasonInner `
                     -Root $rootInner -Model $modelInner -MinimaxApiKey $minimaxApiKeyInner -MinimaxModel $minimaxModelInner -MinimaxBaseUrl $minimaxBaseUrlInner -MinimaxContextTokens $minimaxContextTokensInner
             } -ArgumentList $workdir, $issuePrompt, $forceClaude, $issueContextLine, $forceReason, $agentRepo, $model, $minimaxApiKey, $minimaxModel, $minimaxBaseUrl, $minimaxContextTokens
@@ -3437,7 +3444,9 @@ function Send-GissueLogsToConsole($csn) {
 
 function Complete-Run($r, $status) {
     $jobOut = $null
-    try { $jobOut = Receive-Job $r.Job; $jobOut | Out-File -FilePath (Join-Path $LogDir "gissue_csn$($r.Csn).out.log") -Append -Encoding UTF8 } catch {}
+    try { $jobOut = Receive-Job $r.Job; $jobOut | Out-File -FilePath (Join-Path $LogDir "gissue_csn$($r.Csn).out.log") -Append -Encoding UTF8 } catch {
+        Write-Log $r.Csn "[RECEIVE-JOB-ERROR] JobState=$($r.Job.State) Reason=$($r.Job.ChildJobs[0].JobStateInfo.Reason.Message) Exception=$($_.Exception.Message)"
+    }
     Write-Log $r.Csn $status
     # [giip #1558] 실행 종료 기록. giip #3563: 형식 수정 + 응답 검사 + 잡이 남긴 [RUN-COUNTS] 로 처리 건수를 채운다.
     if ($r.Sk) {
