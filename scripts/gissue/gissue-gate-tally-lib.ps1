@@ -24,7 +24,8 @@ function Get-GateRevertSourceDefs {
         @{ Key = 'PR-gate';      Marker = ('[PR-GATE-' + 'REVERT]');      Author = 'gissue-pr-gate';      Label = 'PR-gate(대응 PR 없음)' },
         @{ Key = 'scope-gate';   Marker = ('[SCOPE-GATE-' + 'REVERT]');   Author = 'gissue-scope-gate';   Label = 'scope-gate(scope-match MISMATCH)' },
         @{ Key = 'comment-gate'; Marker = ('[COMMENT-GATE-' + 'REVERT]'); Author = 'gissue-comment-gate'; Label = 'comment-gate(진행 코멘트 프로토콜 미충족)' },
-        @{ Key = 'review-audit'; Marker = ('[REVIEW-AUDIT:' + 'REVERT]'); Author = 'gissue-review-audit'; Label = 'review-done-audit(완료위조 감사 되돌림)' }
+        @{ Key = 'review-audit'; Marker = ('[REVIEW-AUDIT:' + 'REVERT]'); Author = 'gissue-review-audit'; Label = 'review-done-audit(완료위조 감사 되돌림)' },
+        @{ Key = 'report-gate';  Marker = ('[NO-PR-REASON-' + 'REVERT]'); Author = 'gissue-report-gate';  Label = 'report-gate(보고형 의뢰↔결과 미충족)' }
     )
 }
 

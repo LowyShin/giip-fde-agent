@@ -132,6 +132,14 @@ $RevertMarker = '[PR-GATE-REVERT]'
 $RevertAuthor = 'gissue-pr-gate'
 $RevertEscalatedMarker = '[PR-GATE-HUMAN-REVIEW]'
 
+# giip #3801: 보고/조사/의사결정형 이슈(PR 불성립, [NO-PR-REASON] 마커 보유)의 완료 판정 게이트.
+# 의뢰(이슈 본문)↔결과(코멘트 보고)를 Invoke-ReportCompletionJudge 로 대조해 FULFILLED 면 자동 DONE,
+# UNFULFILLED 면 되돌림(3회 캡은 기존 PR-gate 집계 공유). 마커만 보고 통과시키던 종전 동작을 대체한다.
+$DoneMarker = '[NO-PR-REASON-DONE]'
+$DoneAuthor = 'gissue-report-done'
+$ReportRevertMarker = '[NO-PR-REASON-REVERT]'
+$ReportRevertAuthor = 'gissue-report-gate'
+
 # giip #1210: PR 존재 확인(Test-IssueHasPr) 뒤에 이어지는 두 단계 추가 판정용 마커/작성자.
 $ScopeRevertMarker = '[SCOPE-GATE-REVERT]'
 $ScopeRevertAuthor = 'gissue-scope-gate'
@@ -184,6 +192,61 @@ function Invoke-GateRevert($isn, $marker, $author, $note, $logLabel) {
     } finally {
         Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
     }
+}
+
+# ── 보고형 완료 게이트(giip #3801): 의뢰↔결과 대조가 FULFILLED → REVIEW→DONE 자동 종결 ──
+# 마커만 보고 닫는 게 아니라, Invoke-ReportCompletionJudge 가 "의뢰대로 처리됨"으로 판정한 경우에만
+# 호출된다. 판정 근거(모델 출력)를 그대로 코멘트에 실어 사람이 사후 확인할 수 있게 남긴다.
+function Invoke-ReportDone($isn, $rationale) {
+    if ($DryRun) {
+        Write-SweepLog "[DRYRUN] DONE isn=$isn REVIEW→DONE (보고형 완료 판정 FULFILLED)"
+        return
+    }
+    $safe = ("$rationale" -replace '\r?\n', ' ')
+    if ($safe.Length -gt 600) { $safe = $safe.Substring(0, 600) }
+    $note = @"
+$DoneMarker (판정 시각: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))
+이 이슈는 PR 이 성립하지 않는 보고/조사/의사결정형([NO-PR-REASON])이며, 의뢰(이슈 본문)와 결과(코멘트
+보고)를 자동 대조한 결과 **의뢰대로 처리 완료**로 판정되어 REVIEW → DONE 으로 종결합니다(giip #3801).
+마커만 보고 통과시키던 종전 동작과 달리, 아래 완료 판정 근거에 따라 닫습니다.
+
+완료 판정 근거:
+$safe
+"@
+    $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("gissue_{0}_done_{1}_{2}.txt" -f $DoneAuthor, $isn, [guid]::NewGuid().ToString('N'))
+    try {
+        [System.IO.File]::WriteAllText($tmp, $note, (New-Object System.Text.UTF8Encoding $true))
+        Invoke-IssueWrite $isn @('--comment-file', $tmp)
+        Invoke-IssueWrite $isn @('--status', 'DONE')
+        Write-SweepLog "DONE isn=$isn REVIEW→DONE (보고형 완료 판정 FULFILLED) + 근거 코멘트 등록"
+    } catch {
+        Write-SweepLog "[WRITE-FAIL] DONE isn=$isn (보고형 완료 판정): $($_.Exception.Message)"
+    } finally {
+        Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# ── 보고형 되돌림(giip #3801): 의뢰↔결과 대조가 UNFULFILLED → REVIEW→READY ──
+# 완료 판정 근거(무엇이 빠졌는지)를 실어, 다음 작업자가 무엇을 더 해야 하는지 알 수 있게 한다.
+function Invoke-ReportRevert($isn, $rationale, $priorAttemptCount) {
+    $attempt = $priorAttemptCount + 1
+    $safe = ("$rationale" -replace '\r?\n', ' ')
+    if ($safe.Length -gt 600) { $safe = $safe.Substring(0, 600) }
+    $note = @"
+$ReportRevertMarker (재검증 시각: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))
+이번이 ${attempt}번째 되돌림입니다(최대 $MaxGateRevertAttempts 회).
+이 이슈는 PR 이 성립하지 않는 보고/조사/의사결정형([NO-PR-REASON])이지만, 의뢰(이슈 본문)와 결과(코멘트
+보고)를 자동 대조한 결과 **의뢰의 핵심이 아직 충족되지 않음**으로 판정되어 REVIEW → READY 로 되돌립니다
+(giip #3801). 마커가 있어도 완료로 간주하지 않습니다.
+
+미충족 판정 근거(무엇이 빠졌는가):
+$safe
+
+다음 작업자가 할 일:
+- [ ] 위 근거에서 지적된 누락 항목을 실제로 처리하고 그 결과를 코멘트로 남긴다
+- [ ] 그래도 추가 작업이 없다면(판정이 과했다면) 왜 이미 완료인지 근거를 코멘트로 반박한다
+"@
+    Invoke-GateRevert $isn $ReportRevertMarker $ReportRevertAuthor $note "보고형 완료판정 UNFULFILLED (attempt=$attempt/$MaxGateRevertAttempts)"
 }
 
 # 에스컬레이션 상태전이(giip #2415 2차 보완, 2026-09-14): REVIEW → NEEDS_DECISION.
@@ -445,6 +508,7 @@ Write-SweepLog "REVIEW 이슈 $(@($issues).Count)건 검사."
 
 $reverted = 0; $keptHasPr = 0; $keptGuard = 0; $keptNoPrReason = 0
 $scopeReverted = 0; $scopeGuard = 0; $scopeNoPrReason = 0; $commentReverted = 0; $commentGuard = 0; $gateWarn = 0
+$reportDone = 0; $reportReverted = 0
 foreach ($iss in $issues) {
     $isn = [int]$iss.isn
     $comments = Get-IssueComments $isn $ApiKey $ApiBaseUrl
@@ -456,10 +520,41 @@ foreach ($iss in $issues) {
     $tally = Get-GateRevertTally $comments
 
     if (-not (Test-IssueHasPr $isn $repos)) {
-        # ── giip #2415: [NO-PR-REASON] 마커 감지 시 PR-gate 되돌림 생략 ──
+        # ── giip #3801: [NO-PR-REASON] 보고형 이슈 — 마커만 보고 통과시키지 않고 의뢰↔결과를 대조한다 ──
+        # 종전(giip #2415)에는 마커만 있으면 판정 없이 REVIEW 를 유지해, 완료됐든 미완성이든 똑같이 주차됐다.
+        # 이제 [이슈 본문](의뢰)과 [코멘트 보고](결과)를 Invoke-ReportCompletionJudge 로 대조한다:
+        #   FULFILLED → 자동 DONE, UNFULFILLED → 되돌림(전체 합산 3회 캡), 판정 실패/모호 → 안전 폴백(REVIEW 유지).
         if ($hasNoPrReason) {
-            $keptNoPrReason++
-            Write-SweepLog "isn=${isn}: PR 없음 + [NO-PR-REASON] 마커 감지 — PR-gate 생략, REVIEW 유지(giip #2415)."
+            $issueDetail = Get-IssueDetail $isn $ApiKey $ApiBaseUrl
+            $issueContent = if ($issueDetail -and $issueDetail.content) { $issueDetail.content } else { '' }
+            $commentsText = ConvertTo-CommentsText $comments
+            $doneJudge = Invoke-ReportCompletionJudge $isn $issueContent $commentsText
+            if (-not $doneJudge.ok) {
+                $gateWarn++
+                Write-SweepLog "isn=${isn}: [NO-PR-REASON] 완료 판정 호출 실패/차단(exit=$($doneJudge.exit)) → 안전 폴백, REVIEW 유지."
+            } else {
+                $doneVerdict = Get-JudgeVerdict $doneJudge.text 'FULFILLED' 'UNFULFILLED'
+                if ($doneVerdict -eq 'FULFILLED') {
+                    Write-SweepLog "isn=${isn}: [NO-PR-REASON] 의뢰↔결과 FULFILLED → REVIEW→DONE 자동 종결."
+                    Invoke-ReportDone $isn $doneJudge.text
+                    $reportDone++
+                } elseif ($doneVerdict -eq 'UNFULFILLED') {
+                    # 전체 합산 3회 캡(이번 되돌림 예정분 +1 포함) — scope/comment 게이트와 동일한 에스컬레이션.
+                    $totalAttempts = $tally.Total + 1
+                    if ($totalAttempts -ge $MaxGateRevertAttempts) {
+                        $keptGuard++
+                        Invoke-GateEscalate $isn $RevertEscalatedMarker $RevertAuthor "report-gate(보고형 의뢰↔결과 미충족)" "[NO-PR-REASON] 보고형 이슈의 의뢰 대비 결과 미충족 되돌림 예정분 포함 누적 $totalAttempts 회($($tally.CountsText) + 이번 report-gate 1회) 재시도 이후에도 해소되지 않아 NEEDS_DECISION 전환." $tally
+                        Write-SweepLog "isn=${isn}: [NO-PR-REASON] UNFULFILLED, 누적 $totalAttempts 회 >= $MaxGateRevertAttempts → NEEDS_DECISION 에스컬레이션."
+                    } else {
+                        Write-SweepLog "isn=${isn}: [NO-PR-REASON] 의뢰↔결과 UNFULFILLED → REVERT."
+                        Invoke-ReportRevert $isn $doneJudge.text $tally.Counts['report-gate']
+                        $reportReverted++
+                    }
+                } else {
+                    $gateWarn++
+                    Write-SweepLog "isn=${isn}: [NO-PR-REASON] 완료 판정 응답 모호('$($doneJudge.text)') → 안전 폴백, REVIEW 유지."
+                }
+            }
         } else {
             # ── giip #2415: 누적 3회 에스컬레이션(전 게이트 합산 + review-done-audit 되돌림 포함) ──
             $prGateAttemptCount = $tally.Counts['PR-gate']
@@ -589,4 +684,4 @@ foreach ($iss in $issues) {
     }  # end of scope-gate else (scope-gate max attempts or scope-gate proper)
     }  # end of else (hasNoPrReason) for PR-exists path
 }  # end of foreach loop
-Write-SweepLog "완료: PR없음-되돌림 $reverted, PR없음-NoPrReason유지 $keptNoPrReason, PR있음 $keptHasPr, 누적캡-NEEDS_DECISION에스컬레이션 $keptGuard, scope-되돌림 $scopeReverted, scope-NoPrReason유지 $scopeNoPrReason, scope-NEEDS_DECISION에스컬레이션 $scopeGuard, comment-되돌림 $commentReverted, comment-NEEDS_DECISION에스컬레이션 $commentGuard, 게이트경고(폴백) $gateWarn."
+Write-SweepLog "완료: PR없음-되돌림 $reverted, PR없음-NoPrReason유지 $keptNoPrReason, 보고형-자동DONE $reportDone, 보고형-되돌림 $reportReverted, PR있음 $keptHasPr, 누적캡-NEEDS_DECISION에스컬레이션 $keptGuard, scope-되돌림 $scopeReverted, scope-NoPrReason유지 $scopeNoPrReason, scope-NEEDS_DECISION에스컬레이션 $scopeGuard, comment-되돌림 $commentReverted, comment-NEEDS_DECISION에스컬레이션 $commentGuard, 게이트경고(폴백) $gateWarn."
