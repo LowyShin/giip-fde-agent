@@ -65,7 +65,6 @@ def parse_waf(line, system, location, lineno):
     except json.JSONDecodeError:
         return None
     hr = j.get("httpRequest", {}) or {}
-    args = hr.get("args") or hr.get("uri") and ""  # args 는 쿼리스트링
     ua = None
     for h in (hr.get("headers") or []):
         if str(h.get("name", "")).lower() == "user-agent":
