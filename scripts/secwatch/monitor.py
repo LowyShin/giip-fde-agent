@@ -124,6 +124,13 @@ PAGE = """<!doctype html><html lang="%LANG%"><head><meta charset="utf-8">
  #toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--grn);color:#06130c;
      font:600 12px/1 sans-serif;padding:8px 14px;border-radius:8px;opacity:0;transition:opacity .2s;pointer-events:none}
  #toast.show{opacity:1}
+ #pager{display:flex;gap:10px;align-items:center;justify-content:center;padding:14px;color:var(--mut);font-size:12px}
+ #pager:empty{display:none}
+ #pager button{font:600 12px/1 ui-sans-serif,-apple-system,sans-serif;background:var(--panel);color:var(--tx);
+     border:1px solid var(--bd);border-radius:6px;padding:6px 12px;cursor:pointer}
+ #pager button:hover:not(:disabled){border-color:var(--mut)}
+ #pager button:disabled{opacity:.4;cursor:default}
+ #pager .pginfo{font-variant-numeric:tabular-nums}
  a.help{color:var(--mut);font-size:12px;text-decoration:none;border:1px solid var(--bd);border-radius:6px;padding:4px 9px}
  a.help:hover{color:var(--tx);border-color:var(--mut)}
 </style></head><body>
@@ -141,14 +148,17 @@ PAGE = """<!doctype html><html lang="%LANG%"><head><meta charset="utf-8">
 </header>
 <table><thead><tr id="hdr"></tr></thead>
 <tbody id="rows"></tbody></table>
+<div id="pager"></div>
 <div id="toast"></div>
 <script>
-const POLL=%POLL%, MIN=%MIN%, LANG="%LANG%";
+const POLL=%POLL%, MIN=%MIN%, PAGE_SIZE=%PAGESIZE%, LANG="%LANG%";
+let allEvents=[], curPage=0;
 // i18n: add languages here; UI picks I18N[LANG] (falls back to en). (multilingual: later)
 const I18N={
   en:{title:"secwatch Threat Monitor (verdicts)",total:"Total",last:"last",min:"min",
       updated:"Updated",loading:"Loading…",empty:"No recent verdicts",
       copy:"copy cmd",copied:"copied!",nocmd:"no download command for this source",
+      prev:"\\u2039 Prev",next:"Next \\u203a",page:"Page",
       cols:["Time","Route","Type","inj","sev","Attack","Engine","Origin → download command"]}
 };
 const T=I18N[LANG]||I18N.en;
@@ -181,34 +191,55 @@ function cp(i,btn){
  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(cmd).then(done,()=>fallback(cmd,done));}
  else fallback(cmd,done);
 }
+function pageCount(){return Math.max(1, Math.ceil(allEvents.length/PAGE_SIZE));}
+function renderPager(){
+ const el=document.getElementById('pager'); const pages=pageCount();
+ if(allEvents.length<=PAGE_SIZE){el.innerHTML='';return}
+ el.innerHTML='<button id=pgprev'+(curPage<=0?' disabled':'')+'>'+T.prev+'</button>'+
+   '<span class=pginfo>'+T.page+' '+(curPage+1)+' / '+pages+'</span>'+
+   '<button id=pgnext'+(curPage>=pages-1?' disabled':'')+'>'+T.next+'</button>';
+ const p=document.getElementById('pgprev'), n=document.getElementById('pgnext');
+ if(p)p.onclick=()=>{if(curPage>0){curPage--;renderPage();}};
+ if(n)n.onclick=()=>{if(curPage<pages-1){curPage++;renderPage();}};
+}
+function renderPage(){
+ const rowsEl=document.getElementById('rows');
+ if(!allEvents.length){rowsEl.innerHTML='<tr><td colspan=8 class=empty>'+T.empty+'</td></tr>';renderPager();return}
+ const pages=pageCount();
+ if(curPage>=pages)curPage=pages-1; if(curPage<0)curPage=0;
+ const start=curPage*PAGE_SIZE, slice=allEvents.slice(start, start+PAGE_SIZE);
+ const fshort=f=>(f||'').replace(/^secevt_/,'');
+ rowsEl.innerHTML=slice.map((e,j)=>{
+  const i=start+j;  // global index — matches window.__cmds (built from full list)
+  const inj=(e.inj!=null)?Number(e.inj).toFixed(2):'-';
+  const o=e.origin||{}, label=esc((o.source||'')+' '+(o.ref||o.location||'')), cmd=window.__cmds[i];
+  const whyHtml=((e.route=='alert'||e.route=='review')&&e.why)?'<div class=why>'+esc(e.why)+'</div>':'';
+  const oc=cmd
+    ? '<span class=osrc>'+label+'</span><button class=cp onclick="cp('+i+',this)">\\u29c9 '+T.copy+'</button><div class=cmd title="'+esc(cmd)+'">'+esc(cmd)+'</div>'
+    : '<span class=osrc>'+label+'</span><button class="cp nocmd" title="'+esc(T.nocmd)+'">\\u2014</button>';
+  return '<tr class="'+(e.route||'')+'"><td>'+esc(e.ts||'')+'</td><td class=rt>'+esc(e.route||'')+whyHtml+
+   '</td><td class=factor><span>'+esc(fshort(e.factor))+'</span></td><td class=sc>'+inj+
+   '</td><td class=sc>'+(e.sev??'')+'</td><td>'+esc(e.attack||'')+'</td><td>'+esc(e.engine||'')+
+   '</td><td class=origin>'+oc+'</td></tr>';
+ }).join('');
+ renderPager();
+}
 async function tick(){
  try{
   const r=await fetch('/api/events?minutes='+MIN); const d=await r.json();
   document.getElementById('who').textContent='csn '+(d.csn||'?')+' · '+T.last+' '+MIN+' '+T.min;
   document.getElementById('upd').textContent=T.updated+' '+new Date().toLocaleTimeString();
   const dot=document.getElementById('dot');
-  if(d.error){dot.className='dot err';document.getElementById('rows').innerHTML='<tr><td colspan=8 class=empty>'+d.error+'</td></tr>';return}
+  if(d.error){dot.className='dot err';allEvents=[];document.getElementById('rows').innerHTML='<tr><td colspan=8 class=empty>'+d.error+'</td></tr>';document.getElementById('pager').innerHTML='';return}
   dot.className='dot';
   const ev=d.events||[];
+  allEvents=ev;
   document.getElementById('n').textContent=ev.length;
   document.getElementById('na').textContent=ev.filter(e=>e.route=='alert').length;
   document.getElementById('nr').textContent=ev.filter(e=>e.route=='review').length;
   document.getElementById('nl').textContent=ev.filter(e=>e.route=='log').length;
-  if(!ev.length){document.getElementById('rows').innerHTML='<tr><td colspan=8 class=empty>'+T.empty+'</td></tr>';return}
-  const fshort=f=>(f||'').replace(/^secevt_/,'');
   window.__cmds=ev.map(e=>originCmd(e.origin));
-  document.getElementById('rows').innerHTML=ev.map((e,i)=>{
-   const inj=(e.inj!=null)?Number(e.inj).toFixed(2):'-';
-   const o=e.origin||{}, label=esc((o.source||'')+' '+(o.ref||o.location||'')), cmd=window.__cmds[i];
-   const whyHtml=((e.route=='alert'||e.route=='review')&&e.why)?'<div class=why>'+esc(e.why)+'</div>':'';
-   const oc=cmd
-     ? '<span class=osrc>'+label+'</span><button class=cp onclick="cp('+i+',this)">\\u29c9 '+T.copy+'</button><div class=cmd title="'+esc(cmd)+'">'+esc(cmd)+'</div>'
-     : '<span class=osrc>'+label+'</span><button class="cp nocmd" title="'+esc(T.nocmd)+'">\\u2014</button>';
-   return '<tr class="'+(e.route||'')+'"><td>'+esc(e.ts||'')+'</td><td class=rt>'+esc(e.route||'')+whyHtml+
-    '</td><td class=factor><span>'+esc(fshort(e.factor))+'</span></td><td class=sc>'+inj+
-    '</td><td class=sc>'+(e.sev??'')+'</td><td>'+esc(e.attack||'')+'</td><td>'+esc(e.engine||'')+
-    '</td><td class=origin>'+oc+'</td></tr>';
-  }).join('');
+  renderPage();  // keeps curPage across polls; clamped if the list shrank
  }catch(err){document.getElementById('dot').className='dot err';}
 }
 tick(); setInterval(tick, POLL*1000);
@@ -300,7 +331,8 @@ HELP = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 class Handler(BaseHTTPRequestHandler):
     sk = csn = None
     poll = 10
-    minutes = 60
+    minutes = 1440
+    page_size = 25
     lang = "en"  # UI 언어(기본 영어). 다국어는 PAGE 의 I18N 에 추가(--lang 으로 선택).
     def log_message(self, *a): pass  # 조용히(sk 유출 방지 겸)
     def _send(self, code, body, ctype="application/json; charset=utf-8"):
@@ -310,7 +342,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/" or self.path.startswith("/index"):
             self._send(200, PAGE.replace("%POLL%", str(self.poll)).replace("%MIN%", str(self.minutes))
-                       .replace("%LANG%", self.lang), "text/html; charset=utf-8"); return
+                       .replace("%PAGESIZE%", str(self.page_size)).replace("%LANG%", self.lang),
+                       "text/html; charset=utf-8"); return
         if self.path.startswith("/help"):
             self._send(200, HELP, "text/html; charset=utf-8"); return
         if self.path.startswith("/api/events"):
@@ -332,7 +365,8 @@ def main():
     ap = argparse.ArgumentParser(description="secwatch 간이 해킹 감시 모니터(판정 결과 조회)")
     ap.add_argument("--port", type=int, default=8787)
     ap.add_argument("--poll", type=int, default=60, help="폴링 주기(초, 기본 60=1분)")
-    ap.add_argument("--minutes", type=int, default=60, help="조회 시간범위(분)")
+    ap.add_argument("--minutes", type=int, default=1440, help="조회 시간범위(분, 기본 1440=24시간)")
+    ap.add_argument("--page-size", type=int, default=25, help="페이지당 행 수(기본 25)")
     ap.add_argument("--lang", default="en", help="UI 언어(기본 en; PAGE 의 I18N 에 추가해 확장)")
     ap.add_argument("--self-test", action="store_true", help="조회 1회 하고 종료(서버 안 띄움)")
     a = ap.parse_args()
@@ -345,7 +379,8 @@ def main():
         sys.stderr.write("[monitor] self-test: %s (csn=%s results=%d)\n"
                          % ("OK" if "error" not in r else ("ERR:" + r["error"]), csn, n))
         sys.exit(0 if "error" not in r else 4)
-    Handler.sk, Handler.csn, Handler.poll, Handler.minutes, Handler.lang = sk, csn, a.poll, a.minutes, a.lang
+    Handler.sk, Handler.csn, Handler.poll, Handler.minutes, Handler.page_size, Handler.lang = \
+        sk, csn, a.poll, a.minutes, a.page_size, a.lang
     srv = ThreadingHTTPServer(("127.0.0.1", a.port), Handler)
     sys.stderr.write("[monitor] http://127.0.0.1:%d  (csn=%s, 최근 %d분, %d초 폴링, Ctrl+C 종료)\n"
                      % (a.port, csn, a.minutes, a.poll))
