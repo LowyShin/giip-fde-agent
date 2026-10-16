@@ -81,8 +81,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\secwatch\register-se
 판정 결과는 giipdb `tKVSSecurityCheck` 에 적재된다. `kscRoutedTo`(alert/review/log)·`kscIsInjection`·`kscSeverity`·
 `kscFactor`(타입)·`kscOriginRef`(①원본 위치)·`kscVerdictJson`. 대시보드(⑦)가 이 테이블을 조회한다.
 
-로컬 대시보드: `python3 scripts/secwatch/monitor.py` → http://127.0.0.1:8787.
-UI 는 **영어 기본**이며 다국어 준비됨 — `monitor.py` 의 `I18N` 에 언어를 추가하고 `--lang <code>` 로 선택한다.
+로컬 대시보드: `python3 scripts/secwatch/monitor.py` → http://127.0.0.1:8787 (기본 1분 폴링, `--poll` 조정).
+- UI 는 **영어 기본**이며 다국어 준비됨 — `monitor.py` 의 `I18N` 에 언어를 추가하고 `--lang <code>` 로 선택.
+- 컬럼 설명은 화면 우상단 **? Help**(`/help`).
+- **Origin 열**: `⧉ copy cmd` 를 눌러 복사한 명령을 분석가 자신의 터미널(cmd)에 붙여넣으면 원본 레코드를 파일로 받는다(S3=`aws s3 cp`, Aurora 감사로그=`aws logs get-log-events > 파일`; AWS CLI 필요). 그 외 소스는 명령 없이 origin 라벨만 표시.
 
 ## 8. 문제 해결
 
