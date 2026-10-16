@@ -1,0 +1,24 @@
+{
+  "_comment": "secwatch 소스 설정 템플릿. 이 파일을 secwatch.sources.json 으로 복사해 환경에 맞게 고친다. secevt_run.py 가 읽는다(docs/60-operations/secwatch-agent.md).",
+  "lssn": 72784,
+  "sources": [
+    {
+      "source": "aurora_audit",
+      "file": "/var/log/audit/server_audit.log",
+      "system": "prd-cmsdb",
+      "since_offset": "/var/lib/giip/secwatch/aurora.offset"
+    },
+    {
+      "source": "waf",
+      "file": "/var/log/waf/waf.jsonl",
+      "system": "cms-waf",
+      "since_offset": "/var/lib/giip/secwatch/waf.offset"
+    },
+    {
+      "source": "cloudfront",
+      "file": "/var/log/cloudfront/access.log",
+      "system": "cms-cdn",
+      "since_offset": "/var/lib/giip/secwatch/cf.offset"
+    }
+  ]
+}
