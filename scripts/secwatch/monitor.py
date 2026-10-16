@@ -4,8 +4,11 @@
 monitor.py — secwatch 간이 해킹 감시 모니터 (리눅스/윈도우 공용, stdlib만).
 
 giipAgentWin/giipAgentLinux 의 설정 파일(giipAgent.cfg|.cnf)에서 **sk** 를 읽어 **csn** 을
-특정하고, tKVS 의 보안점검 입력 4개 factor(secevt_batch_audit/waf/cf/signal)를 AJAX 로
-폴링해 로컬 웹페이지로 보여준다(각 행에 어느 factor 에서 왔는지 표시).
+특정하고, 보안점검 이벤트를 AJAX 로 폴링해 로컬 웹페이지로 보여준다.
+
+※ 마이그레이션 중(⑦, giip #3833 rev.3): 게이트웨이 구조로 전환되어 판정 결과는 이제
+  **tKVSSecurityCheck**(결과 테이블)에 쌓인다. 이 모니터는 그 결과 테이블 조회로 전환 예정이며,
+  아래 tKVS factor 폴링 코드는 구(舊) 경로(tKVS 스테이징)용이다. 결과-조회 SP 신설 후 교체한다.
 
 보안 설계: **sk 는 이 Python 프로세스(서버)에만 있고 브라우저로 내려가지 않는다.** 페이지는
 로컬 백엔드(`/api/events`)만 호출하고, 백엔드가 sk 로 giipApiSk4 를 대신 호출한다.
