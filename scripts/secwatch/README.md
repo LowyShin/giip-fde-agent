@@ -27,7 +27,17 @@
 |---|---|
 | `secevt_put.py` | producer. 이벤트 JSON → 마스킹·전단필터 → giipApiSk4 `KVSPut` |
 | `secevt_sample.py` | 데이터 만드는 법(라벨된 공격/정상 샘플 생성기) |
+| `monitor.py` | 간이 해킹 감시 모니터(설정 sk→csn 특정, secevt AJAX 폴링 로컬 페이지) |
 | `README.md` | 이 문서 |
+
+### 간이 모니터 (monitor.py)
+```bash
+python3 monitor.py              # http://127.0.0.1:8787, 설정에서 sk/lssn/csn 자동
+python3 monitor.py --self-test  # KVSList 1회 읽기(연결 점검)
+```
+- giipAgent.cfg(sk)에서 **csn 특정**, tKVS `secevt` 를 10초 간격 AJAX 폴링해 점수·룰·마스킹 SQL 을 표로 표시(점수 색상: 빨강≥0.7/주황≥0.4/초록).
+- **sk 는 Python 서버측에만** 두고 브라우저엔 안 내려감. 127.0.0.1 전용 바인딩(외부 노출 금지).
+- 판정결과(tKVSSecurityCheck) 컬럼은 consumer 구현 후 추가.
 
 ---
 
