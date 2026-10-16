@@ -198,7 +198,7 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     ap = argparse.ArgumentParser(description="secwatch 간이 해킹 감시 모니터(판정 결과 조회)")
     ap.add_argument("--port", type=int, default=8787)
-    ap.add_argument("--poll", type=int, default=10, help="폴링 주기(초)")
+    ap.add_argument("--poll", type=int, default=60, help="폴링 주기(초, 기본 60=1분)")
     ap.add_argument("--minutes", type=int, default=60, help="조회 시간범위(분)")
     ap.add_argument("--lang", default="en", help="UI 언어(기본 en; PAGE 의 I18N 에 추가해 확장)")
     ap.add_argument("--self-test", action="store_true", help="조회 1회 하고 종료(서버 안 띄움)")
