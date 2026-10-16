@@ -1,7 +1,7 @@
-# secwatch — tKVS 보안점검 입력(secevt) producer
+# secwatch — tKVS 보안점검 입력(secevt_*) producer
 
 > giip-fde-agent 기능. **리눅스/윈도우 공용 Python(stdlib만, 의존성 없음).**
-> 역할: 의심 SQL/요청 이벤트를 **마스킹·전단필터**해서 tKVS 에 `secevt` factor 로 던진다.
+> 역할: 의심 SQL/요청 이벤트를 **마스킹·전단필터**해서 tKVS 에 종류별 4개 `secevt_*` factor 로 던진다.
 > 판정(1차 룰 + 2차 Jev → `tKVSSecurityCheck` 적재)은 **별도 consumer(다음 단계)** 가 한다.
 > 정본 설계: `giipdb/docs/30_Specs/SPEC_JEV_SQLI_DETECTION.md` (§5 state, §6 게이트, §13 결과테이블, §16 키, §17 factor).
 > 관련 이슈: **giip #3833**.
@@ -11,13 +11,25 @@
 ## 1. 이 기능이 하는 일 (한눈에)
 
 ```
-[의심 이벤트 JSON]  →  secevt_put.py  →  tKVS (kType=lssn, kKey=<lssn>, kFactor=secevt)
+[의심 이벤트 JSON]  →  secevt_put.py  →  tKVS (kType=lssn, kKey=<lssn>, kFactor=secevt_*)
+                        ├ src → 4개 factor 자동 분배(아래 표)
                         ├ SQL 리터럴 '?' 마스킹 (at source — 원본/PII 를 tKVS 에 저장 안 함)
                         └ 1차 결정론 전단필터(candidate/rules/score) 부착
 ```
 
+**종류별로 분리된 4개 factor** (사양서 §17.1) — 이벤트 `src` 로 자동 매핑:
+
+| kFactor | 소스 | 이벤트 `src` |
+|---|---|---|
+| `secevt_batch_audit` | Aurora/DB 감사로그(배치 적재) | `aurora_audit` · `db_audit` · `batch_audit` |
+| `secevt_waf` | WAF 로그 | `waf` |
+| `secevt_cf` | CloudFront(CDN) 접근로그 | `cloudfront` · `cf` |
+| `secevt_signal` | 파생/집계 신호·기타 앱로그 | `signal` · `applog` · 그 외(기본) |
+
+`--factor <name>` 으로 모든 이벤트를 한 factor 에 강제할 수도 있다(소스가 이미 종류별로 분리된 경우).
+
 - **producer(이 기능)**: 이벤트를 tKVS 에 적재. 여기까지가 본 기능 범위.
-- **consumer(다음 기능)**: tKVS `secevt` 를 읽어 Jev 로 판정 → `tKVSSecurityCheck`. (미구현)
+- **consumer(다음 기능)**: 4개 `secevt_*` factor 를 각각 1시간 창(`pApiKVSFactorWindowbySk`)으로 읽어 Jev 로 판정 → `tKVSSecurityCheck`. (미구현)
 
 ---
 
@@ -27,7 +39,7 @@
 |---|---|
 | `secevt_put.py` | producer. 이벤트 JSON → 마스킹·전단필터 → giipApiSk4 `KVSPut` |
 | `secevt_sample.py` | 데이터 만드는 법(라벨된 공격/정상 샘플 생성기) |
-| `monitor.py` | 간이 해킹 감시 모니터(설정 sk→csn 특정, secevt AJAX 폴링 로컬 페이지) |
+| `monitor.py` | 간이 해킹 감시 모니터(설정 sk→csn 특정, 4개 secevt_* factor AJAX 폴링 로컬 페이지) |
 | `README.md` | 이 문서 |
 
 ### 간이 모니터 (monitor.py)
@@ -35,7 +47,7 @@
 python3 monitor.py              # http://127.0.0.1:8787, 설정에서 sk/lssn/csn 자동
 python3 monitor.py --self-test  # KVSList 1회 읽기(연결 점검)
 ```
-- giipAgent.cfg(sk)에서 **csn 특정**, tKVS `secevt` 를 10초 간격 AJAX 폴링해 점수·룰·마스킹 SQL 을 표로 표시(점수 색상: 빨강≥0.7/주황≥0.4/초록).
+- giipAgent.cfg(sk)에서 **csn 특정**, tKVS 의 4개 `secevt_*` factor 를 10초 간격 AJAX 폴링해 합친 뒤 factor·점수·룰·마스킹 SQL 을 표로 표시(점수 색상: 빨강≥0.7/주황≥0.4/초록, factor 열로 출처 구분).
 - **sk 는 Python 서버측에만** 두고 브라우저엔 안 내려감. 127.0.0.1 전용 바인딩(외부 노출 금지).
 - 판정결과(tKVSSecurityCheck) 컬럼은 consumer 구현 후 추가.
 
@@ -64,7 +76,7 @@ python3 secevt_sample.py --only attack
 ### 4-2. 입력 이벤트 스키마 (객체 1개 또는 배열)
 ```json
 {
-  "src": "aurora_audit|waf|cloudfront|applog|giipapi|other",
+  "src": "aurora_audit|waf|cloudfront|signal|applog|other (→ §1 표로 factor 결정)",
   "ts": "2026-10-15T21:20:49Z",
   "db": "prd-cmsdb", "dbuser": "cur_app", "op": "QUERY", "retcode": 1064,
   "client_ip_class": "internal|external|cloud|nat|unknown",
@@ -100,7 +112,8 @@ python3 secevt_put.py --lssn <LSSN> --event-file events.json --only-candidates
 ## 6. 전송 결과 확인(적재 검증)
 
 giipv3 KVS 조회 또는 API `KVSList kType kKey kFactor` (SP `pApiKVSListbySk`, kFactor 정확일치)로
-`kType=lssn, kKey=<LSSN>, kFactor=secevt` 의 최근 행을 확인한다. 읽기 SP: `pApiKVSFactorLastbyAK`/`pApiKVSFactorListbyAK`.
+`kType=lssn, kKey=<LSSN>, kFactor=secevt_batch_audit|secevt_waf|secevt_cf|secevt_signal` 의 최근 행을 확인한다.
+읽기 SP: 단건은 `pApiKVSFactorLastbyAK`, consumer 가 쓰는 1시간 창은 `pApiKVSFactorWindowbySk`(csn+kFactor).
 
 ---
 
@@ -109,7 +122,7 @@ giipv3 KVS 조회 또는 API `KVSList kType kKey kFactor` (SP `pApiKVSListbySk`,
 1. 이 레포(giip-fde-agent)를 그 PC 에 둔다(기존 설치면 `scripts/secwatch/` 만 있으면 됨).
 2. 그 PC 의 giip 에이전트 `giipAgent.cfg`(또는 `.cnf`)에 `sk=`/`lssn=` 가 있는지 확인. 없으면 `GIIP_SK`/`GIIP_LSSN` 환경변수로 준다.
 3. 연결 점검: `python3 scripts/secwatch/secevt_sample.py --no-label | python3 scripts/secwatch/secevt_put.py --stdin --dry-run` → payload 가 출력되면 OK.
-4. 합성 전송: 위 명령에서 `--dry-run` 을 빼고 실행 → `pApiKVSListbySk` 로 `secevt` 행 적재 확인.
+4. 합성 전송: 위 명령에서 `--dry-run` 을 빼고 실행 → `pApiKVSListbySk` 로 4개 `secevt_*` 행 적재 확인(샘플이 네 factor 를 모두 거친다).
 5. 실데이터 연동: 그 PC 의 실제 소스를 §4-2 스키마로 정규화하는 수집부를 붙여 producer 에 넘긴다.
    - **운영 실데이터 투입 전 반드시**: 사양서 §9 데이터취급 심사(외부 Jev 송신은 consumer 단계이지만, tKVS 적재 자체도 사내 로그 취급 정책을 따른다).
 6. 정기 실행이 필요하면 그 PC 의 스케줄러(cron/작업스케줄러)로 producer 를 주기 호출한다.

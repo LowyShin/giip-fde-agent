@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-secevt_sample.py — secevt 이벤트 '데이터 만드는 법' 참조 생성기 (리눅스/윈도우 공용, stdlib만).
+secevt_sample.py — 보안점검 입력 이벤트 '데이터 만드는 법' 참조 생성기 (리눅스/윈도우 공용, stdlib만).
 
 secevt_put.py 가 받는 입력 JSON 의 정본 예시를 만든다. 공격/정상 라벨을 섞어
 배열로 출력하므로, 그대로 producer 에 흘려 마스킹·전단필터·전송을 점검할 수 있다.
 (SQL 리터럴은 일부러 원본 그대로 둔다 — producer 가 at-source 로 '?' 치환함을 확인하려고.)
+
+src 값은 producer 의 SRC_FACTOR 매핑으로 4개 factor 에 분배된다(사양서 §17.1):
+  aurora_audit→secevt_batch_audit, waf→secevt_waf, cloudfront→secevt_cf, signal→secevt_signal.
+아래 샘플은 4개 factor 를 모두 한 번씩 거치도록 src 를 섞어 두었다.
 
 사용:
   python3 secevt_sample.py                         # 라벨 포함 배열 stdout
@@ -34,12 +38,21 @@ SAMPLES = [
      "resp_bytes": 2189, "resp_series": [428, 2189, 428, 2189],
      "baseline": "admin 테이블·pass 컬럼 표적 의심"},
 
-    # ── 공격: time blind (SLEEP) ──
-    {"label": "attack", "src": "applog", "ts": "2026-10-15T21:25:11Z",
-     "db": "prd-cmsdb", "dbuser": "cur_app", "op": "QUERY", "retcode": 0,
+    # ── 공격: time blind (SLEEP) — CloudFront(CDN) 접근로그에서 URL 로 포착 → secevt_cf ──
+    {"label": "attack", "src": "cloudfront", "ts": "2026-10-15T21:25:11Z",
+     "db": None, "dbuser": None, "op": None, "retcode": None,
      "client_ip_class": "cloud", "ua_class": "script",
-     "sql_shape": "SELECT * FROM items WHERE id = 1 OR SLEEP(5)",
-     "baseline": "응답 지연 5초 관측"},
+     "req_uri": "/api/items",
+     "req_args_shape": "id=1 OR SLEEP(5)",
+     "baseline": "edge 응답 지연 5초 관측"},
+
+    # ── 공격: 파생/집계 신호 — 동일 접속원 응답크기 이봉+빈도 급증 → secevt_signal ──
+    {"label": "attack", "src": "signal", "ts": "2026-10-15T21:25:40Z",
+     "db": "prd-cmsdb", "dbuser": "cur_app", "op": "QUERY", "retcode": 0,
+     "client_ip_class": "external", "ua_class": "script",
+     "req_args_shape": "searchKey=1 AND (ASCII(SUBSTRING((SELECT pass FROM admin),?,?))>?)",
+     "resp_series": [428, 2189, 428, 2189, 428, 2189],
+     "baseline": "최근 5분 동종 요청 517건·응답크기 2봉 분포(boolean-blind 집계 신호)"},
 
     # ── 공격: error-based (EXTRACTVALUE) ──
     {"label": "attack", "src": "aurora_audit", "ts": "2026-10-15T21:26:40Z",

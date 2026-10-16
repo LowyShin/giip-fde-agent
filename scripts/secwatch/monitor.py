@@ -4,7 +4,8 @@
 monitor.py — secwatch 간이 해킹 감시 모니터 (리눅스/윈도우 공용, stdlib만).
 
 giipAgentWin/giipAgentLinux 의 설정 파일(giipAgent.cfg|.cnf)에서 **sk** 를 읽어 **csn** 을
-특정하고, tKVS 의 `secevt`(보안점검 후보) factor 를 AJAX 로 폴링해 로컬 웹페이지로 보여준다.
+특정하고, tKVS 의 보안점검 입력 4개 factor(secevt_batch_audit/waf/cf/signal)를 AJAX 로
+폴링해 로컬 웹페이지로 보여준다(각 행에 어느 factor 에서 왔는지 표시).
 
 보안 설계: **sk 는 이 Python 프로세스(서버)에만 있고 브라우저로 내려가지 않는다.** 페이지는
 로컬 백엔드(`/api/events`)만 호출하고, 백엔드가 sk 로 giipApiSk4 를 대신 호출한다.
@@ -23,7 +24,9 @@ import sys, os, re, json, argparse, urllib.request, urllib.parse, urllib.error
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 API_SK4_URL = os.environ.get("GIIP_API_SK4_URL", "https://giipfaw.azurewebsites.net/api/giipApiSk4")
-FACTOR = "secevt"
+
+# 종류별로 분리된 4개 보안점검 입력 factor(사양서 §17.1). 모니터는 넷을 모두 폴링해 합쳐 보여준다.
+FACTORS = ("secevt_batch_audit", "secevt_waf", "secevt_cf", "secevt_signal")
 
 def _cfg(key):
     starts = [os.getcwd(), os.path.dirname(os.path.abspath(__file__))]
@@ -54,7 +57,7 @@ def resolve():
     csn = os.environ.get("GIIP_CSN") or _cfg("csn")  # 표시용(sk 로 특정; 없으면 서버가 sk 로 스코프)
     return sk, lssn, csn
 
-def kvs_list(sk, lssn, factor=FACTOR):
+def kvs_list(sk, lssn, factor):
     """giipApiSk4 KVSList — 그 sk(=csn) 스코프의 factor 행을 읽는다. sk 로 csn 이 특정된다."""
     jsondata = json.dumps({"kType": "lssn", "kKey": str(lssn), "kFactor": factor},
                           ensure_ascii=False, separators=(",", ":"))
@@ -88,6 +91,7 @@ def kvs_list(sk, lssn, factor=FACTOR):
         events.append({
             "ts": kv.get("ts") or r.get("kRegdt"),
             "regdt": r.get("kRegdt"),
+            "factor": factor,
             "src": kv.get("src"), "dbuser": kv.get("dbuser"),
             "ip_class": kv.get("client_ip_class"), "retcode": kv.get("retcode"),
             "score": pf.get("score", 0), "candidate": pf.get("candidate", False),
@@ -96,6 +100,24 @@ def kvs_list(sk, lssn, factor=FACTOR):
         })
     events.sort(key=lambda e: str(e.get("regdt") or e.get("ts") or ""), reverse=True)
     return {"events": events}
+
+def kvs_list_all(sk, lssn):
+    """4개 factor 를 모두 폴링해 한 목록으로 합친다. 일부 factor 만 실패하면 그 사유를 함께 싣는다."""
+    merged, errors = [], []
+    for f in FACTORS:
+        r = kvs_list(sk, lssn, f)
+        if "error" in r:
+            errors.append("%s: %s" % (f, r["error"]))
+        else:
+            merged.extend(r.get("events", []))
+    merged.sort(key=lambda e: str(e.get("regdt") or e.get("ts") or ""), reverse=True)
+    # 4개 factor 가 전부 실패했을 때만 전체 오류로 본다(일부 성공은 그 결과를 보여준다).
+    if errors and not merged and len(errors) == len(FACTORS):
+        return {"error": " / ".join(errors)}
+    out = {"events": merged}
+    if errors:
+        out["warn"] = " / ".join(errors)
+    return out
 
 PAGE = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -131,8 +153,8 @@ PAGE = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
    <span class="stat">고위험 <b id="nh">0</b></span>
  </div>
 </header>
-<table><thead><tr><th>시각</th><th>점수</th><th>src</th><th>user</th><th>IP</th><th>retcode</th><th>룰</th><th>SQL 형태(마스킹)</th></tr></thead>
-<tbody id="rows"><tr><td colspan="8" class="empty">불러오는 중…</td></tr></tbody></table>
+<table><thead><tr><th>시각</th><th>factor</th><th>점수</th><th>src</th><th>user</th><th>IP</th><th>retcode</th><th>룰</th><th>SQL 형태(마스킹)</th></tr></thead>
+<tbody id="rows"><tr><td colspan="9" class="empty">불러오는 중…</td></tr></tbody></table>
 <script>
 const POLL=%POLL%;
 function cls(s){return s>=0.7?'hi':s>=0.4?'md':'lo'}
@@ -142,16 +164,17 @@ async function tick(){
   document.getElementById('who').textContent='csn '+(d.csn||'?')+' · lssn '+(d.lssn||'?');
   document.getElementById('upd').textContent='갱신 '+new Date().toLocaleTimeString();
   const dot=document.getElementById('dot');
-  if(d.error){dot.className='dot err';document.getElementById('rows').innerHTML='<tr><td colspan=8 class=empty>'+d.error+'</td></tr>';return}
-  dot.className='dot';
+  if(d.error){dot.className='dot err';document.getElementById('rows').innerHTML='<tr><td colspan=9 class=empty>'+d.error+'</td></tr>';return}
+  dot.className=d.warn?'dot stale':'dot';
   const ev=d.events||[];
   document.getElementById('n').textContent=ev.length;
   document.getElementById('nc').textContent=ev.filter(e=>e.candidate).length;
   document.getElementById('nh').textContent=ev.filter(e=>e.score>=0.7).length;
-  if(!ev.length){document.getElementById('rows').innerHTML='<tr><td colspan=8 class=empty>최근 secevt 없음</td></tr>';return}
+  if(!ev.length){document.getElementById('rows').innerHTML='<tr><td colspan=9 class=empty>최근 보안점검 이벤트 없음</td></tr>';return}
+  const fshort=f=>(f||'').replace(/^secevt_/,'');
   document.getElementById('rows').innerHTML=ev.map(e=>{
    const rs=(e.rules||[]).map(x=>'<span>'+x+'</span>').join('');
-   return '<tr class="'+cls(e.score||0)+'"><td>'+(e.ts||e.regdt||'')+'</td><td class=sc>'+(e.score||0).toFixed(2)+
+   return '<tr class="'+cls(e.score||0)+'"><td>'+(e.ts||e.regdt||'')+'</td><td class=rules><span>'+fshort(e.factor)+'</span></td><td class=sc>'+(e.score||0).toFixed(2)+
     '</td><td>'+(e.src||'')+'</td><td>'+(e.dbuser||'')+'</td><td>'+(e.ip_class||'')+'</td><td>'+(e.retcode??'')+
     '</td><td class=rules>'+rs+'</td><td class=shape title="'+(e.shape||'').replace(/"/g,'&quot;')+'">'+(e.shape||'')+'</td></tr>';
   }).join('');
@@ -173,7 +196,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, PAGE.replace("%POLL%", str(self.poll)), "text/html; charset=utf-8"); return
         if self.path.startswith("/api/events"):
             try:
-                res = kvs_list(self.sk, self.lssn)
+                res = kvs_list_all(self.sk, self.lssn)
             except urllib.error.URLError as e:
                 res = {"error": "조회 실패: %s" % str(getattr(e, "reason", e)).replace(self.sk or "", "[REDACTED]")}
             res["csn"] = self.csn; res["lssn"] = self.lssn
@@ -193,7 +216,7 @@ def main():
     if not lssn:
         sys.stderr.write("[monitor] lssn 없음(--lssn / env GIIP_LSSN / cfg lssn=).\n"); sys.exit(2)
     if a.self_test:
-        r = kvs_list(sk, lssn)
+        r = kvs_list_all(sk, lssn)
         n = len(r.get("events", [])) if "events" in r else 0
         sys.stderr.write("[monitor] self-test: %s (csn=%s lssn=%s events=%d)\n"
                          % ("OK" if "error" not in r else ("ERR:" + r["error"]), csn, lssn, n));

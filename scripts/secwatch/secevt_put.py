@@ -3,11 +3,17 @@
 """
 secevt_put.py — giip-fde-agent 보안점검 입력 producer (리눅스/윈도우 공용, stdlib만).
 
-tKVS 에 `secevt`(security event candidate) factor 를 던진다. 판정(1차 룰 + 2차 Jev)은
-별도 consumer(판정 워커)가 이 factor 를 읽어 tKVSSecurityCheck 에 적재한다.
+tKVS 에 종류별로 분리된 4개 보안점검 입력 factor 를 던진다. 판정(1차 룰 + 2차 Jev)은
+별도 consumer(판정 워커)가 이 factor 들을 읽어 tKVSSecurityCheck 에 적재한다.
+
+4개 factor(사양서 §17.1) — 이벤트 src 로 자동 매핑:
+  secevt_batch_audit  Aurora/DB 감사로그(배치)   ← src=aurora_audit|db_audit|batch_audit
+  secevt_waf          WAF 로그                   ← src=waf
+  secevt_cf           CloudFront(CDN) 접근로그    ← src=cloudfront|cf
+  secevt_signal       파생/집계 신호·기타 로그    ← src=signal|applog|그 외(기본)
 
 핵심 규약 (사양서 SPEC_JEV_SQLI_DETECTION.md §17):
-  - factor 주소: kType='lssn', kKey=<lssn>, kFactor='secevt'
+  - factor 주소: kType='lssn', kKey=<lssn>, kFactor=<위 4개 중 하나>
   - kValue: RAW JSON 객체(문자열 래핑 금지, KVS_STORAGE_STANDARD)
   - **마스킹 at source**: SQL 리터럴(따옴표 문자열/숫자)은 tKVS 에 쓰기 전에 '?' 로 치환한다.
     giipdb 에 원본 SQL/PII 를 저장하지 않기 위함. IP 는 원본 대신 종별 라벨만 싣는다.
@@ -30,7 +36,27 @@ tKVS 에 `secevt`(security event candidate) factor 를 던진다. 판정(1차 �
 import sys, os, re, json, argparse, urllib.request, urllib.parse, urllib.error
 
 API_SK4_URL = os.environ.get("GIIP_API_SK4_URL", "https://giipfaw.azurewebsites.net/api/giipApiSk4")
-FACTOR = "secevt"
+
+# 보안점검 입력은 '종류별로 분리된 4개 factor' 로 적재한다(사양서 §17.1). 이벤트의 src 로
+# 자동 매핑하며, --factor 로 전부 한 factor 에 강제할 수도 있다.
+FACTORS = ("secevt_batch_audit", "secevt_waf", "secevt_cf", "secevt_signal")
+SRC_FACTOR = {
+    # Aurora/DB 감사로그(배치 적재)
+    "aurora_audit": "secevt_batch_audit", "db_audit": "secevt_batch_audit", "batch_audit": "secevt_batch_audit",
+    # WAF 로그
+    "waf": "secevt_waf",
+    # CloudFront(CDN) 접근로그
+    "cloudfront": "secevt_cf", "cf": "secevt_cf",
+    # 파생/집계 신호(응답크기 이봉·빈도 급증 등)와 그 외 애플리케이션 로그
+    "signal": "secevt_signal", "applog": "secevt_signal",
+}
+DEFAULT_FACTOR = "secevt_signal"  # src 매핑 불가 시 catch-all
+
+def resolve_factor(ev, forced):
+    """--factor 가 주어지면 그 값으로 강제, 아니면 이벤트 src 로 4개 factor 중 하나로 매핑."""
+    if forced:
+        return forced
+    return SRC_FACTOR.get(str(ev.get("src") or "").lower(), DEFAULT_FACTOR)
 
 # ── 인증/식별값 해석 (비밀값은 출력하지 않음) ──────────────────────────────
 def _read_cfg_value(key):
@@ -170,9 +196,10 @@ def kvs_put(sk, k_type, k_key, k_factor, k_value_obj, dry_run=False):
     return True
 
 def main():
-    ap = argparse.ArgumentParser(description="tKVS 에 secevt(보안점검 입력) factor 를 던진다.")
+    ap = argparse.ArgumentParser(description="tKVS 에 보안점검 입력(4개 분리 factor)을 던진다.")
     ap.add_argument("--lssn", help="producing agent lssn (미지정 시 env/cfg)")
-    ap.add_argument("--factor", default=FACTOR, help="kFactor (기본 secevt)")
+    ap.add_argument("--factor", default=None, choices=FACTORS,
+                    help="모든 이벤트를 이 factor 로 강제. 미지정 시 이벤트 src 로 4개 factor 자동 매핑")
     g = ap.add_mutually_exclusive_group(required=True)
     g.add_argument("--event-file", help="이벤트 JSON 파일(객체 1개 또는 배열)")
     g.add_argument("--stdin", action="store_true", help="stdin 에서 이벤트 JSON 읽기")
@@ -194,15 +221,19 @@ def main():
     lssn = resolve_lssn(a.lssn)
 
     sent = skipped = 0
+    by_factor = {}
     for ev in events:
         kv = build_kvalue(ev)
         if a.only_candidates and not kv["prefilter"]["candidate"]:
             skipped += 1
             continue
-        kvs_put(sk or "DRYRUN", "lssn", lssn, a.factor, kv, dry_run=a.dry_run)
+        factor = resolve_factor(ev, a.factor)
+        kvs_put(sk or "DRYRUN", "lssn", lssn, factor, kv, dry_run=a.dry_run)
+        by_factor[factor] = by_factor.get(factor, 0) + 1
         sent += 1
-    sys.stderr.write("[secevt_put] 완료: 전송 %d, 건너뜀(비후보) %d, lssn=%s factor=%s%s\n"
-                     % (sent, skipped, lssn, a.factor, " (DRY-RUN)" if a.dry_run else ""))
+    breakdown = ", ".join("%s=%d" % (f, by_factor[f]) for f in FACTORS if f in by_factor) or "(없음)"
+    sys.stderr.write("[secevt_put] 완료: 전송 %d, 건너뜀(비후보) %d, lssn=%s factor[%s]%s\n"
+                     % (sent, skipped, lssn, breakdown, " (DRY-RUN)" if a.dry_run else ""))
 
 if __name__ == "__main__":
     main()
