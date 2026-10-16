@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-monitor.py — secwatch 간이 해킹 감시 모니터 (리눅스/윈도우 공용, stdlib만).
+monitor.py — secwatch lightweight intrusion monitor (Linux/Windows, stdlib only).
 
-giipAgentWin/giipAgentLinux 의 설정 파일(giipAgent.cfg|.cnf)에서 **sk** 를 읽어 **csn** 을 특정하고,
-보안점검 **판정 결과**(`tKVSSecurityCheck`)를 AJAX 로 폴링해 로컬 웹페이지로 보여준다.
-읽기 SP: `pApiKVSSecurityCheckWindowbySk` (giipApiSk4 text='KVSSecurityCheckWindow minutes').
-rev.3(게이트웨이 구조): tKVS 가 아니라 결과 테이블을 본다(giip #3833, SPEC_JEV_SQLI_DETECTION.md §13·§17).
+Reads **sk** from the giipAgentWin/giipAgentLinux config (giipAgent.cfg|.cnf) to resolve **csn**,
+then polls security-check **verdict results** (`tKVSSecurityCheck`) over AJAX and renders a local web page.
+Read SP: `pApiKVSSecurityCheckWindowbySk` (giipApiSk4 text='KVSSecurityCheckWindow minutes').
+rev.3 (gateway model): reads the result table, not tKVS (giip #3833, SPEC_JEV_SQLI_DETECTION.md §13·§17).
 
-보안 설계: **sk 는 이 Python 프로세스(서버)에만 있고 브라우저로 내려가지 않는다.** 페이지는 로컬
-백엔드(`/api/events`)만 호출하고, 백엔드가 sk 로 giipApiSk4 를 대신 호출한다. 127.0.0.1 전용 바인딩.
+Security design: **sk lives only in this Python process (server) and is never sent to the browser.**
+The page calls the local backend (`/api/events`) only; the backend calls giipApiSk4 with sk on its behalf. Binds to 127.0.0.1 only.
 
-사용:
-  python3 monitor.py                 # 127.0.0.1:8787, 설정에서 sk/csn 자동, 최근 60분 결과
+Usage:
+  python3 monitor.py                 # 127.0.0.1:8787, sk/csn auto from config, last 24h
   python3 monitor.py --port 9000 --minutes 180
-  python3 monitor.py --self-test     # 조회 1회만 수행하고 종료(연결 점검)
+  python3 monitor.py --self-test     # run one query and exit (connectivity check)
 
-sk/csn 해석(자동): sk = env GIIP_SK → 상위 giipAgent.cfg|.cnf 'sk='.  csn = env GIIP_CSN → cfg 'csn='(표시용; sk 로 특정).
-sk 값은 응답·로그·HTML 어디에도 싣지 않는다.
+sk/csn resolution (auto): sk = env GIIP_SK -> nearest giipAgent.cfg|.cnf 'sk='.  csn = env GIIP_CSN -> cfg 'csn=' (display only; sk identifies).
+The sk value is never included in responses, logs, or HTML.
 """
 import sys, os, re, json, argparse, urllib.request, urllib.parse, urllib.error
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -49,11 +49,11 @@ def _cfg(key):
 
 def resolve():
     sk = os.environ.get("GIIP_SK") or _cfg("sk")
-    csn = os.environ.get("GIIP_CSN") or _cfg("csn")  # 표시용(sk 로 특정)
+    csn = os.environ.get("GIIP_CSN") or _cfg("csn")  # display only (sk identifies)
     return sk, csn
 
 def fetch_results(sk, minutes=60):
-    """giipApiSk4 KVSSecurityCheckWindow — 그 sk(=csn) 스코프 결과행을 시간범위로 읽는다."""
+    """giipApiSk4 KVSSecurityCheckWindow — read result rows for that sk (=csn) scope within a time window."""
     jsondata = json.dumps({"minutes": int(minutes)}, ensure_ascii=False, separators=(",", ":"))
     form = urllib.parse.urlencode({"token": sk, "text": "KVSSecurityCheckWindow minutes",
                                    "jsondata": jsondata}).encode("utf-8")
@@ -64,12 +64,12 @@ def fetch_results(sk, minutes=60):
     try:
         parsed = json.loads(body)
     except json.JSONDecodeError:
-        return {"error": "비JSON 응답", "raw": body[:200]}
+        return {"error": "non-JSON response", "raw": body[:200]}
     rows = parsed.get("data", parsed) if isinstance(parsed, dict) else parsed
     if not isinstance(rows, list):
         rows = [rows]
     if rows and isinstance(rows[0], dict) and "kscFactor" not in rows[0] and "RstVal" in rows[0]:
-        return {"error": "조회 실패(RstVal=%s) — sk/권한 확인" % rows[0].get("RstVal")}
+        return {"error": "query failed (RstVal=%s) — check sk/permission" % rows[0].get("RstVal")}
     events = []
     for r in rows:
         if not isinstance(r, dict):
@@ -86,8 +86,8 @@ def fetch_results(sk, minutes=60):
             "inj": r.get("kscIsInjection"), "sev": r.get("kscSeverity"),
             "attack": r.get("kscAttackType"), "engine": r.get("kscEngine"),
             "status": r.get("kscStatus"), "lssn": r.get("kscKey"),
-            "why": r.get("kscWhy"),  # 라우팅 이유(게이트웨이 verdict.why) — alert/review 행에 표시
-            "origin": origin,  # {source,system,location,ref,ts} — 클라이언트가 표시+다운로드 명령 생성
+            "why": r.get("kscWhy"),  # routing reason (gateway verdict.why) — shown on alert/review rows
+            "origin": origin,  # {source,system,location,ref,ts} — client renders + builds download command
         })
     return {"events": events}
 
@@ -333,8 +333,8 @@ class Handler(BaseHTTPRequestHandler):
     poll = 10
     minutes = 1440
     page_size = 25
-    lang = "en"  # UI 언어(기본 영어). 다국어는 PAGE 의 I18N 에 추가(--lang 으로 선택).
-    def log_message(self, *a): pass  # 조용히(sk 유출 방지 겸)
+    lang = "en"  # UI language (default English). Add languages to I18N in PAGE (select via --lang).
+    def log_message(self, *a): pass  # stay quiet (also avoids sk leakage)
     def _send(self, code, body, ctype="application/json; charset=utf-8"):
         b = body.encode("utf-8") if isinstance(body, str) else body
         self.send_response(code); self.send_header("Content-Type", ctype)
@@ -356,23 +356,23 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 res = fetch_results(self.sk, minutes)
             except urllib.error.URLError as e:
-                res = {"error": "조회 실패: %s" % str(getattr(e, "reason", e)).replace(self.sk or "", "[REDACTED]")}
+                res = {"error": "query failed: %s" % str(getattr(e, "reason", e)).replace(self.sk or "", "[REDACTED]")}
             res["csn"] = self.csn
             self._send(200, json.dumps(res, ensure_ascii=False)); return
         self._send(404, "{}")
 
 def main():
-    ap = argparse.ArgumentParser(description="secwatch 간이 해킹 감시 모니터(판정 결과 조회)")
+    ap = argparse.ArgumentParser(description="secwatch threat monitor (reads verdict results)")
     ap.add_argument("--port", type=int, default=8787)
-    ap.add_argument("--poll", type=int, default=60, help="폴링 주기(초, 기본 60=1분)")
-    ap.add_argument("--minutes", type=int, default=1440, help="조회 시간범위(분, 기본 1440=24시간)")
-    ap.add_argument("--page-size", type=int, default=25, help="페이지당 행 수(기본 25)")
-    ap.add_argument("--lang", default="en", help="UI 언어(기본 en; PAGE 의 I18N 에 추가해 확장)")
-    ap.add_argument("--self-test", action="store_true", help="조회 1회 하고 종료(서버 안 띄움)")
+    ap.add_argument("--poll", type=int, default=60, help="poll interval in seconds (default 60 = 1 min)")
+    ap.add_argument("--minutes", type=int, default=1440, help="query time window in minutes (default 1440 = 24h)")
+    ap.add_argument("--page-size", type=int, default=25, help="rows per page (default 25)")
+    ap.add_argument("--lang", default="en", help="UI language (default en; extend via I18N in PAGE)")
+    ap.add_argument("--self-test", action="store_true", help="run one query and exit (no server)")
     a = ap.parse_args()
     sk, csn = resolve()
     if not sk:
-        sys.stderr.write("[monitor] sk 없음(env GIIP_SK 또는 giipAgent.cfg sk=).\n"); sys.exit(3)
+        sys.stderr.write("[monitor] no sk (set env GIIP_SK or giipAgent.cfg sk=).\n"); sys.exit(3)
     if a.self_test:
         r = fetch_results(sk, a.minutes)
         n = len(r.get("events", [])) if "events" in r else 0
@@ -382,10 +382,10 @@ def main():
     Handler.sk, Handler.csn, Handler.poll, Handler.minutes, Handler.page_size, Handler.lang = \
         sk, csn, a.poll, a.minutes, a.page_size, a.lang
     srv = ThreadingHTTPServer(("127.0.0.1", a.port), Handler)
-    sys.stderr.write("[monitor] http://127.0.0.1:%d  (csn=%s, 최근 %d분, %d초 폴링, Ctrl+C 종료)\n"
+    sys.stderr.write("[monitor] http://127.0.0.1:%d  (csn=%s, last %d min, %d s poll, Ctrl+C to quit)\n"
                      % (a.port, csn, a.minutes, a.poll))
     try: srv.serve_forever()
-    except KeyboardInterrupt: sys.stderr.write("\n[monitor] 종료\n")
+    except KeyboardInterrupt: sys.stderr.write("\n[monitor] stopped\n")
 
 if __name__ == "__main__":
     main()
