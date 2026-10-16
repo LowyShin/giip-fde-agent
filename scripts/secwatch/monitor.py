@@ -86,6 +86,7 @@ def fetch_results(sk, minutes=60):
             "inj": r.get("kscIsInjection"), "sev": r.get("kscSeverity"),
             "attack": r.get("kscAttackType"), "engine": r.get("kscEngine"),
             "status": r.get("kscStatus"), "lssn": r.get("kscKey"),
+            "why": r.get("kscWhy"),  # 라우팅 이유(게이트웨이 verdict.why) — alert/review 행에 표시
             "origin": origin,  # {source,system,location,ref,ts} — 클라이언트가 표시+다운로드 명령 생성
         })
     return {"events": events}
@@ -110,6 +111,7 @@ PAGE = """<!doctype html><html lang="%LANG%"><head><meta charset="utf-8">
  th{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.08em;position:sticky;top:0;background:var(--bg)}
  td.sc{font-variant-numeric:tabular-nums;font-weight:650}
  tr.alert td.rt{color:var(--red);font-weight:650} tr.review td.rt{color:var(--amber)} tr.log td.rt{color:var(--grn)}
+ td.rt .why{font-weight:400;font-size:11px;color:var(--mut);margin-top:3px;max-width:34ch;white-space:normal;line-height:1.35}
  .factor span,.origin{font-family:ui-monospace,monospace;font-size:11px;color:#aeb6c0}
  .empty{color:var(--mut);padding:30px;text-align:center}
  .osrc{font-family:ui-monospace,monospace;font-size:11px;color:#8b94a0;display:block;margin-bottom:3px}
@@ -198,10 +200,11 @@ async function tick(){
   document.getElementById('rows').innerHTML=ev.map((e,i)=>{
    const inj=(e.inj!=null)?Number(e.inj).toFixed(2):'-';
    const o=e.origin||{}, label=esc((o.source||'')+' '+(o.ref||o.location||'')), cmd=window.__cmds[i];
+   const whyHtml=((e.route=='alert'||e.route=='review')&&e.why)?'<div class=why>'+esc(e.why)+'</div>':'';
    const oc=cmd
      ? '<span class=osrc>'+label+'</span><button class=cp onclick="cp('+i+',this)">\\u29c9 '+T.copy+'</button><div class=cmd title="'+esc(cmd)+'">'+esc(cmd)+'</div>'
      : '<span class=osrc>'+label+'</span><button class="cp nocmd" title="'+esc(T.nocmd)+'">\\u2014</button>';
-   return '<tr class="'+(e.route||'')+'"><td>'+esc(e.ts||'')+'</td><td class=rt>'+esc(e.route||'')+
+   return '<tr class="'+(e.route||'')+'"><td>'+esc(e.ts||'')+'</td><td class=rt>'+esc(e.route||'')+whyHtml+
     '</td><td class=factor><span>'+esc(fshort(e.factor))+'</span></td><td class=sc>'+inj+
     '</td><td class=sc>'+(e.sev??'')+'</td><td>'+esc(e.attack||'')+'</td><td>'+esc(e.engine||'')+
     '</td><td class=origin>'+oc+'</td></tr>';
@@ -234,7 +237,7 @@ HELP = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <p class="sub">How to read the threat monitor. Verdicts are produced by a 1st-pass deterministic prefilter and a 2nd-pass Jev (TypeSafe System One) judgment.</p>
 
 <h2>Route</h2>
-<p>Where the verdict is routed (gate rules).</p>
+<p>Where the verdict is routed (gate rules). <strong>alert</strong> and <strong>review</strong> rows show the exact reason inline under the route value &mdash; so you don't have to open each row.</p>
 <table><tr><th>Value</th><th>Meaning</th></tr>
 <tr><td class="a">alert</td><td>High-confidence attack, or data-exfiltration / write attempt suspected. Notify immediately.</td></tr>
 <tr><td class="r">review</td><td>Borderline — a human should look. Also used when Jev was skipped/failed and a candidate remains.</td></tr>
