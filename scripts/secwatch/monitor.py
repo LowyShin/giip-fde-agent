@@ -90,9 +90,9 @@ def fetch_results(sk, minutes=60):
         })
     return {"events": events}
 
-PAGE = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
+PAGE = """<!doctype html><html lang="%LANG%"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>secwatch — 해킹 감시</title>
+<title>secwatch — Threat Monitor</title>
 <style>
  :root{--bg:#0d1117;--panel:#151a21;--bd:#232b36;--tx:#d4dae2;--mut:#7d8895;
    --red:#cf6b7f;--amber:#d4a24c;--grn:#5b9d77}
@@ -114,25 +114,36 @@ PAGE = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
  .empty{color:var(--mut);padding:30px;text-align:center}
 </style></head><body>
 <header>
- <h1><span id="dot" class="dot"></span>secwatch 해킹 감시 (판정 결과)</h1>
- <span class="meta" id="who">csn ?</span>
+ <h1><span id="dot" class="dot"></span><span id="title"></span></h1>
+ <span class="meta" id="who"></span>
  <span class="meta" id="upd">—</span>
  <div class="stats">
-   <span class="stat">총 <b id="n">0</b></span>
+   <span class="stat"><span id="l_total"></span> <b id="n">0</b></span>
    <span class="stat">🔴 <b id="na">0</b></span>
    <span class="stat">🟠 <b id="nr">0</b></span>
    <span class="stat">⚪ <b id="nl">0</b></span>
  </div>
 </header>
-<table><thead><tr><th>시각</th><th>라우팅</th><th>타입</th><th>inj</th><th>sev</th><th>공격유형</th><th>엔진</th><th>원본(origin)</th></tr></thead>
-<tbody id="rows"><tr><td colspan="8" class="empty">불러오는 중…</td></tr></tbody></table>
+<table><thead><tr id="hdr"></tr></thead>
+<tbody id="rows"></tbody></table>
 <script>
-const POLL=%POLL%, MIN=%MIN%;
+const POLL=%POLL%, MIN=%MIN%, LANG="%LANG%";
+// i18n: add languages here; UI picks I18N[LANG] (falls back to en). (multilingual: later)
+const I18N={
+  en:{title:"secwatch Threat Monitor (verdicts)",total:"Total",last:"last",min:"min",
+      updated:"Updated",loading:"Loading…",empty:"No recent verdicts",
+      cols:["Time","Route","Type","inj","sev","Attack","Engine","Origin"]}
+};
+const T=I18N[LANG]||I18N.en;
+document.getElementById('title').textContent=T.title;
+document.getElementById('l_total').textContent=T.total;
+document.getElementById('hdr').innerHTML=T.cols.map(c=>'<th>'+c+'</th>').join('');
+document.getElementById('rows').innerHTML='<tr><td colspan=8 class=empty>'+T.loading+'</td></tr>';
 async function tick(){
  try{
   const r=await fetch('/api/events?minutes='+MIN); const d=await r.json();
-  document.getElementById('who').textContent='csn '+(d.csn||'?')+' · 최근 '+MIN+'분';
-  document.getElementById('upd').textContent='갱신 '+new Date().toLocaleTimeString();
+  document.getElementById('who').textContent='csn '+(d.csn||'?')+' · '+T.last+' '+MIN+' '+T.min;
+  document.getElementById('upd').textContent=T.updated+' '+new Date().toLocaleTimeString();
   const dot=document.getElementById('dot');
   if(d.error){dot.className='dot err';document.getElementById('rows').innerHTML='<tr><td colspan=8 class=empty>'+d.error+'</td></tr>';return}
   dot.className='dot';
@@ -141,7 +152,7 @@ async function tick(){
   document.getElementById('na').textContent=ev.filter(e=>e.route=='alert').length;
   document.getElementById('nr').textContent=ev.filter(e=>e.route=='review').length;
   document.getElementById('nl').textContent=ev.filter(e=>e.route=='log').length;
-  if(!ev.length){document.getElementById('rows').innerHTML='<tr><td colspan=8 class=empty>최근 판정 결과 없음</td></tr>';return}
+  if(!ev.length){document.getElementById('rows').innerHTML='<tr><td colspan=8 class=empty>'+T.empty+'</td></tr>';return}
   const fshort=f=>(f||'').replace(/^secevt_/,'');
   document.getElementById('rows').innerHTML=ev.map(e=>{
    const inj=(e.inj!=null)?Number(e.inj).toFixed(2):'-';
@@ -159,6 +170,7 @@ class Handler(BaseHTTPRequestHandler):
     sk = csn = None
     poll = 10
     minutes = 60
+    lang = "en"  # UI 언어(기본 영어). 다국어는 PAGE 의 I18N 에 추가(--lang 으로 선택).
     def log_message(self, *a): pass  # 조용히(sk 유출 방지 겸)
     def _send(self, code, body, ctype="application/json; charset=utf-8"):
         b = body.encode("utf-8") if isinstance(body, str) else body
@@ -166,8 +178,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b)
     def do_GET(self):
         if self.path == "/" or self.path.startswith("/index"):
-            self._send(200, PAGE.replace("%POLL%", str(self.poll)).replace("%MIN%", str(self.minutes)),
-                       "text/html; charset=utf-8"); return
+            self._send(200, PAGE.replace("%POLL%", str(self.poll)).replace("%MIN%", str(self.minutes))
+                       .replace("%LANG%", self.lang), "text/html; charset=utf-8"); return
         if self.path.startswith("/api/events"):
             q = urllib.parse.urlparse(self.path).query
             minutes = self.minutes
@@ -188,6 +200,7 @@ def main():
     ap.add_argument("--port", type=int, default=8787)
     ap.add_argument("--poll", type=int, default=10, help="폴링 주기(초)")
     ap.add_argument("--minutes", type=int, default=60, help="조회 시간범위(분)")
+    ap.add_argument("--lang", default="en", help="UI 언어(기본 en; PAGE 의 I18N 에 추가해 확장)")
     ap.add_argument("--self-test", action="store_true", help="조회 1회 하고 종료(서버 안 띄움)")
     a = ap.parse_args()
     sk, csn = resolve()
@@ -199,7 +212,7 @@ def main():
         sys.stderr.write("[monitor] self-test: %s (csn=%s results=%d)\n"
                          % ("OK" if "error" not in r else ("ERR:" + r["error"]), csn, n))
         sys.exit(0 if "error" not in r else 4)
-    Handler.sk, Handler.csn, Handler.poll, Handler.minutes = sk, csn, a.poll, a.minutes
+    Handler.sk, Handler.csn, Handler.poll, Handler.minutes, Handler.lang = sk, csn, a.poll, a.minutes, a.lang
     srv = ThreadingHTTPServer(("127.0.0.1", a.port), Handler)
     sys.stderr.write("[monitor] http://127.0.0.1:%d  (csn=%s, 최근 %d분, %d초 폴링, Ctrl+C 종료)\n"
                      % (a.port, csn, a.minutes, a.poll))

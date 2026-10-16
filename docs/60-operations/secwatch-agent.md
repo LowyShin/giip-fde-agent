@@ -81,6 +81,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\secwatch\register-se
 판정 결과는 giipdb `tKVSSecurityCheck` 에 적재된다. `kscRoutedTo`(alert/review/log)·`kscIsInjection`·`kscSeverity`·
 `kscFactor`(타입)·`kscOriginRef`(①원본 위치)·`kscVerdictJson`. 대시보드(⑦)가 이 테이블을 조회한다.
 
+로컬 대시보드: `python3 scripts/secwatch/monitor.py` → http://127.0.0.1:8787.
+UI 는 **영어 기본**이며 다국어 준비됨 — `monitor.py` 의 `I18N` 에 언어를 추가하고 `--lang <code>` 로 선택한다.
+
 ## 8. 문제 해결
 
 - 전송 실패(종료 4): 게이트웨이 URL/가동 확인(`GIIP_JEV_GATEWAY_URL`), sk 유효성. (§1-1 선행조건)
