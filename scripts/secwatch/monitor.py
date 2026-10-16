@@ -236,6 +236,13 @@ HELP = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <h1>secwatch — Column Help</h1>
 <p class="sub">How to read the threat monitor. Verdicts are produced by a 1st-pass deterministic prefilter and a 2nd-pass Jev (TypeSafe System One) judgment.</p>
 
+<h2>How the monitor works (data window)</h2>
+<p>The monitor shows a <strong>rolling window</strong> &mdash; it does <strong>not</strong> keep piling rows up in the page. On every poll it re-queries and <strong>replaces</strong> the whole list (newest first, by insertion id). Rows older than the window drop off the view; nothing accumulates in the browser.</p>
+<table><tr><th>Setting</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>--minutes</code></td><td>60</td><td>Time window shown &mdash; the last N minutes of verdicts. Use a larger value to look further back.</td></tr>
+<tr><td><code>--poll</code></td><td>60</td><td>Refresh interval in seconds (re-fetch &amp; replace).</td></tr></table>
+<p>The verdicts themselves are stored in the database table <code>tKVSSecurityCheck</code> and persist there; the monitor only reads a time window of that table via the stored procedure <code>pApiKVSSecurityCheckWindowbySk</code> (scoped to your csn by the agent key). <strong>Retention:</strong> the result table currently has <em>no</em> automatic cleanup &mdash; verdict rows remain in the DB indefinitely until a retention policy is added (for comparison, the raw tKVS input is pruned after 7 days).</p>
+
 <h2>Route</h2>
 <p>Where the verdict is routed (gate rules). <strong>alert</strong> and <strong>review</strong> rows show the exact reason inline under the route value &mdash; so you don't have to open each row.</p>
 <table><tr><th>Value</th><th>Meaning</th></tr>
