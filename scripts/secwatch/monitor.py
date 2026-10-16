@@ -91,6 +91,39 @@ def fetch_results(sk, minutes=60):
         })
     return {"events": events}
 
+def fetch_health(sk):
+    """giipApiSk4 AgentHealthCheck — agent liveness (tLSvr.lsChkdt) for this sk's csn group.
+
+    Independent of verdict data: a quiet server (no candidate events, so 0 rows in
+    tKVSSecurityCheck) still reports here as long as its giipAgent keeps checking in.
+    """
+    form = urllib.parse.urlencode({"token": sk, "text": "AgentHealthCheck"}).encode("utf-8")
+    req = urllib.request.Request(API_SK4_URL, data=form,
+                                 headers={"Content-Type": "application/x-www-form-urlencoded"})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        body = resp.read().decode("utf-8", "replace")
+    try:
+        parsed = json.loads(body)
+    except json.JSONDecodeError:
+        return {"error": "non-JSON response"}
+    rows = parsed.get("data", parsed) if isinstance(parsed, dict) else parsed
+    if not isinstance(rows, list):
+        rows = [rows]
+    row = rows[0] if rows and isinstance(rows[0], dict) else {}
+    if str(row.get("RstVal")) not in ("200", "None", "") and "report_data" not in row:
+        return {"error": "query failed (RstVal=%s)" % row.get("RstVal")}
+    rd = row.get("report_data")
+    if isinstance(rd, str):
+        try: rd = json.loads(rd)
+        except json.JSONDecodeError: rd = {}
+    if not isinstance(rd, dict):
+        rd = {}
+    return {
+        "total": rd.get("total_servers"), "active": rd.get("active_agents"),
+        "inactive": rd.get("inactive_agents"), "errors": rd.get("agents_with_errors"),
+        "critical": rd.get("critical_issues") or [], "warning": rd.get("warning_issues") or [],
+    }
+
 PAGE = """<!doctype html><html lang="%LANG%"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>secwatch — Threat Monitor</title>
@@ -131,6 +164,14 @@ PAGE = """<!doctype html><html lang="%LANG%"><head><meta charset="utf-8">
  #pager button:hover:not(:disabled){border-color:var(--mut)}
  #pager button:disabled{opacity:.4;cursor:default}
  #pager .pginfo{font-variant-numeric:tabular-nums}
+ .stat.live{display:flex;align-items:center;gap:6px}
+ .stat.live .lv{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--grn)}
+ .stat.live.warn .lv{background:var(--amber)} .stat.live.down .lv{background:var(--red)} .stat.live.unk .lv{background:var(--mut)}
+ #agents{padding:0 18px}
+ #agents:empty{display:none}
+ #agents .ag{display:flex;gap:10px;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--bd);font-size:12px}
+ #agents .ag .st{font-weight:650;width:52px} #agents .ag.down .st{color:var(--red)} #agents .ag.stale .st{color:var(--amber)}
+ #agents .ag .host{font-family:ui-monospace,monospace;color:var(--tx)} #agents .ag .ago{color:var(--mut);margin-left:auto;font-variant-numeric:tabular-nums}
  a.help{color:var(--mut);font-size:12px;text-decoration:none;border:1px solid var(--bd);border-radius:6px;padding:4px 9px}
  a.help:hover{color:var(--tx);border-color:var(--mut)}
 </style></head><body>
@@ -140,12 +181,14 @@ PAGE = """<!doctype html><html lang="%LANG%"><head><meta charset="utf-8">
  <span class="meta" id="upd">—</span>
  <a class="help" href="/help" target="_blank" rel="noopener">? Help</a>
  <div class="stats">
+   <span class="stat live unk" id="live" title="agent liveness (tLSvr heartbeat)"><span class="lv"></span><span id="live_txt">—</span></span>
    <span class="stat"><span id="l_total"></span> <b id="n">0</b></span>
    <span class="stat">🔴 <b id="na">0</b></span>
    <span class="stat">🟠 <b id="nr">0</b></span>
    <span class="stat">⚪ <b id="nl">0</b></span>
  </div>
 </header>
+<div id="agents"></div>
 <table><thead><tr id="hdr"></tr></thead>
 <tbody id="rows"></tbody></table>
 <div id="pager"></div>
@@ -159,6 +202,8 @@ const I18N={
       updated:"Updated",loading:"Loading…",empty:"No recent verdicts",
       copy:"copy cmd",copied:"copied!",nocmd:"no download command for this source",
       prev:"\\u2039 Prev",next:"Next \\u203a",page:"Page",
+      agents:"Agents",alive:"alive",live_none:"no agents",live_unknown:"agents ?",
+      st_down:"DOWN",st_stale:"STALE",ago_min:"min ago",
       cols:["Time","Route","Type","inj","sev","Attack","Engine","Origin → download command"]}
 };
 const T=I18N[LANG]||I18N.en;
@@ -224,6 +269,24 @@ function renderPage(){
  }).join('');
  renderPager();
 }
+// liveness: agent heartbeat (tLSvr.lsChkdt) for this sk's csn — shows even when there are 0 verdicts.
+async function beat(){
+ const el=document.getElementById('live'), txt=document.getElementById('live_txt'), ag=document.getElementById('agents');
+ try{
+  const r=await fetch('/api/health'); const h=await r.json();
+  if(h.error||h.total==null){el.className='stat live unk';txt.textContent=T.live_unknown;ag.innerHTML='';return}
+  const total=Number(h.total)||0, active=Number(h.active)||0;
+  const crit=Array.isArray(h.critical)?h.critical:[], warn=Array.isArray(h.warning)?h.warning:[];
+  if(total===0){el.className='stat live unk';txt.textContent=T.live_none;ag.innerHTML='';return}
+  let cls='stat live';
+  if(crit.length)cls+=' down'; else if(warn.length||active<total)cls+=' warn';
+  el.className=cls;
+  txt.textContent=T.agents+' '+active+'/'+total+' '+T.alive;
+  ag.innerHTML=
+   crit.map(c=>'<div class="ag down"><span class=st>'+T.st_down+'</span><span class=host>'+esc(String(c.hostname||c.lssn||'?'))+'</span><span class=ago>'+esc(c.minutes_ago!=null?c.minutes_ago+' '+T.ago_min:'')+'</span></div>').join('')+
+   warn.map(w=>'<div class="ag stale"><span class=st>'+T.st_stale+'</span><span class=host>'+esc(String(w.hostname||w.lssn||'?'))+'</span><span class=ago>'+esc(String(w.last_checkin_kst||''))+'</span></div>').join('');
+ }catch(err){el.className='stat live unk';txt.textContent=T.live_unknown;}
+}
 async function tick(){
  try{
   const r=await fetch('/api/events?minutes='+MIN); const d=await r.json();
@@ -242,7 +305,7 @@ async function tick(){
   renderPage();  // keeps curPage across polls; clamped if the list shrank
  }catch(err){document.getElementById('dot').className='dot err';}
 }
-tick(); setInterval(tick, POLL*1000);
+tick(); beat(); setInterval(tick, POLL*1000); setInterval(beat, POLL*1000);
 </script></body></html>"""
 
 HELP = """<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -270,9 +333,14 @@ HELP = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <h2>How the monitor works (data window)</h2>
 <p>The monitor shows a <strong>rolling window</strong> &mdash; it does <strong>not</strong> keep piling rows up in the page. On every poll it re-queries and <strong>replaces</strong> the whole list (newest first, by insertion id). Rows older than the window drop off the view; nothing accumulates in the browser.</p>
 <table><tr><th>Setting</th><th>Default</th><th>Meaning</th></tr>
-<tr><td><code>--minutes</code></td><td>60</td><td>Time window shown &mdash; the last N minutes of verdicts. Use a larger value to look further back.</td></tr>
+<tr><td><code>--minutes</code></td><td>1440</td><td>Time window shown &mdash; the last N minutes of verdicts (default 24h). Use a larger value to look further back.</td></tr>
+<tr><td><code>--page-size</code></td><td>25</td><td>Rows per page in the table (client-side paging over the fetched window).</td></tr>
 <tr><td><code>--poll</code></td><td>60</td><td>Refresh interval in seconds (re-fetch &amp; replace).</td></tr></table>
 <p>The verdicts themselves are stored in the database table <code>tKVSSecurityCheck</code> and persist there; the monitor only reads a time window of that table via the stored procedure <code>pApiKVSSecurityCheckWindowbySk</code> (scoped to your csn by the agent key). <strong>Retention:</strong> the result table currently has <em>no</em> automatic cleanup &mdash; verdict rows remain in the DB indefinitely until a retention policy is added (for comparison, the raw tKVS input is pruned after 7 days).</p>
+
+<h2>Agent liveness (header badge)</h2>
+<p>The <strong>Agents N/M alive</strong> badge in the header is <strong>independent of verdicts</strong>. A quiet server that is not under attack produces no candidate events, so it writes <strong>zero</strong> rows to the verdict table &mdash; yet its agent is still healthy. The badge answers &ldquo;is the agent alive?&rdquo; even when the table is empty.</p>
+<p>It reads <code>tLSvr.lsChkdt</code> (agent check-in time) for your csn via <code>pApiAgentHealthCheckbySk</code>. Colour: <strong style="color:var(--grn)">green</strong> = all agents checked in within the last hour; <strong style="color:var(--amber)">amber</strong> = some are slow (10&ndash;59 min) or inactive; <strong style="color:var(--red)">red</strong> = at least one is down (no check-in for 60+ min). Slow/down servers are listed by hostname just under the header.</p>
 
 <h2>Route</h2>
 <p>Where the verdict is routed (gate rules). <strong>alert</strong> and <strong>review</strong> rows show the exact reason inline under the route value &mdash; so you don't have to open each row.</p>
@@ -355,6 +423,13 @@ class Handler(BaseHTTPRequestHandler):
                 pass
             try:
                 res = fetch_results(self.sk, minutes)
+            except urllib.error.URLError as e:
+                res = {"error": "query failed: %s" % str(getattr(e, "reason", e)).replace(self.sk or "", "[REDACTED]")}
+            res["csn"] = self.csn
+            self._send(200, json.dumps(res, ensure_ascii=False)); return
+        if self.path.startswith("/api/health"):
+            try:
+                res = fetch_health(self.sk)
             except urllib.error.URLError as e:
                 res = {"error": "query failed: %s" % str(getattr(e, "reason", e)).replace(self.sk or "", "[REDACTED]")}
             res["csn"] = self.csn
