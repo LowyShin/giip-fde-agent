@@ -85,6 +85,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\secwatch\register-se
 - UI 는 **영어 기본**이며 다국어 준비됨 — `monitor.py` 의 `I18N` 에 언어를 추가하고 `--lang <code>` 로 선택.
 - 컬럼 설명은 화면 우상단 **? Help**(`/help`).
 - **Origin 열**: `⧉ copy cmd` 를 눌러 복사한 명령을 분석가 자신의 터미널(cmd)에 붙여넣으면 원본 레코드를 파일로 받는다(S3=`aws s3 cp`, Aurora 감사로그=`aws logs get-log-events > 파일`; AWS CLI 필요). 그 외 소스는 명령 없이 origin 라벨만 표시.
+- **데이터 윈도우(누적 아님)**: 화면은 **롤링 윈도우**다 — 매 폴링마다 목록을 통째로 교체(최신순)하며 브라우저에 쌓이지 않는다. 기본 **최근 60분**(`--minutes`), 폴링 **60초**(`--poll`). 판정 결과 자체는 `tKVSSecurityCheck`(DB)에 **영구 보존**되고(조회 SP `pApiKVSSecurityCheckWindowbySk`), 모니터는 그 시간범위만 읽는다. **보존주기**: 결과 테이블은 현재 자동 정리가 없어 계속 누적된다(원본 tKVS 는 7일 정리와 대비). 필요 시 CleanTable 에 보존주기 추가.
 
 ## 8. 문제 해결
 
