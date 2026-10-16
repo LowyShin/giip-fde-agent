@@ -3,8 +3,8 @@
 """
 secevt_sample.py — 보안점검 입력 이벤트 '데이터 만드는 법' 참조 생성기 (리눅스/윈도우 공용, stdlib만).
 
-secevt_put.py 가 받는 입력 JSON 의 정본 예시를 만든다. 공격/정상 라벨을 섞어
-배열로 출력하므로, 그대로 producer 에 흘려 마스킹·전단필터·전송을 점검할 수 있다.
+secevt_agent.py 가 받는 입력 JSON 의 정본 예시를 만든다. 공격/정상 라벨을 섞어
+배열로 출력하므로, 그대로 에이전트에 흘려 마스킹·전단필터·게이트웨이 전송을 점검할 수 있다.
 (SQL 리터럴은 일부러 원본 그대로 둔다 — producer 가 at-source 로 '?' 치환함을 확인하려고.)
 
 src 값은 producer 의 SRC_FACTOR 매핑으로 4개 factor 에 분배된다(사양서 §17.1):
@@ -14,7 +14,7 @@ src 값은 producer 의 SRC_FACTOR 매핑으로 4개 factor 에 분배된다(사
 사용:
   python3 secevt_sample.py                         # 라벨 포함 배열 stdout
   python3 secevt_sample.py --no-label              # 'label' 필드 제거(실전 입력 형태)
-  python3 secevt_sample.py | python3 secevt_put.py --lssn 71240 --stdin --dry-run
+  python3 secevt_sample.py | python3 secevt_agent.py --lssn 72784 --stdin --dry-run
   python3 secevt_sample.py --only attack           # 공격 샘플만
 
 각 이벤트 필드는 사양서 §5/§17 의 kValue 입력 스키마와 동일하다(단 'label' 은 평가용 메타).
@@ -27,7 +27,10 @@ SAMPLES = [
      "db": "prd-cmsdb", "dbuser": "cur_app", "op": "QUERY", "retcode": 1064,
      "client_ip_class": "external", "ua_class": "script",
      "sql_shape": "SELECT per.id person_id, per.name FROM person per WHERE per.id = 10 UNION SELECT 1,2,3 INTO OUTFILE '/tmp/x.txt'",
-     "baseline": "cur_app 평시 information_schema 미참조; 동일 접속원 최근 5분 동종 312건"},
+     "baseline": "cur_app 평시 information_schema 미참조; 동일 접속원 최근 5분 동종 312건",
+     "origin": {"source": "aurora_audit", "system": "prd-cmsdb",
+                "location": "/aws/rds/cluster-prd/audit : stream-2026-10-15",
+                "ref": "query_id#4455201", "ts": "2026-10-15T21:20:49Z"}},
 
     # ── 공격: boolean blind (ASCII(SUBSTRING)), 응답크기 이봉 ──
     {"label": "attack", "src": "waf", "ts": "2026-10-15T21:22:03Z",
