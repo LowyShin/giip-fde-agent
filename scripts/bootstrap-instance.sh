@@ -6,7 +6,7 @@
 #   그래서 인스턴스를 옮기거나 새로 만들어도 이 스크립트 한 번이면 같은 상태가 된다. 멱등이고 값(SK/비밀번호)은 출력하지 않는다.
 # 언제 도나: entrypoint.sh 기동 시 자동. 수동: `bash /work/giip-fde-agent/scripts/bootstrap-instance.sh`
 # 하는 일: 1) root 소유 파일 회수  2) powershell→pwsh 링크  3) SqlServer 모듈  4) 허브 저장소 clone(없을 때만)
-#          5) giipdb/mgmt/dbconfig.json 생성(없을 때만, 환경변수 또는 $SECRETS/dbconfig.json)  6) 허브의 환경 점검 실행
+#          5) giipdb/mgmt/dbconfig.json 생성(없을 때만)  6) claude 네이티브(dev 소유, 자동업데이트)  7) 허브의 환경 점검 실행
 # 환경변수: GIIP_DB_SERVER GIIP_DB_NAME GIIP_DB_LOGIN GIIP_DB_PASSWORD (DB 직접 접속, 선택)
 #           GIIP_HUB_URL(기본 https://github.com/LowyShin/giipprj-hub.git) GIIP_HUB_DIR(기본 /work/giipprj-hub) GIIP_SECRETS_DIR(기본 /work/.secrets)
 # 정본 설명: giipprj-hub .agent/k_layer/notes/KNOW-096_docker_instance_environment_and_linux_script_pitfalls.md
@@ -53,6 +53,22 @@ if [ -f "$DBCFG" ] && [ ! -f "$SECRETS/dbconfig.json" ]; then
   mkdir -p "$SECRETS" && cp "$DBCFG" "$SECRETS/dbconfig.json" && chmod 600 "$SECRETS/dbconfig.json" && log OK "dbconfig.json 사본 보관($SECRETS)"
 fi
 
-# 6) 현재 상태 점검(읽기 전용) — 허브의 정본 점검 스크립트
+# 6) claude CLI 를 dev 소유 네이티브 설치로 둔다(자동 업데이트 가능). 이미지의 root npm 전역(/usr/lib/node_modules)은
+#    dev 가 쓰기 못 해 자동 업데이트가 막힌다(/doctor). dev 홈(~/.local)에 네이티브로 두면 sudo 없이 갱신된다.
+#    이미지 재생성으로 ~/.local 이 비면 매 기동 때 다시 설치한다(이미 있으면 건너뛰므로 여러 번 돌려도 안전).
+if [ -x "$HOME/.local/bin/claude" ]; then log OK "claude 네이티브(~/.local/bin)"
+elif command -v claude >/dev/null 2>&1; then
+  if claude install >/dev/null 2>&1 && [ -x "$HOME/.local/bin/claude" ]; then log FIXED "claude 네이티브 설치(~/.local, sudo 불필요)"
+  else log WARN "claude install 실패(네트워크?) — 기존(root npm) 설치로 계속"; fi
+else log WARN "claude 미설치 — 건너뜀"; fi
+# ~/.local/bin 을 PATH 앞에 둬 새 셸에서 네이티브가 root npm 전역보다 우선하게 한다(이미 있으면 건너뜀).
+CLAUDE_PATH_LINE='export PATH="$HOME/.local/bin:$PATH"'
+for RC in "$HOME/.bashrc" "$HOME/.profile"; do
+  grep -qF "$CLAUDE_PATH_LINE" "$RC" 2>/dev/null && continue
+  printf '\n# claude 네이티브 우선(/doctor fix, giip #3405)\n%s\n' "$CLAUDE_PATH_LINE" >> "$RC" 2>/dev/null \
+    && log FIXED "PATH 우선 추가 → $(basename "$RC")"
+done
+
+# 7) 현재 상태 점검(읽기 전용) — 허브의 정본 점검 스크립트
 [ -f "$HUB/.agent/scripts/check_instance_env.sh" ] && FDE_DIR="$FDE" bash "$HUB/.agent/scripts/check_instance_env.sh" 2>&1 | grep -v setlocale
 exit 0
