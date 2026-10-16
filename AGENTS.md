@@ -42,6 +42,9 @@ Follow `.agent/rules/10_karpathy_guidelines.md` for all coding tasks:
 ## CONTEXT
 The full agent context is stored in the `.agent` directory. Always check there for project-specific conventions.
 
+## SECWATCH — 보안점검(SQL 인젝션 탐지) 등록/운영
+"secwatch 등록/설정/수집" 요청을 받으면 **반드시** `docs/60-operations/secwatch-agent.md` 를 먼저 읽고 그 절차대로 한다(구현: `scripts/secwatch/`). 핵심 불변식: 수집 PC 에는 Jev 키를 두지 않는다(sk 인증만, 키는 giip 게이트웨이 Azure 앱설정에만), 이벤트 타입은 표준 4개(`secevt_batch_audit`/`secevt_waf`/`secevt_cf`/`secevt_signal`)만 쓴다(임의 이름 금지), 마스킹은 소스에서 수행한다. 설계 정본: giipdb `SPEC_JEV_SQLI_DETECTION.md` (giip #3833).
+
 ## DOCKER INSTANCE — 시작할 때 부트스트랩 (giip #3535)
 docker 인스턴스에서 작업을 시작하면 먼저 `bash scripts/bootstrap-instance.sh` 를 실행하고 출력의 MISSING/WARN 을 해결한다(멱등, 비밀값 미출력).
 스크립트가 Linux 에서 안 돌면 환경을 먼저 맞추고, 그래도 안 되는 것만 스크립트를 고친다(`$env:TEMP`→`[System.IO.Path]::GetTempPath()`, 백슬래시→`Join-Path`, Windows 전용 호출→`$IsLinux` 분기).

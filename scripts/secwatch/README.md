@@ -44,11 +44,17 @@
 
 | 파일 | 용도 |
 |---|---|
+| `secevt_collect.py` | **수집부①→②**. 소스 로그(aurora_audit/waf/cloudfront/generic) → 정규화 이벤트(+origin) |
 | `secevt_agent.py` | **에이전트②**. 이벤트 → 마스킹·전단필터 → 게이트웨이 POST(키 없음) |
+| `secevt_run.py` | **스윕 진입점**. 설정대로 수집→전송 1회(스케줄러가 호출) |
 | `secevt_lib.py` | 공용 helper(마스킹·전단필터·이벤트 조립·설정 해석) |
 | `secevt_sample.py` | 데이터 만드는 법(라벨된 공격/정상 샘플 생성기) |
+| `register-secwatch-scheduler.ps1` | Windows 작업스케줄러 등록(리눅스는 cron — 아래 §8) |
+| `secwatch.sources.example.json` | 소스 설정 템플릿(`secwatch.sources.json` 으로 복사) |
 | `monitor.py` | 간이 감시 모니터(결과 테이블 조회로 전환 예정 — ⑦) |
 | `README.md` | 이 문서 |
+
+> **"secwatch 등록"(설치·설정·정기실행)의 표준 절차 정본은 [`docs/60-operations/secwatch-agent.md`](../../docs/60-operations/secwatch-agent.md)** 다. 아래 §6·§8 은 그 요약이다.
 
 ---
 
@@ -117,8 +123,9 @@ python3 secevt_agent.py --lssn <LSSN> --event-file events.json --all
 2. 그 PC 의 `giipAgent.cfg`(또는 `.cnf`)에 `sk=`/`lssn=` 가 있는지 확인. 없으면 `GIIP_SK`/`GIIP_LSSN` 환경변수로 준다. **Jev 키는 필요 없다(게이트웨이가 보유).**
 3. 연결 점검: `python3 secevt_sample.py --no-label | python3 secevt_agent.py --lssn <LSSN> --stdin --dry-run` → payload 가 출력되면 OK.
 4. 합성 전송: `--dry-run` 을 빼고 실행 → 게이트웨이 verdict 반환 + `tKVSSecurityCheck` 적재 확인.
-5. 실데이터 연동: 그 PC 의 실제 소스를 §5 스키마(**`origin` 포함**)로 정규화하는 수집부를 붙여 에이전트에 넘긴다.
+5. 실데이터 연동: `secwatch.sources.example.json` 을 `secwatch.sources.json` 으로 복사해 소스별 `file`/`system`/`since_offset` 와 `lssn` 을 채운다. `secevt_collect.py` 가 aurora_audit/waf/cloudfront 를 파싱하며, 포맷이 다르면 `generic`(정규화된 JSON-lines) 경로를 쓴다.
    - **운영 실데이터 투입 전 반드시**: 사양서 §9 데이터취급 심사(외부 Jev 송신은 게이트웨이가 하지만, 마스킹 규약·송신 범위는 이 정책을 따른다).
+6. **등록(정기 실행)**: Windows 는 `register-secwatch-scheduler.ps1 -Action Register -Config <경로> -IntervalMinutes 5`, 리눅스는 cron 으로 `secevt_run.py --config <경로>` 를 주기 호출. 상세는 [`docs/60-operations/secwatch-agent.md`](../../docs/60-operations/secwatch-agent.md) §6.
 
 ---
 
