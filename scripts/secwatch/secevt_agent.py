@@ -39,8 +39,18 @@ def send_to_gateway(sk, event_payload, dry_run=False):
     data = urllib.parse.urlencode(form).encode("utf-8")
     req = urllib.request.Request(GATEWAY_URL, data=data,
                                  headers={"Content-Type": "application/x-www-form-urlencoded"})
-    with urllib.request.urlopen(req, timeout=40) as resp:
-        body = resp.read().decode("utf-8", "replace")
+    try:
+        with urllib.request.urlopen(req, timeout=40) as resp:
+            body = resp.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        # 4xx/5xx 는 본문에 원인이 담긴다(예: 500 'TYPESAFE_API_KEY app setting not configured').
+        # 묻지 말고 드러낸다 — 설정/배포 문제를 바로 진단하기 위함.
+        detail = ""
+        try:
+            detail = e.read().decode("utf-8", "replace")[:300]
+        except Exception:
+            pass
+        return {"success": False, "error": "gateway HTTP %s: %s" % (e.code, detail)}
     try:
         return json.loads(body)
     except json.JSONDecodeError:

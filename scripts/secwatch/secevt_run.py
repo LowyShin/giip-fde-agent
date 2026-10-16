@@ -91,6 +91,9 @@ def main():
                 if sk: msg = msg.replace(sk, "[REDACTED]")
                 sys.stderr.write("[secevt_run] %s 전송 실패: %s\n" % (src, msg)); continue
             total_sent += 1
+            if v.get("success") is False:
+                sys.stderr.write("[secevt_run] %s 게이트웨이 오류: %s\n" % (src, v.get("error")))
+                continue
             rt = v.get("routedTo")
             if rt in totals:
                 totals[rt] += 1
