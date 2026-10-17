@@ -179,6 +179,7 @@ PAGE = """<!doctype html><html lang="%LANG%"><head><meta charset="utf-8">
  <h1><span id="dot" class="dot"></span><span id="title"></span></h1>
  <span class="meta" id="who"></span>
  <span class="meta" id="upd">—</span>
+ <span class="meta" id="hb" title="secwatch sweep heartbeat (secevt_run)">—</span>
  <a class="help" href="/help" target="_blank" rel="noopener">? Help</a>
  <div class="stats">
    <span class="stat live unk" id="live" title="agent liveness (tLSvr heartbeat)"><span class="lv"></span><span id="live_txt">—</span></span>
@@ -204,6 +205,7 @@ const I18N={
       prev:"\\u2039 Prev",next:"Next \\u203a",page:"Page",
       agents:"Agents",alive:"alive",live_none:"no agents",live_unknown:"agents ?",
       st_down:"DOWN",st_stale:"STALE",ago_min:"min ago",
+      swept:"swept",ago:"ago",checked:"checked",cand:"cand",sweep_none:"no sweep yet",
       cols:["Time","Route","Type","inj","sev","Attack","Engine","Origin → download command"]}
 };
 const T=I18N[LANG]||I18N.en;
@@ -305,7 +307,18 @@ async function tick(){
   renderPage();  // keeps curPage across polls; clamped if the list shrank
  }catch(err){document.getElementById('dot').className='dot err';}
 }
-tick(); beat(); setInterval(tick, POLL*1000); setInterval(beat, POLL*1000);
+// 생존신호(항목 5): secevt_run 이 남긴 로컬 하트비트를 읽어 "마지막 스윕 N분전 · 확인 M · 후보 K"를 표시.
+// 보낼 이벤트가 0건이라 목록이 비어도 "멈춘 건지 이상이 없는 건지"를 구분할 수 있게 한다.
+async function beatRun(){
+ const el=document.getElementById('hb');
+ try{
+  const r=await fetch('/api/heartbeat'); const h=await r.json();
+  if(!h||!h.ts){el.textContent=T.sweep_none;return}
+  const agoMin=Math.max(0,Math.round((Date.now()/1000-h.ts)/60));
+  el.textContent=T.swept+' '+agoMin+' '+T.min+' '+T.ago+' · '+T.checked+' '+(h.parsed!=null?h.parsed:'?')+' · '+T.cand+' '+(h.candidates!=null?h.candidates:'?');
+ }catch(err){el.textContent=T.sweep_none;}
+}
+tick(); beat(); beatRun(); setInterval(tick, POLL*1000); setInterval(beat, POLL*1000); setInterval(beatRun, POLL*1000);
 </script></body></html>"""
 
 HELP = """<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -402,6 +415,7 @@ class Handler(BaseHTTPRequestHandler):
     minutes = 1440
     page_size = 25
     lang = "en"  # UI language (default English). Add languages to I18N in PAGE (select via --lang).
+    heartbeat_path = None  # secevt_run 하트비트 파일(항목 5): "스윕이 돌았다 + 확인건수 + 후보 0" 생존신호.
     def log_message(self, *a): pass  # stay quiet (also avoids sk leakage)
     def _send(self, code, body, ctype="application/json; charset=utf-8"):
         b = body.encode("utf-8") if isinstance(body, str) else body
@@ -434,6 +448,15 @@ class Handler(BaseHTTPRequestHandler):
                 res = {"error": "query failed: %s" % str(getattr(e, "reason", e)).replace(self.sk or "", "[REDACTED]")}
             res["csn"] = self.csn
             self._send(200, json.dumps(res, ensure_ascii=False)); return
+        if self.path.startswith("/api/heartbeat"):
+            hb = {}
+            try:
+                if self.heartbeat_path and os.path.exists(self.heartbeat_path):
+                    with open(self.heartbeat_path, "r", encoding="utf-8") as f:
+                        hb = json.load(f)
+            except (OSError, ValueError):
+                hb = {}
+            self._send(200, json.dumps(hb, ensure_ascii=False)); return
         self._send(404, "{}")
 
 def main():
@@ -443,6 +466,8 @@ def main():
     ap.add_argument("--minutes", type=int, default=1440, help="query time window in minutes (default 1440 = 24h)")
     ap.add_argument("--page-size", type=int, default=25, help="rows per page (default 25)")
     ap.add_argument("--lang", default="en", help="UI language (default en; extend via I18N in PAGE)")
+    ap.add_argument("--heartbeat", default=None,
+                    help="secevt_run 하트비트 파일 경로(기본 env GIIP_SECEVT_HEARTBEAT 또는 ./secwatch.last_run.json). secevt_run 과 같은 경로를 가리켜야 한다")
     ap.add_argument("--self-test", action="store_true", help="run one query and exit (no server)")
     a = ap.parse_args()
     sk, csn = resolve()
@@ -456,6 +481,8 @@ def main():
         sys.exit(0 if "error" not in r else 4)
     Handler.sk, Handler.csn, Handler.poll, Handler.minutes, Handler.page_size, Handler.lang = \
         sk, csn, a.poll, a.minutes, a.page_size, a.lang
+    Handler.heartbeat_path = a.heartbeat or os.environ.get("GIIP_SECEVT_HEARTBEAT") \
+        or os.path.join(os.getcwd(), "secwatch.last_run.json")
     srv = ThreadingHTTPServer(("127.0.0.1", a.port), Handler)
     sys.stderr.write("[monitor] http://127.0.0.1:%d  (csn=%s, last %d min, %d s poll, Ctrl+C to quit)\n"
                      % (a.port, csn, a.minutes, a.poll))
