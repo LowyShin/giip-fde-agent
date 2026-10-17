@@ -88,6 +88,7 @@ def fetch_results(sk, minutes=60):
             "status": r.get("kscStatus"), "lssn": r.get("kscKey"),
             "why": r.get("kscWhy"),  # routing reason (gateway verdict.why) — shown on alert/review rows
             "origin": origin,  # {source,system,location,ref,ts} — client renders + builds download command
+            "origincmd": r.get("kscOriginCmd"),  # giipdb 저장 커맨드(fnKVSSecOriginCmd) — 있으면 클라 재생성보다 우선(giip #3833)
         })
     return {"events": events}
 
@@ -301,7 +302,7 @@ async function tick(){
   document.getElementById('na').textContent=ev.filter(e=>e.route=='alert').length;
   document.getElementById('nr').textContent=ev.filter(e=>e.route=='review').length;
   document.getElementById('nl').textContent=ev.filter(e=>e.route=='log').length;
-  window.__cmds=ev.map(e=>originCmd(e.origin));
+  window.__cmds=ev.map(e=>e.origincmd||originCmd(e.origin));  // giipdb 저장 커맨드 우선, 없으면 클라 재생성(giip #3833)
   renderPage();  // keeps curPage across polls; clamped if the list shrank
  }catch(err){document.getElementById('dot').className='dot err';}
 }
