@@ -159,7 +159,7 @@ $reviewEngineDeadlineMin = 15
 # [giip #1550] 좀비 잡 조기감지: 자식 엔진 프로세스가 이미 다 종료됐는데도 Job.State 가 계속
 # 'Running' 으로 남는 사고가 실측됐다. Job.State 를 신뢰하지 않고 OS 프로세스 레벨에서 "실제 엔진
 # 프로세스가 있는가"만으로 조기 판정한다($WaitBudgetMin=30분보다 넉넉히 크게).
-$ZombieEngineGraceMin = 45
+$ZombieEngineGraceMin = 20
 # [giip #1583/#2409] auto-unblock 연속 실패 경보 임계값.
 $DivergeFailAlertThreshold = 3
 # 성역 레포: 병합 여부 불확실해도 강제로 stash+base복귀 시키는 "강제 언블록" 대상에서 제외할 nested
@@ -1571,7 +1571,7 @@ function Remove-GissueOrphanWorktrees($csn, $workdir) {
                 if ($rlRoots.Count -gt 0) {
                     Write-Log $csn "[ORPHAN-CLEANUP] 레포 루트 직계 스캔 시작 (roots=$($rlRoots.Count)개, DryRun=$($DryRun.IsPresent))"
                     $rlOut = & $script:GissuePsExe -NoProfile -ExecutionPolicy Bypass -File $cleanupScript `
-                        -RootLevelScan -RepoRoots $rlRoots -Csn $csn `
+                        -RootLevelScan -RepoRoots $rlRoots -Csn:$csn `
                         -ProtectRecentMinutes 60 -DryRun:$DryRun 2>&1
                     foreach ($line in @($rlOut)) {
                         if ("$line".Trim()) { Write-Log $csn "[ORPHAN-CLEANUP][ROOT-LEVEL] $line" }
@@ -2344,22 +2344,49 @@ foreach ($csn in $map.PSObject.Properties.Name) {
     if (Test-Path $lock) {
         $age = (Get-Date) - (Get-Item $lock).LastWriteTime
         $lockPid = $null
+        $lockStartTime = $null
         try {
             $lockRaw = (Get-Content $lock -Raw -ErrorAction Stop).Trim()
-            if ($lockRaw -match '^\d+$') { $lockPid = [int]$lockRaw }
+            if ($lockRaw -match '^(\d+)\|(.+)$') {
+                # 새 형식: PID|시작시각(yyyy-MM-ddTHH:mm:ssZ)
+                $lockPid = [int]$Matches[1]
+                try { $lockStartTime = [DateTime]::Parse($Matches[2], [System.Globalization.CultureInfo]::InvariantCulture) } catch {}
+            } elseif ($lockRaw -match '^\d+$') {
+                # 레거시 형식: PID만
+                $lockPid = [int]$lockRaw
+            }
         } catch {}
         $pidDead = $false
         if ($lockPid) {
             $procAlive = $null -ne (Get-Process -Id $lockPid -ErrorAction SilentlyContinue)
             if (-not $procAlive) { $pidDead = $true }
         }
-        if ($age.TotalHours -ge $LockMaxAgeHr -or $pidDead) {
-            $staleReason = if ($pidDead -and $age.TotalHours -ge $LockMaxAgeHr) {
+        # hung 판정: (a) 경과 > soft_budget×2 AND (b) PID 생존 → lock 점유자가 엔진 출력 없이 멈춤
+        $hungThresholdMin = $SoftBudgetMin * 2
+        $isHung = $false
+        if ($lockStartTime -and -not $pidDead) {
+            $lockAgeMin = ((Get-Date) - $lockStartTime).TotalMinutes
+            if ($lockAgeMin -ge $hungThresholdMin) {
+                $isHung = $true
+                Write-Log $csn "[HUNG-WATCHDOG] lock 경과 ${lockAgeMin}분 >= hung 임계값 ${hungThresholdMin}분(soft_budget×2), PID $lockPid 생존 — hung 판정"
+            }
+        }
+        if ($age.TotalHours -ge $LockMaxAgeHr -or $pidDead -or $isHung) {
+            $staleReason = if ($isHung) {
+                "hung watchdog: 경과 ${hungThresholdMin}분(soft_budget×2) 초과, PID $lockPid 생존"
+            } elseif ($pidDead -and $age.TotalHours -ge $LockMaxAgeHr) {
                 "PID $lockPid 죽음 + 시간초과($([int]$age.TotalHours)h)"
             } elseif ($pidDead) {
                 "PID $lockPid 죽음(프로세스 없음, 시간기준 미달이었으나 즉시 정리)"
             } else {
                 "시간초과($([int]$age.TotalHours)h)"
+            }
+            # hung 판정이면 lock holder 프로세스도 정리 (giip #3829)
+            if ($isHung -and $lockPid) {
+                try {
+                    Stop-Process -Id $lockPid -Force -ErrorAction SilentlyContinue
+                    Write-Log $csn "[HUNG-WATCHDOG] PID $lockPid 강제 종료 완료"
+                } catch { Write-Log $csn "[HUNG-WATCHDOG] PID $lockPid 강제 종료 실패: $($_.Exception.Message)" }
             }
             Remove-Item $lock -Force
             Write-Log $csn "stale lock 제거 - $staleReason"
@@ -2414,7 +2441,7 @@ foreach ($csn in $map.PSObject.Properties.Name) {
         continue
     }
 
-    "$PID" | Out-File -FilePath $lock -Encoding ASCII
+    "$PID|$(Get-Date -Format 'yyyy-MM-ddTHH:mm:ssZ')" | Out-File -FilePath $lock -Encoding ASCII
     Write-Log $csn "START (cwd=$workdir)"
     $csnSk = Get-GissueCsnSk $csn
     # [giip #1558] runIdKey — Start-Job 내부와 Complete-Run 양쪽에서 공용(outer scope 에서 생성)
