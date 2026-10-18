@@ -81,7 +81,7 @@ def fetch_results(sk, minutes=60):
         if not isinstance(origin, dict):
             origin = {}
         events.append({
-            "ts": r.get("kscRegdt"),
+            "ts": r.get("kscRegdt"), "kscsn": r.get("kscsn"),
             "route": r.get("kscRoutedTo"), "factor": r.get("kscFactor"),
             "inj": r.get("kscIsInjection"), "sev": r.get("kscSeverity"),
             "attack": r.get("kscAttackType"), "engine": r.get("kscEngine"),
@@ -200,11 +200,11 @@ let allEvents=[], curPage=0;
 const I18N={
   en:{title:"secwatch Threat Monitor (verdicts)",total:"Total",last:"last",min:"min",
       updated:"Updated",loading:"Loading…",empty:"No recent verdicts",
-      copy:"copy cmd",copied:"copied!",nocmd:"no download command for this source",
+      copy:"copy AI prompt",copied:"copied!",nocmd:"no origin to investigate",
       prev:"\\u2039 Prev",next:"Next \\u203a",page:"Page",
       agents:"Agents",alive:"alive",live_none:"no agents",live_unknown:"agents ?",
       st_down:"DOWN",st_stale:"STALE",ago_min:"min ago",
-      cols:["Time","Route","Type","inj","sev","Attack","Engine","Origin → download command"]}
+      cols:["Time","Route","Type","inj","sev","Attack","Engine","Origin → AI prompt"]}
 };
 const T=I18N[LANG]||I18N.en;
 document.getElementById('title').textContent=T.title;
@@ -228,13 +228,43 @@ function originCmd(o){
  }
  return '';                                         // other sources: no command (label only)
 }
+// Build a paste-ready AI investigation instruction (Korean) for one verdict row.
+// The analyst copies this and hands it to an AI agent instead of running a raw shell command.
+// Embeds the verdict facts + origin pointer + (when known) the fetch command; '' when there is no origin.
+function aiPrompt(e){
+ const o=(e&&e.origin)||{};
+ if(!o.location && !o.source && !o.ref) return '';
+ const g=(v,d)=>(v==null||v==='')?(d||'-'):v;
+ const inj=(e.inj!=null)?Number(e.inj).toFixed(2):'-';
+ const cmd=originCmd(o);
+ const fetchLine=cmd?('   '+cmd):('   (아래 location 을 보고 적절한 방법으로 원본을 조회)');
+ const ksclink=e.kscsn?('판정레코드 kscsn='+e.kscsn+' 와 '):'';
+ return '[secwatch 보안 판정 조사 요청]\\n'+
+  'secwatch 의 1차 전단필터+2차 Jev 게이트웨이가 아래 이벤트를 \\''+g(e.route)+'\\' 로 분류했다. 실제 공격인지 원본으로 확인하고 대응하라.\\n'+
+  '\\n판정 요약\\n'+
+  '- 시각(KST): '+g(e.ts)+'\\n'+
+  '- 라우팅: '+g(e.route)+' — '+g(e.why,'(사유 없음)')+'\\n'+
+  '- 유형: '+g(e.factor)+'   공격종별: '+g(e.attack)+'\\n'+
+  '- 인젝션 확률: '+inj+'   중대도: '+g(e.sev)+' (0 노이즈 ~ 4 쓰기/권한)\\n'+
+  '- 판정엔진: '+g(e.engine)+'   lssn: '+g(e.lssn)+'\\n'+
+  '\\n원본 위치 (마스킹 전 증거는 소스에만 있음 — kscOriginRef)\\n'+
+  '- source / system: '+g(o.source)+' / '+g(o.system)+'\\n'+
+  '- location: '+g(o.location)+'\\n'+
+  '- ref / ts: '+g(o.ref)+' / '+g(o.ts)+'\\n'+
+  '\\n할 일\\n'+
+  '1. 원본 로그 레코드를 가져온다:\\n'+fetchLine+'\\n'+
+  '2. 원본에서 공격 성립 여부를 확인한다 — 인증정보(pass·admin·mysql.user 등) 대상 여부, 실제 데이터 추출(응답크기·retcode) 여부, 쓰기/파일/권한 시도 여부.\\n'+
+  '3. 판정한다 — 공격이면 중대도와 피해범위를, 데이터추출/쓰기 정황이 있으면 대상 테이블 피해까지 확인한다.\\n'+
+  '4. 대응한다 — SPEC_JEV_SQLI_DETECTION.md \\u00a77 에 따라 통지하고, 사람 리뷰가 필요하면 '+ksclink+'연결된 giip 이슈를 만든다. 오탐이면 근거와 함께 benign 으로 기록한다.\\n'+
+  '\\n참고: 정본 giipdb/docs/30_Specs/SPEC_JEV_SQLI_DETECTION.md \\u00b7 운영 giip-fde-agent/docs/60-operations/secwatch-ai-onboarding.md \\u00b7 이슈 giip 3833.';
+}
 function fallback(text,done){const ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');done();}catch(e){}document.body.removeChild(ta);}
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1400);}
 function cp(i,btn){
- const cmd=(window.__cmds||[])[i]; if(!cmd) return;
+ const prompt=(window.__prompts||[])[i]; if(!prompt) return;
  const orig=btn.textContent, done=()=>{btn.textContent='\\u2713 '+T.copied;btn.classList.add('done');toast(T.copied);setTimeout(()=>{btn.textContent=orig;btn.classList.remove('done');},1500);};
- if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(cmd).then(done,()=>fallback(cmd,done));}
- else fallback(cmd,done);
+ if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(prompt).then(done,()=>fallback(prompt,done));}
+ else fallback(prompt,done);
 }
 function pageCount(){return Math.max(1, Math.ceil(allEvents.length/PAGE_SIZE));}
 function renderPager(){
@@ -255,12 +285,12 @@ function renderPage(){
  const start=curPage*PAGE_SIZE, slice=allEvents.slice(start, start+PAGE_SIZE);
  const fshort=f=>(f||'').replace(/^secevt_/,'');
  rowsEl.innerHTML=slice.map((e,j)=>{
-  const i=start+j;  // global index — matches window.__cmds (built from full list)
+  const i=start+j;  // global index — matches window.__prompts (built from full list)
   const inj=(e.inj!=null)?Number(e.inj).toFixed(2):'-';
-  const o=e.origin||{}, label=esc((o.source||'')+' '+(o.ref||o.location||'')), cmd=window.__cmds[i];
+  const o=e.origin||{}, label=esc((o.source||'')+' '+(o.ref||o.location||'')), prompt=window.__prompts[i];
   const whyHtml=((e.route=='alert'||e.route=='review')&&e.why)?'<div class=why>'+esc(e.why)+'</div>':'';
-  const oc=cmd
-    ? '<span class=osrc>'+label+'</span><button class=cp onclick="cp('+i+',this)">\\u29c9 '+T.copy+'</button><div class=cmd title="'+esc(cmd)+'">'+esc(cmd)+'</div>'
+  const oc=prompt
+    ? '<span class=osrc>'+label+'</span><button class=cp onclick="cp('+i+',this)">\\u29c9 '+T.copy+'</button><div class=cmd title="'+esc(prompt)+'">'+esc(prompt)+'</div>'
     : '<span class=osrc>'+label+'</span><button class="cp nocmd" title="'+esc(T.nocmd)+'">\\u2014</button>';
   return '<tr class="'+(e.route||'')+'"><td>'+esc(e.ts||'')+'</td><td class=rt>'+esc(e.route||'')+whyHtml+
    '</td><td class=factor><span>'+esc(fshort(e.factor))+'</span></td><td class=sc>'+inj+
@@ -301,7 +331,7 @@ async function tick(){
   document.getElementById('na').textContent=ev.filter(e=>e.route=='alert').length;
   document.getElementById('nr').textContent=ev.filter(e=>e.route=='review').length;
   document.getElementById('nl').textContent=ev.filter(e=>e.route=='log').length;
-  window.__cmds=ev.map(e=>originCmd(e.origin));
+  window.__prompts=ev.map(e=>aiPrompt(e));
   renderPage();  // keeps curPage across polls; clamped if the list shrank
  }catch(err){document.getElementById('dot').className='dot err';}
 }
@@ -386,14 +416,15 @@ HELP = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <tr><td><code>jev-1.13</code></td><td>2nd-pass Jev (TypeSafe System One) judged this event.</td></tr>
 <tr><td><code>rule</code></td><td>Jev was skipped or unavailable; verdict is from the deterministic prefilter only (conservative).</td></tr></table>
 
-<h2>Origin &rarr; download command</h2>
-<p>Where the raw (unmasked) record lives at the source. Because events are masked at the agent, the original evidence exists only at the source &mdash; this is the pointer back to it.</p>
-<p>Click <code>&#x29c9; copy cmd</code> and paste it into your own terminal (cmd) to download that record to a file:</p>
-<table><tr><th>Source</th><th>Generated command</th></tr>
-<tr><td>S3 (WAF / CloudFront)</td><td><code>aws s3 cp "s3://&hellip;" "./&hellip;"</code></td></tr>
-<tr><td>Aurora audit (CloudWatch)</td><td><code>aws logs get-log-events --log-group-name &hellip; --log-stream-name &hellip; &gt; audit_&hellip;.txt</code></td></tr>
-<tr><td>other</td><td>no command generated &mdash; the origin label is shown as-is</td></tr></table>
-<p style="color:var(--mut);font-size:12px">Requires the AWS CLI configured with access to the relevant account. Adjust the command to your environment if needed.</p>
+<h2>Origin &rarr; AI prompt</h2>
+<p>Where the raw (unmasked) record lives at the source. Because events are masked at the agent, the original evidence exists only at the source &mdash; this column is the pointer back to it.</p>
+<p>Click <code>&#x29c9; copy AI prompt</code> to copy a ready-to-paste instruction (Korean) for an AI agent. Instead of running a shell command yourself, paste it into your AI assistant and let it drive the investigation. The prompt is self-contained &mdash; it embeds this row's verdict facts, the origin pointer, the fetch command (when one can be built), and the next-action steps per the spec:</p>
+<table><tr><th>Part</th><th>Content</th></tr>
+<tr><td>Verdict facts</td><td>time, route + reason, type, attack type, injection probability, severity, engine, lssn</td></tr>
+<tr><td>Origin pointer</td><td><code>kscOriginRef</code>: source / system / location / ref &mdash; where to fetch the raw record</td></tr>
+<tr><td>Fetch command</td><td>S3 (<code>aws s3 cp</code>) or Aurora/CloudWatch (<code>aws logs get-log-events</code>) when derivable; otherwise the AI uses the location</td></tr>
+<tr><td>Next actions</td><td>confirm the attack, assess data-extraction / write, then notify &amp; open a linked giip issue per <code>SPEC_JEV_SQLI_DETECTION.md &sect;7</code></td></tr></table>
+<p style="color:var(--mut);font-size:12px">Fetching the raw record may require the AWS CLI configured for the relevant account. The AI prompt tells the agent to adapt the command to the environment if needed.</p>
 </div></body></html>"""
 
 class Handler(BaseHTTPRequestHandler):
