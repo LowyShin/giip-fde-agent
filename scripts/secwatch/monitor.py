@@ -334,6 +334,7 @@ async function tick(){
   document.getElementById('na').textContent=ev.filter(e=>e.route=='alert').length;
   document.getElementById('nr').textContent=ev.filter(e=>e.route=='review').length;
   document.getElementById('nl').textContent=ev.filter(e=>e.route=='log').length;
+  window.__cmds=ev.map(e=>e.origincmd||originCmd(e.origin));  // giipdb 저장 커맨드 우선, 없으면 클라 재생성(giip #3833)
   window.__prompts=ev.map(e=>aiPrompt(e));
   renderPage();  // keeps curPage across polls; clamped if the list shrank
  }catch(err){document.getElementById('dot').className='dot err';}
