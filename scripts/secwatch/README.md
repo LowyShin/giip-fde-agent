@@ -143,4 +143,5 @@ python3 secevt_agent.py --lssn <LSSN> --event-file events.json --all
 
 - 마스킹은 따옴표 문자열·숫자 리터럴을 `?` 로 치환한다(shape 보존). 16진 blob(`0x..`) 등 일부 상수는 남을 수 있어, 민감 상수를 쓰는 소스라면 수집부에서 추가 정규화한다.
 - 전단필터는 **재현율 우선**(의심되면 candidate=true). 정상 과탐(예: `biwa` 의 정상 `information_schema` 조회)은 게이트웨이의 2차 Jev + `baseline` 이 교정한다.
+- **전단필터 판정기준(규칙 목록·대상 필드·점수식·비후보·방침) 정본**: [`docs/60-operations/secwatch-agent.md` §10](../../docs/60-operations/secwatch-agent.md#10-1차-전단필터-판정기준-정본). 규칙을 바꾸면 그 §10 표도 함께 고친다.
 - 에이전트는 전송만 한다. 통지/차단은 게이트웨이·대시보드 쪽(사양서 §7)이 담당.

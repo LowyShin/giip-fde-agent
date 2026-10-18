@@ -1,5 +1,8 @@
 {
   "_comment": "secwatch 소스 설정 템플릿. 이 파일을 secwatch.sources.json 으로 복사해 환경에 맞게 고친다. secevt_run.py 가 읽는다(docs/60-operations/secwatch-agent.md).",
+  "_comment_novel": "send_novel: 초출(평상시 없던) 형태도 Jev 판정을 받게 함(기본 false, 항목 7). known_shapes_file: 학습된 정상형태 저장소 경로(기본 ./secwatch.known_shapes.json). 자세히는 docs §11.",
+  "send_novel": false,
+  "known_shapes_file": "/var/lib/giip/secwatch/known_shapes.json",
   "lssn": 72784,
   "sources": [
     {

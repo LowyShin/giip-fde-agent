@@ -21,7 +21,7 @@ secevt_run.py — secwatch 1회 스윕 진입점(스케줄러가 부른다). 리
                    "system":"prd-cmsdb", "since_offset":"/var/lib/giip/secwatch/aurora.offset" } ] }
   lssn 생략 시 env GIIP_LSSN / giipAgent.cfg 의 lssn 사용. sk 는 secevt_agent 와 동일 규칙(키 없음).
 """
-import sys, os, json, argparse
+import sys, os, json, time, argparse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import secevt_lib as L
@@ -44,6 +44,7 @@ def main():
     ap.add_argument("--config", help="secwatch.sources.json 경로(미지정 시 자동탐색)")
     ap.add_argument("--dry-run", action="store_true", help="전송 없이 소스별 파싱·후보 수만 보고")
     a = ap.parse_args()
+    L.reconfigure_utf8()
 
     cfg_path = find_config(a.config)
     if not cfg_path:
@@ -63,6 +64,13 @@ def main():
     if not sources:
         sys.stderr.write("[secevt_run] config.sources 비어있음.\n"); sys.exit(2)
 
+    # 초출(novel) 형태(항목 7, giip #3833). config.send_novel 또는 env GIIP_SECEVT_SEND_NOVEL 로 켠다(기본 OFF).
+    send_novel = L.resolve_send_novel(bool(cfg.get("send_novel"))) and not a.dry_run
+    known_path = L.resolve_known_shapes_path(cfg.get("known_shapes_file")) if send_novel else None
+    known = L.load_known_shapes(known_path) if send_novel else {}
+    now = int(time.time())
+    learned = 0
+
     total_parsed = total_sent = total_skipped = 0
     totals = {"alert": 0, "review": 0, "log": 0}
     for s in sources:
@@ -75,7 +83,8 @@ def main():
             sys.stderr.write("[secevt_run] %s 읽기 실패: %s\n" % (fpath, e)); continue
         total_parsed += len(events)
         for ev in events:
-            kv = L.build_kvalue(ev)
+            novel_ctx = {"send_novel": send_novel, "known": known, "now": now} if send_novel else None
+            kv = L.build_kvalue(ev, novel_ctx)
             if not kv["prefilter"]["candidate"]:
                 total_skipped += 1
                 continue
@@ -97,9 +106,34 @@ def main():
             rt = v.get("routedTo")
             if rt in totals:
                 totals[rt] += 1
-    sys.stderr.write("[secevt_run] 스윕 완료(config=%s): 파싱 %d · 전송 %d · 건너뜀(비후보) %d%s\n"
+            # 초출 형태가 Jev 에서 정상(log)으로 판정되면 학습(만료 전까지 다음 회차부터 조용히 통과).
+            if send_novel and L.maybe_learn_shape(known_path, kv, v, now=now):
+                learned += 1
+                sid = kv.get("shape_id")
+                if sid:
+                    known[sid] = {"first": now, "exp": now + 30 * 86400}
+    novel_note = (" · novel학습 %d" % learned) if send_novel else ""
+    sys.stderr.write("[secevt_run] 스윕 완료(config=%s): 파싱 %d · 전송 %d · 건너뜀(비후보) %d%s%s\n"
                      % (os.path.basename(cfg_path), total_parsed, total_sent, total_skipped,
-                        "" if a.dry_run else " · 🔴%d 🟠%d ⚪%d" % (totals["alert"], totals["review"], totals["log"])))
+                        "" if a.dry_run else " · 🔴%d 🟠%d ⚪%d" % (totals["alert"], totals["review"], totals["log"]),
+                        novel_note))
+
+    # 생존신호(항목 5, giip #3833): 보낼 이벤트가 없는 회차도 "돌았다 + 확인건수 + 후보 0"을 남겨,
+    # 대시보드가 "멈춘 건지 이상이 없는 건지"를 구분할 수 있게 한다. 새 이벤트 타입을 만들지 않고(의뢰자
+    # "독자 명칭 금지" 준수) 로컬 상태 파일에 쓴다 — monitor.py 가 /api/heartbeat 로 읽어 표시한다.
+    if not a.dry_run:
+        try:
+            hb_path = cfg.get("heartbeat_file") or os.environ.get("GIIP_SECEVT_HEARTBEAT") \
+                or os.path.join(os.path.dirname(os.path.abspath(cfg_path)), "secwatch.last_run.json")
+            hb = {"v": 1, "ts": int(time.time()), "lssn": str(lssn),
+                  "parsed": total_parsed, "candidates": total_sent, "skipped": total_skipped,
+                  "routed": totals, "novel_learned": learned if send_novel else None}
+            tmp = hb_path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(hb, f, ensure_ascii=False)
+            os.replace(tmp, hb_path)
+        except OSError as e:
+            sys.stderr.write("[secevt_run] heartbeat 기록 실패(무시): %s\n" % e)
 
 if __name__ == "__main__":
     main()
