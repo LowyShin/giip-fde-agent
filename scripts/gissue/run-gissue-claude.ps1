@@ -173,6 +173,24 @@ $ForcedUnblockExcludeRepoNames = @()
 # reaper: 부모가 죽은(고아) headless 엔진 claude 가 이 나이(분) 이상이면 종료.
 # 부모가 살아있는 claude 는 나이와 무관하게 절대 종료하지 않는다 — 실행 중인 세션을 죽이던 사고 방지.
 $ReaperOrphanMin = 30
+
+# [giip #2673] reaper 가 회수할 node 고아의 지문(fingerprint).
+#   Phase 0 reaper 는 원래 `claude.exe` 에서만 열거했다. claude 가 먼저 죽고 node 손자만
+#   남으면 열거 출발점이 사라져 후보에 아예 들어오지 않는다(실측: PID 10720/10036 이 부모
+#   7892/5680 소멸 후 다음 실행에서도 회수되지 않았다).
+#   그래서 claude 출발점에 더해, 아래 지문에 걸리는 node 를 후보로 넣는다.
+#   지문은 **claude CLI 엔진으로 뜬 node 만** 집도록 좁게 잡는다 — pm2/slack-bot 의 node 를
+#   건드리면 안 되기 때문이다(원래 안전장치 (3)의 취지를 유지한다).
+$ReaperOrphanNodeFingerprint = '(?i)(?:[\\/]claude[\\/](?:cli\.js|index\.js)|@anthropic-ai[\\/]claude|[\\/]\.claude[\\/])'
+# 지문에 걸려도 아래 제외 지문에 걸리면 후보에서 뺀다(pm2 데몬·slack-bot 등).
+# 주의: 여기에 `npm` 같은 넓은 조각을 넣으면 안 된다 — 전역 npm 에 설치된 정상 claude CLI
+#   (…\npm\node_modules\@anthropic-ai\claude-code\cli.js)까지 제외돼 회수 대상이 사라진다.
+#   실제로 그렇게 넣었다가 테스트에서 걸렸다. pm2/slack-bot 식별자만 좁게 둔다.
+$ReaperOrphanNodeExclude = '(?i)(?:pm2|ProcessContainer|slack-bot|slack_bot)'
+# [giip #2673 요구사항 4] node 고아 경로는 **드라이런이 기본**이다. 사람이 로그의
+#   `[DRYRUN] node 고아` 줄을 한 번 이상 읽고 대상이 맞는지 확인한 뒤 $true 로 바꾼다.
+#   (KNOW-061: 드라이런은 출력을 사람이 실제로 읽었을 때만 게이트다.)
+$ReaperNodeOrphanLiveKill = $false
 # 대화형 세션 판별용 조상 프로세스(이 조상을 타면 사람이 직접 쓰는 창 → 절대 종료 금지).
 $InteractiveAncestors = @('WindowsTerminal.exe','explorer.exe','Code.exe','devenv.exe')
 
@@ -2211,6 +2229,50 @@ if (-not $DryRun) {
             foreach ($tid in $tree) { Stop-Process -Id $tid -Force -ErrorAction SilentlyContinue }
             Write-Log 'reaper' "[WARN] KILLED 고아(부모 죽음) claude PID $($cp.Id) + 자식 $($tree.Count - 1)개 (age ${ageMin}m, 기준 ${ReaperOrphanMin}m)"
         } catch { Write-Log 'reaper' "reaper 오류(PID $($cp.Id)): $($_.Exception.Message)" }
+    }
+
+    # [giip #2673] claude.exe 출발점으로는 잡히지 않는 node 고아를 추가로 열거한다.
+    #   판정은 위 claude 경로와 동일한 것을 재사용한다 — 대화형 조상 제외 / 헤드리스 /
+    #   부모 소멸 / $ReaperOrphanMin 나이. 다른 점은 출발점이 node 이고, 그래서
+    #   "claude CLI 엔진으로 뜬 node 인가"를 지문으로 한 번 더 확인한다는 것뿐이다.
+    #   이미지명 기준 일괄 종료는 쓰지 않는다 — PID 를 지정한 Stop-Process -Id 로만 종료한다.
+    #   (완료조건 검사가 금지 패턴을 문자열로 찾으므로 주석에도 그 문자열을 적지 않는다.)
+    foreach ($np in @(Get-Process node -ErrorAction SilentlyContinue)) {
+        try {
+            if (-not $np.StartTime) { continue }
+            $ageMin = [int]((Get-Date) - $np.StartTime).TotalMinutes
+            if ($ageMin -lt $ReaperOrphanMin) { continue }
+
+            $ni = Get-GissueProcInfo $np.Id
+            $cmd = "$($ni.CommandLine)"
+            if (-not $cmd) {
+                # 커맨드라인을 못 읽으면 지문 판정이 불가능하다 — fail-safe 로 건너뛴다.
+                continue
+            }
+            if ($cmd -notmatch $ReaperOrphanNodeFingerprint) { continue }
+            if ($cmd -match $ReaperOrphanNodeExclude) {
+                Write-Log 'reaper' "SKIP node PID $($np.Id) — 제외 지문 일치(pm2/slack-bot 계열), age ${ageMin}m"
+                continue
+            }
+
+            $anc = Get-GissueAncestorNames $np.Id
+            if (@($anc | Where-Object { $InteractiveAncestors -contains $_ }).Count -gt 0) {
+                Write-Log 'reaper' "SKIP node PID $($np.Id) — 대화형 세션(조상: $(($anc | Select-Object -First 4) -join '>')), age ${ageMin}m"
+                continue
+            }
+
+            $parentAlive = $false
+            if ($ni.ParentProcessId) { $parentAlive = [bool](Get-GissueProcInfo $ni.ParentProcessId) }
+            if ($parentAlive) { continue }   # 부모가 살아 있으면 고아가 아니다
+
+            $tree = @($np.Id) + (Get-GissueDescendantIds $np.Id) | Select-Object -Unique
+            if (-not $ReaperNodeOrphanLiveKill) {
+                Write-Log 'reaper' "[DRYRUN] node 고아 PID $($np.Id) + 자식 $($tree.Count - 1)개 (age ${ageMin}m, 기준 ${ReaperOrphanMin}m) — 실제 종료 안 함. cmd: $($cmd.Substring(0, [Math]::Min(160, $cmd.Length)))"
+                continue
+            }
+            foreach ($tid in $tree) { Stop-Process -Id $tid -Force -ErrorAction SilentlyContinue }
+            Write-Log 'reaper' "[WARN] KILLED node 고아(부모 죽음) PID $($np.Id) + 자식 $($tree.Count - 1)개 (age ${ageMin}m, 기준 ${ReaperOrphanMin}m)"
+        } catch { Write-Log 'reaper' "reaper 오류(node PID $($np.Id)): $($_.Exception.Message)" }
     }
 }
 
