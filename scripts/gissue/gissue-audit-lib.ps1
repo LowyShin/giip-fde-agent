@@ -609,3 +609,51 @@ $commentsText
 "@
     return (Invoke-GissueJudge $prompt)
 }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Test-GissueRecentComment — "이 이슈에 최근 코멘트가 달렸는가" 판정 (giip #3802)
+#
+# 왜 lib 으로 올렸나: review-done-audit.ps1 이 이 판정을 위해 이슈마다
+# Get-IssueComments 를 호출해 giipIssueComments 호출이 폭증했다(csn 47 DONE 만 1,202회).
+# 목록 응답(pApiGiipIssueListbyAK)에 last_comment_date 가 이미 들어오므로 호출 없이 판정된다.
+# 직전 수정 시도가 "값이 창 밖이면 코멘트 조회로 폴백" 으로 분기를 잘못 잡아 개선이
+# 1.5% 에 그쳤다(기본 창 2시간이라 대부분이 창 밖이다). 그 실수를 테스트로 고정하기 위해
+# 순수 함수로 분리했다.
+#
+# 규칙:
+#   - last_comment_date(또는 lastCommentDate) 에 값이 있으면 **그 값만으로 판정한다**.
+#     창 안이면 최근, 창 밖이면 최근 아님 — 어느 쪽이든 코멘트를 조회하지 않는다.
+#   - 값이 없으면(= 코멘트가 아예 없는 이슈, 실측 1,202건 중 23건) 그때만 FetchComments 로
+#     폴백한다. 응답 스키마가 바뀌어도 감사가 조용히 비지 않게 하는 안전망이다.
+#
+# 매개변수:
+#   Issue         — 목록 응답의 이슈 객체
+#   SinceRecent   — [datetime] 이 시각 이후면 "최근"
+#   FetchComments — [scriptblock] 폴백 시에만 호출. 코멘트 배열(각 항목에 regdate)을 돌려준다.
+#   ParseUtc      — [scriptblock] 문자열 -> [datetime]. 호출부의 Parse-Utc 를 그대로 넘긴다.
+#
+# 반환: @{ HasRecent = [bool]; UsedFallback = [bool] }
+function Test-GissueRecentComment {
+    param(
+        $Issue,
+        [datetime]$SinceRecent,
+        [scriptblock]$FetchComments,
+        [scriptblock]$ParseUtc
+    )
+
+    $lcdRaw = $null
+    if ($Issue -and $Issue.PSObject.Properties['last_comment_date']) { $lcdRaw = $Issue.last_comment_date }
+    if (-not $lcdRaw -and $Issue -and $Issue.PSObject.Properties['lastCommentDate']) { $lcdRaw = $Issue.lastCommentDate }
+
+    if ($lcdRaw) {
+        $lcd = & $ParseUtc $lcdRaw
+        return @{ HasRecent = ($null -ne $lcd -and $lcd -ge $SinceRecent); UsedFallback = $false }
+    }
+
+    $hasRecent = $false
+    foreach ($c in (& $FetchComments)) {
+        $rd = & $ParseUtc $c.regdate
+        if ($rd -and $rd -ge $SinceRecent) { $hasRecent = $true; break }
+    }
+    return @{ HasRecent = $hasRecent; UsedFallback = $true }
+}
