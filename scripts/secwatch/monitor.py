@@ -47,10 +47,27 @@ def _cfg(key):
             d = parent
     return None
 
+# AI 프롬프트를 어느 언어로 만들지 — 조직(csn)의 cLang 을 따른다(giip #3833).
+# tCorp.cLang 은 'ko-kr' / 'en-US' / 'ja' / 'ko' / 'en' 처럼 지역 접미사가 섞여 있어 정규화한다.
+# 중국어는 간체/번체가 달라 지역을 유지한다(zh-CN / zh-TW).
+PROMPT_LANGS = ("en", "ko", "ja", "zh-CN", "zh-TW")
+
+def normalize_prompt_lang(v):
+    """cLang 값 → 프롬프트 언어키. 알 수 없거나 비어 있으면 'en'(설정 없으면 영어)."""
+    s = str(v or "").strip().lower().replace("_", "-")
+    if not s:
+        return "en"
+    if s.startswith("zh"):
+        return "zh-TW" if ("tw" in s or "hant" in s or "hk" in s) else "zh-CN"
+    base = s.split("-")[0]
+    return base if base in ("ko", "ja", "en") else "en"
+
 def resolve():
     sk = os.environ.get("GIIP_SK") or _cfg("sk")
     csn = os.environ.get("GIIP_CSN") or _cfg("csn")  # display only (sk identifies)
-    return sk, csn
+    # cLang: env → 설정파일(cLang/clang). 없으면 normalize_prompt_lang 이 'en' 으로 떨어진다.
+    clang = os.environ.get("GIIP_CLANG") or _cfg("cLang") or _cfg("clang")
+    return sk, csn, clang
 
 def fetch_results(sk, minutes=60):
     """giipApiSk4 KVSSecurityCheckWindow — read result rows for that sk (=csn) scope within a time window."""
@@ -196,7 +213,7 @@ PAGE = """<!doctype html><html lang="%LANG%"><head><meta charset="utf-8">
 <div id="pager"></div>
 <div id="toast"></div>
 <script>
-const POLL=%POLL%, MIN=%MIN%, PAGE_SIZE=%PAGESIZE%, LANG="%LANG%";
+const POLL=%POLL%, MIN=%MIN%, PAGE_SIZE=%PAGESIZE%, LANG="%LANG%", PLANG="%PLANG%";
 let allEvents=[], curPage=0;
 // i18n: add languages here; UI picks I18N[LANG] (falls back to en). (multilingual: later)
 const I18N={
@@ -231,35 +248,99 @@ function originCmd(o){
  }
  return '';                                         // other sources: no command (label only)
 }
-// Build a paste-ready AI investigation instruction (Korean) for one verdict row.
+// Build a paste-ready AI investigation instruction for one verdict row.
+// Language follows the organization's cLang (PLANG, resolved server-side; 'en' when unset) — giip #3833.
 // The analyst copies this and hands it to an AI agent instead of running a raw shell command.
 // Embeds the verdict facts + origin pointer + (when known) the fetch command; '' when there is no origin.
+const PROMPT_I18N={
+ en:{title:"[secwatch verdict investigation request]",
+  lead:(r,w)=>"secwatch's deterministic prefilter and 2nd-pass Jev gateway classified the event below as '"+r+"'. Confirm against the original record whether it is a real attack, then respond.",
+  sum:"Verdict summary",ts:"Time",route:"Routing",noreason:"(no reason given)",
+  kind:"Type",attack:"Attack type",inj:"Injection likelihood",sev:"Severity",sevNote:"(0 noise ~ 4 write/privilege)",
+  engine:"Engine",origin:"Origin (unmasked evidence lives only at the source — kscOriginRef)",
+  srcsys:"source / system",loc:"location",refts:"ref / ts",todo:"What to do",
+  t1:"Fetch the original log record:",t1alt:"   (look at the location below and fetch it in the appropriate way)",
+  t2:"In the original, confirm whether the attack succeeded — was it targeting credentials (pass, admin, mysql.user), was data actually extracted (response size, retcode), was there a write/file/privilege attempt.",
+  t3:"Decide — if it is an attack, assess severity and blast radius; if there are signs of extraction or writes, check the damage to the target tables.",
+  t4a:"Respond — notify per SPEC_JEV_SQLI_DETECTION.md §7, and if human review is needed open a giip issue linked to ",
+  t4b:"this verdict record (kscsn=",t4c:") and ",t4d:"the issue. If it is a false positive, record it as benign with your evidence.",
+  ref:"Reference: spec giipdb/docs/30_Specs/SPEC_JEV_SQLI_DETECTION.md · ops giip-fde-agent/docs/60-operations/secwatch-ai-onboarding.md · issue giip 3833."},
+ ko:{title:"[secwatch 보안 판정 조사 요청]",
+  lead:(r,w)=>"secwatch 의 1차 전단필터+2차 Jev 게이트웨이가 아래 이벤트를 '"+r+"' 로 분류했다. 실제 공격인지 원본으로 확인하고 대응하라.",
+  sum:"판정 요약",ts:"시각",route:"라우팅",noreason:"(사유 없음)",
+  kind:"유형",attack:"공격종별",inj:"공격일 확률",sev:"중대도",sevNote:"(0 노이즈 ~ 4 쓰기/권한)",
+  engine:"판정엔진",origin:"원본 위치 (마스킹 전 증거는 소스에만 있음 — kscOriginRef)",
+  srcsys:"source / system",loc:"location",refts:"ref / ts",todo:"할 일",
+  t1:"원본 로그 레코드를 가져온다:",t1alt:"   (아래 location 을 보고 적절한 방법으로 원본을 조회)",
+  t2:"원본에서 공격 성립 여부를 확인한다 — 인증정보(pass·admin·mysql.user 등) 대상 여부, 실제 데이터 추출(응답크기·retcode) 여부, 쓰기/파일/권한 시도 여부.",
+  t3:"판정한다 — 공격이면 중대도와 피해범위를, 데이터추출/쓰기 정황이 있으면 대상 테이블 피해까지 확인한다.",
+  t4a:"대응한다 — SPEC_JEV_SQLI_DETECTION.md §7 에 따라 통지하고, 사람 리뷰가 필요하면 ",
+  t4b:"판정레코드 kscsn=",t4c:" 와 ",t4d:"연결된 giip 이슈를 만든다. 오탐이면 근거와 함께 benign 으로 기록한다.",
+  ref:"참고: 정본 giipdb/docs/30_Specs/SPEC_JEV_SQLI_DETECTION.md · 운영 giip-fde-agent/docs/60-operations/secwatch-ai-onboarding.md · 이슈 giip 3833."},
+ ja:{title:"[secwatch セキュリティ判定 調査依頼]",
+  lead:(r,w)=>"secwatch の一次前段フィルタと二次 Jev ゲートウェイが以下のイベントを「"+r+"」と分類した。実際の攻撃かを元レコードで確認し対応せよ。",
+  sum:"判定サマリ",ts:"時刻",route:"ルーティング",noreason:"(理由なし)",
+  kind:"種別",attack:"攻撃種別",inj:"攻撃である確率",sev:"深刻度",sevNote:"(0 ノイズ 〜 4 書き込み/権限)",
+  engine:"判定エンジン",origin:"原本の場所 (マスキング前の証拠はソースのみ — kscOriginRef)",
+  srcsys:"source / system",loc:"location",refts:"ref / ts",todo:"やること",
+  t1:"元のログレコードを取得する:",t1alt:"   (下の location を見て適切な方法で原本を取得)",
+  t2:"原本で攻撃の成立を確認する — 認証情報(pass・admin・mysql.user 等)が対象か、実際にデータが抽出されたか(応答サイズ・retcode)、書き込み/ファイル/権限の試行があったか。",
+  t3:"判定する — 攻撃なら深刻度と影響範囲を、抽出や書き込みの兆候があれば対象テーブルの被害まで確認する。",
+  t4a:"対応する — SPEC_JEV_SQLI_DETECTION.md §7 に従って通知し、人のレビューが必要なら ",
+  t4b:"判定レコード kscsn=",t4c:" と ",t4d:"紐づけた giip イシューを作成する。誤検知なら根拠とともに benign として記録する。",
+  ref:"参照: 正典 giipdb/docs/30_Specs/SPEC_JEV_SQLI_DETECTION.md · 運用 giip-fde-agent/docs/60-operations/secwatch-ai-onboarding.md · イシュー giip 3833."},
+ "zh-CN":{title:"[secwatch 安全判定 调查请求]",
+  lead:(r,w)=>"secwatch 的一次前置过滤与二次 Jev 网关将下列事件判定为“"+r+"”。请对照原始记录确认是否为真实攻击并处置。",
+  sum:"判定摘要",ts:"时间",route:"路由",noreason:"(无原因)",
+  kind:"类型",attack:"攻击类型",inj:"为攻击的概率",sev:"严重度",sevNote:"(0 噪声 ~ 4 写入/权限)",
+  engine:"判定引擎",origin:"原始位置 (脱敏前的证据仅存在于源端 — kscOriginRef)",
+  srcsys:"source / system",loc:"location",refts:"ref / ts",todo:"待办",
+  t1:"取回原始日志记录:",t1alt:"   (查看下面的 location 并以适当方式取回原始记录)",
+  t2:"在原始记录中确认攻击是否成立 — 目标是否为凭据(pass/admin/mysql.user 等)、是否确实提取了数据(响应大小、retcode)、是否有写入/文件/权限尝试。",
+  t3:"作出判定 — 若为攻击，评估严重度与影响范围；若有提取或写入迹象，进一步确认目标表的受损情况。",
+  t4a:"进行处置 — 按 SPEC_JEV_SQLI_DETECTION.md §7 通知，若需人工复核则创建与 ",
+  t4b:"判定记录 kscsn=",t4c:" 和 ",t4d:"相关联的 giip 问题。若为误报，附依据记录为 benign。",
+  ref:"参考: 规范 giipdb/docs/30_Specs/SPEC_JEV_SQLI_DETECTION.md · 运维 giip-fde-agent/docs/60-operations/secwatch-ai-onboarding.md · 问题 giip 3833."},
+ "zh-TW":{title:"[secwatch 安全判定 調查請求]",
+  lead:(r,w)=>"secwatch 的一次前置過濾與二次 Jev 閘道將下列事件判定為「"+r+"」。請對照原始紀錄確認是否為真實攻擊並處置。",
+  sum:"判定摘要",ts:"時間",route:"路由",noreason:"(無原因)",
+  kind:"類型",attack:"攻擊類型",inj:"為攻擊的機率",sev:"嚴重度",sevNote:"(0 雜訊 ~ 4 寫入/權限)",
+  engine:"判定引擎",origin:"原始位置 (去識別化前的證據僅存在於來源端 — kscOriginRef)",
+  srcsys:"source / system",loc:"location",refts:"ref / ts",todo:"待辦",
+  t1:"取回原始日誌紀錄:",t1alt:"   (查看下方 location 並以適當方式取回原始紀錄)",
+  t2:"在原始紀錄中確認攻擊是否成立 — 目標是否為憑證(pass/admin/mysql.user 等)、是否確實取出了資料(回應大小、retcode)、是否有寫入/檔案/權限嘗試。",
+  t3:"作出判定 — 若為攻擊，評估嚴重度與影響範圍；若有取出或寫入跡象，進一步確認目標表的受損情況。",
+  t4a:"進行處置 — 依 SPEC_JEV_SQLI_DETECTION.md §7 通知，若需人工複核則建立與 ",
+  t4b:"判定紀錄 kscsn=",t4c:" 與 ",t4d:"相關聯的 giip 問題。若為誤判，附依據記錄為 benign。",
+  ref:"參考: 正典 giipdb/docs/30_Specs/SPEC_JEV_SQLI_DETECTION.md · 運維 giip-fde-agent/docs/60-operations/secwatch-ai-onboarding.md · 問題 giip 3833."}
+};
+const PT=PROMPT_I18N[PLANG]||PROMPT_I18N.en;
 function aiPrompt(e){
  const o=(e&&e.origin)||{};
  if(!o.location && !o.source && !o.ref) return '';
  const g=(v,d)=>(v==null||v==='')?(d||'-'):v;
  const inj=(e.inj!=null)?Number(e.inj).toFixed(2):'-';
- const cmd=e.origincmd||originCmd(o);  // giipdb 저장 커맨드(origincmd) 우선, 없으면 클라 재생성(giip #3833, #174 의도 보존)
- const fetchLine=cmd?('   '+cmd):('   (아래 location 을 보고 적절한 방법으로 원본을 조회)');
- const ksclink=e.kscsn?('판정레코드 kscsn='+e.kscsn+' 와 '):'';
- return '[secwatch 보안 판정 조사 요청]\\n'+
-  'secwatch 의 1차 전단필터+2차 Jev 게이트웨이가 아래 이벤트를 \\''+g(e.route)+'\\' 로 분류했다. 실제 공격인지 원본으로 확인하고 대응하라.\\n'+
-  '\\n판정 요약\\n'+
-  '- 시각(KST): '+g(e.ts)+'\\n'+
-  '- 라우팅: '+g(e.route)+' — '+g(e.why,'(사유 없음)')+'\\n'+
-  '- 유형: '+g(e.factor)+'   공격종별: '+g(e.attack)+'\\n'+
-  '- 인젝션 확률: '+inj+'   중대도: '+g(e.sev)+' (0 노이즈 ~ 4 쓰기/권한)\\n'+
-  '- 판정엔진: '+g(e.engine)+'   lssn: '+g(e.lssn)+'\\n'+
-  '\\n원본 위치 (마스킹 전 증거는 소스에만 있음 — kscOriginRef)\\n'+
-  '- source / system: '+g(o.source)+' / '+g(o.system)+'\\n'+
-  '- location: '+g(o.location)+'\\n'+
-  '- ref / ts: '+g(o.ref)+' / '+g(o.ts)+'\\n'+
-  '\\n할 일\\n'+
-  '1. 원본 로그 레코드를 가져온다:\\n'+fetchLine+'\\n'+
-  '2. 원본에서 공격 성립 여부를 확인한다 — 인증정보(pass·admin·mysql.user 등) 대상 여부, 실제 데이터 추출(응답크기·retcode) 여부, 쓰기/파일/권한 시도 여부.\\n'+
-  '3. 판정한다 — 공격이면 중대도와 피해범위를, 데이터추출/쓰기 정황이 있으면 대상 테이블 피해까지 확인한다.\\n'+
-  '4. 대응한다 — SPEC_JEV_SQLI_DETECTION.md \\u00a77 에 따라 통지하고, 사람 리뷰가 필요하면 '+ksclink+'연결된 giip 이슈를 만든다. 오탐이면 근거와 함께 benign 으로 기록한다.\\n'+
-  '\\n참고: 정본 giipdb/docs/30_Specs/SPEC_JEV_SQLI_DETECTION.md \\u00b7 운영 giip-fde-agent/docs/60-operations/secwatch-ai-onboarding.md \\u00b7 이슈 giip 3833.';
+ const cmd=originCmd(o);
+ const fetchLine=cmd?('   '+cmd):PT.t1alt;
+ const ksclink=e.kscsn?(PT.t4b+e.kscsn+PT.t4c):'';
+ return PT.title+'\n'+
+  PT.lead(g(e.route))+'\n'+
+  '\n'+PT.sum+'\n'+
+  '- '+PT.ts+': '+g(e.ts)+'\n'+
+  '- '+PT.route+': '+g(e.route)+' — '+g(e.why,PT.noreason)+'\n'+
+  '- '+PT.kind+': '+g(e.factor)+'   '+PT.attack+': '+g(e.attack)+'\n'+
+  '- '+PT.inj+': '+inj+'   '+PT.sev+': '+g(e.sev)+' '+PT.sevNote+'\n'+
+  '- '+PT.engine+': '+g(e.engine)+'   lssn: '+g(e.lssn)+'\n'+
+  '\n'+PT.origin+'\n'+
+  '- '+PT.srcsys+': '+g(o.source)+' / '+g(o.system)+'\n'+
+  '- '+PT.loc+': '+g(o.location)+'\n'+
+  '- '+PT.refts+': '+g(o.ref)+' / '+g(o.ts)+'\n'+
+  '\n'+PT.todo+'\n'+
+  '1. '+PT.t1+'\n'+fetchLine+'\n'+
+  '2. '+PT.t2+'\n'+
+  '3. '+PT.t3+'\n'+
+  '4. '+PT.t4a+ksclink+PT.t4d+'\n'+
+  '\n'+PT.ref;
 }
 function fallback(text,done){const ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');done();}catch(e){}document.body.removeChild(ta);}
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1400);}
@@ -448,6 +529,7 @@ class Handler(BaseHTTPRequestHandler):
     minutes = 1440
     page_size = 25
     lang = "en"  # UI language (default English). Add languages to I18N in PAGE (select via --lang).
+    prompt_lang = "en"  # AI 프롬프트 언어 — 조직 cLang 기준(없으면 en). --prompt-lang 로 덮어쓸 수 있다.
     heartbeat_path = None  # secevt_run 하트비트 파일(항목 5): "스윕이 돌았다 + 확인건수 + 후보 0" 생존신호.
     def log_message(self, *a): pass  # stay quiet (also avoids sk leakage)
     def _send(self, code, body, ctype="application/json; charset=utf-8"):
@@ -457,7 +539,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/" or self.path.startswith("/index"):
             self._send(200, PAGE.replace("%POLL%", str(self.poll)).replace("%MIN%", str(self.minutes))
-                       .replace("%PAGESIZE%", str(self.page_size)).replace("%LANG%", self.lang),
+                       .replace("%PAGESIZE%", str(self.page_size)).replace("%LANG%", self.lang)
+                       .replace("%PLANG%", self.prompt_lang),
                        "text/html; charset=utf-8"); return
         if self.path.startswith("/help"):
             self._send(200, HELP, "text/html; charset=utf-8"); return
@@ -499,11 +582,13 @@ def main():
     ap.add_argument("--minutes", type=int, default=1440, help="query time window in minutes (default 1440 = 24h)")
     ap.add_argument("--page-size", type=int, default=25, help="rows per page (default 25)")
     ap.add_argument("--lang", default="en", help="UI language (default en; extend via I18N in PAGE)")
+    ap.add_argument("--prompt-lang", default=None,
+                    help="AI prompt language (default: organization cLang from config/env; 'en' if unset)")
     ap.add_argument("--heartbeat", default=None,
                     help="secevt_run 하트비트 파일 경로(기본 env GIIP_SECEVT_HEARTBEAT 또는 ./secwatch.last_run.json). secevt_run 과 같은 경로를 가리켜야 한다")
     ap.add_argument("--self-test", action="store_true", help="run one query and exit (no server)")
     a = ap.parse_args()
-    sk, csn = resolve()
+    sk, csn, clang = resolve()
     if not sk:
         sys.stderr.write("[monitor] no sk (set env GIIP_SK or giipAgent.cfg sk=).\n"); sys.exit(3)
     if a.self_test:
@@ -514,6 +599,7 @@ def main():
         sys.exit(0 if "error" not in r else 4)
     Handler.sk, Handler.csn, Handler.poll, Handler.minutes, Handler.page_size, Handler.lang = \
         sk, csn, a.poll, a.minutes, a.page_size, a.lang
+    Handler.prompt_lang = normalize_prompt_lang(a.prompt_lang or clang)
     Handler.heartbeat_path = a.heartbeat or os.environ.get("GIIP_SECEVT_HEARTBEAT") \
         or os.path.join(os.getcwd(), "secwatch.last_run.json")
     srv = ThreadingHTTPServer(("127.0.0.1", a.port), Handler)
