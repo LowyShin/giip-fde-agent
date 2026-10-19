@@ -22,6 +22,12 @@
       "file": "/var/log/cloudfront/access.log",
       "system": "cms-cdn",
       "since_offset": "/var/lib/giip/secwatch/cf.offset"
+    },
+    {
+      "source": "sec_monitor",
+      "file": "/path/dbre_tools/sec_monitor/out/report_latest.json",
+      "system": "sec_monitor",
+      "since_offset": "/var/lib/giip/secwatch/sec_monitor.offset"
     }
   ]
 }
