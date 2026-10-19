@@ -135,8 +135,128 @@ def parse_generic(line, system, location, lineno):
     ev.setdefault("origin", _origin(ev.get("src", "generic"), system, location, "line#%d" % lineno, ev.get("ts")))
     return ev
 
+
+# ── sec_monitor: dbre_tools/sec_monitor 의 리포트 JSON(out/report_*.json) ──────────
+# 왜 전용 파서인가: 이 포맷을 `generic` 으로 흘리면 받은 JSON 을 그대로 통과시키므로
+#   client_ip·resp_bytes 가 비어 모니터의 공격자 IP 가 `-` 가 된다(2026-10-19 실사고).
+#   그래서 "원본에서 뽑는" 코드를 여기 둔다 — 수집기는 `--source sec_monitor` 만 쓰면 된다.
+#
+# 입력 사양(관용적으로 받는다 — 리포트 스키마가 조금 달라도 동작하게):
+#   · 파일 전체가 JSON 1개(배열 또는 객체). 객체면 아래 컨테이너 키 중 하나에서 건 목록을 찾는다:
+#     findings / alerts / events / items / results / records / rows / data / detections
+#     (컨테이너가 없으면 그 객체 자체를 1건으로 본다)
+#   · 각 건에서 아래 **동의어 중 먼저 발견된 것**을 §5 필드로 매핑한다(대소문자·하이픈 무시):
+#     IP        ← client_ip, clientIp, ip, src_ip, source_ip, remote_addr, remote_ip, attacker_ip, c-ip, peer_ip
+#      응답크기  ← resp_bytes, response_bytes, bytes, sc_bytes, sc-bytes, size, length
+#      상태코드  ← retcode, status, status_code, http_status, errno, sql_errno, code
+#     페이로드  ← sql, query, sql_shape, payload, req_args, args, query_string, statement, request, message, detail
+#     요청경로  ← uri, path, req_uri, url, endpoint
+#     UA        ← ua, user_agent, userAgent, agent
+#     시각      ← ts, timestamp, time, datetime, detected_at, occurred_at, created_at
+#     DB/계정   ← db, database, schema / dbuser, user, username, account
+#     문맥      ← baseline, summary, note, description, title, rule, reason
+# 비고: 마스킹(리터럴 '?' 치환)은 secevt_agent 가 수행한다 — 여기서는 원본을 그대로 담아도 된다.
+_SM_CONTAINERS = ("findings", "alerts", "events", "items", "results", "records", "rows", "data", "detections")
+_SM_MAP = {
+    "client_ip":  ("client_ip", "clientip", "ip", "src_ip", "source_ip", "remote_addr", "remote_ip", "attacker_ip", "cip", "peer_ip"),
+    "resp_bytes": ("resp_bytes", "response_bytes", "bytes", "sc_bytes", "size", "length"),
+    "retcode":    ("retcode", "status", "status_code", "http_status", "errno", "sql_errno", "code"),
+    "sql_shape":  ("sql", "query", "sql_shape", "payload", "statement", "detail"),
+    "req_args_shape": ("req_args", "req_args_shape", "args", "query_string", "params"),
+    "req_uri":    ("uri", "path", "req_uri", "url", "endpoint"),
+    "ua":         ("ua", "user_agent", "agent"),
+    "ts":         ("ts", "timestamp", "time", "datetime", "detected_at", "occurred_at", "created_at"),
+    "db":         ("db", "database", "schema"),
+    "dbuser":     ("dbuser", "user", "username", "account"),
+    "baseline":   ("baseline", "summary", "note", "description", "title", "rule", "reason"),
+}
+
+def _sm_norm(k):
+    return str(k).lower().replace("-", "_").replace(" ", "_")
+
+def _sm_pick(d, names):
+    flat = {_sm_norm(k): v for k, v in d.items()}
+    for n in names:
+        v = flat.get(n)
+        if v not in (None, "", [], {}):
+            return v
+    return None
+
+def _sm_ipclass(ip):
+    if not ip:
+        return "unknown"
+    s = str(ip)
+    if s.startswith(("10.", "192.168.", "127.")) or s.startswith("172."):
+        return "internal"
+    return "external"
+
+def parse_sec_monitor_obj(rec, system, location, lineno):
+    """리포트의 건 1개 → §5 이벤트. 공격 단서가 하나도 없으면 None."""
+    if not isinstance(rec, dict):
+        return None
+    ip = _sm_pick(rec, _SM_MAP["client_ip"])
+    payload = _sm_pick(rec, _SM_MAP["sql_shape"])
+    args = _sm_pick(rec, _SM_MAP["req_args_shape"])
+    uri = _sm_pick(rec, _SM_MAP["req_uri"])
+    if not any((payload, args, uri)):
+        return None  # 전단필터가 볼 게 없는 건은 보내지 않는다(비용·소음)
+    rb = _sm_pick(rec, _SM_MAP["resp_bytes"])
+    try: rb = int(rb) if rb is not None else None
+    except (TypeError, ValueError): rb = None
+    rc = _sm_pick(rec, _SM_MAP["retcode"])
+    try: rc = int(rc) if rc is not None else None
+    except (TypeError, ValueError): rc = None
+    ts = _sm_pick(rec, _SM_MAP["ts"])
+    ua = _sm_pick(rec, _SM_MAP["ua"])
+    ev = {
+        "src": "signal",  # §2 표의 인식값(→ secevt_signal). 임의 이름 금지.
+        "ts": str(ts) if ts else None,
+        "db": _sm_pick(rec, _SM_MAP["db"]),
+        "dbuser": _sm_pick(rec, _SM_MAP["dbuser"]),
+        "op": "QUERY" if payload else "ALERT",
+        "retcode": rc,
+        "client_ip": str(ip) if ip else None,
+        "client_ip_class": _sm_ipclass(ip),
+        "ua_class": ("script" if (ua and not re.search(r"Mozilla|Chrome|Safari|Firefox", str(ua))) else ("browser" if ua else "unknown")),
+        "sql_shape": str(payload) if payload else None,
+        "req_uri": str(uri) if uri else None,
+        "req_args_shape": str(args) if args else None,
+        "resp_bytes": rb,
+        "baseline": _sm_pick(rec, _SM_MAP["baseline"]),
+        "origin": _origin("sec_monitor", system, location,
+                          str(_sm_pick(rec, ("id", "ref", "finding_id", "event_id", "seq")) or ("line#%d" % lineno)), ts),
+    }
+    return {k: v for k, v in ev.items() if v is not None}
+
+def parse_sec_monitor_file(text, system, location):
+    """파일 전체(JSON 1개) → 이벤트 리스트. 컨테이너 키에서 건 목록을 찾는다."""
+    try:
+        doc = json.loads(text)
+    except json.JSONDecodeError:
+        return []
+    recs = None
+    if isinstance(doc, list):
+        recs = doc
+    elif isinstance(doc, dict):
+        for c in _SM_CONTAINERS:
+            v = doc.get(c)
+            if isinstance(v, list):
+                recs = v
+                break
+        if recs is None:
+            recs = [doc]
+    if not recs:
+        return []
+    out = []
+    for i, rec in enumerate(recs, 1):
+        ev = parse_sec_monitor_obj(rec, system, location, i)
+        if ev:
+            out.append(ev)
+    return out
+
 PARSERS = {"aurora_audit": parse_aurora_audit, "waf": parse_waf,
-           "cloudfront": parse_cloudfront, "generic": parse_generic}
+           "cloudfront": parse_cloudfront, "generic": parse_generic,
+           "sec_monitor": None}  # sec_monitor 는 파일 전체 JSON — collect_events 가 전용 분기로 처리
 
 # 한 요청 형상에 대해 같은 스윕 안에서 관측된 응답크기 목록을 최대 몇 개까지 실어 보낼지.
 # 길게 보낼 이유가 없다(이봉 판정에는 서로 다른 값 2개면 충분하고, state 크기는 비용이다 — 사양서 §9-3).
@@ -182,6 +302,8 @@ def collect_events(source, file=None, use_stdin=False, system=None, since_offset
     if file and system is None:
         system = os.path.basename(file)
     events = []
+    if use_stdin and source == "sec_monitor":
+        return attach_resp_series(parse_sec_monitor_file(sys.stdin.read(), system, location))
     if use_stdin:
         for i, line in enumerate(sys.stdin, 1):
             ev = parser(line, system, location, i)
@@ -194,6 +316,15 @@ def collect_events(source, file=None, use_stdin=False, system=None, since_offset
             start = int(open(since_offset, "r", encoding="utf-8").read().strip() or "0")
         except (ValueError, OSError):
             start = 0
+    # sec_monitor 는 한 줄당 1건이 아니라 **파일 전체가 JSON 1개**다 → 전용 분기.
+    if source == "sec_monitor":
+        with open(file, "r", encoding="utf-8", errors="replace") as fh:
+            text = fh.read()
+        evs = parse_sec_monitor_file(text, system, location)
+        if since_offset:
+            try: open(since_offset, "w", encoding="utf-8").write(str(os.path.getsize(file)))
+            except OSError: pass
+        return attach_resp_series(evs)
     with open(file, "r", encoding="utf-8", errors="replace") as fh:
         if start and start <= os.path.getsize(file):
             fh.seek(start)
