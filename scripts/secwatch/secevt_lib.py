@@ -230,6 +230,11 @@ def build_kvalue(ev, novel_ctx=None):
         "dbuser": ev.get("dbuser"),
         "op": ev.get("op"),
         "retcode": ev.get("retcode"),
+        # client_ip: 공격자 추적·차단에 실제 IP 가 필요하다는 제품 결정(2026-10-19, giip #3833).
+        # 게이트웨이가 이 값을 giip DB(kscActorIp)에만 저장하고 **Jev 전송 state 에서는 제외**한다
+        # (외부 SaaS 에 PII 를 보내지 않는다는 §17.3 의 취지는 유지 — Jev 는 요청 형태로 판정하므로
+        #  IP 가 없어도 판정력이 떨어지지 않는다). 반복 공격 문맥이 필요하면 baseline 으로 넘긴다.
+        "client_ip": ev.get("client_ip"),
         "client_ip_class": ev.get("client_ip_class", "unknown"),
         "ua_class": ev.get("ua_class", "unknown"),
         "sql_shape": mask_sql(ev.get("sql_shape") or ev.get("sql")),
