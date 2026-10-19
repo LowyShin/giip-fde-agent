@@ -91,6 +91,8 @@
 #   # 단일 이슈 PR 존재 진단(상태 변경 없음 — 테스트용)
 #   powershell -File pr-gate-sweep.ps1 -Workdir "C:\...\giipprj" -DiagnoseIsn 1076
 param(
+    # [giip #3833] scope-match 합산 판정에 실을 PR 최대 개수(프롬프트 크기 상한).
+    [int]$ScopeMultiPrCap = 6,
     [int]$Csn = 0,
     [Parameter(Mandatory = $true)][string]$Workdir,
     [string]$ApiKey,
@@ -623,7 +625,30 @@ foreach ($iss in $issues) {
             $gateWarn++
             Write-SweepLog "isn=${isn}: PR diff 를 files/diff 모두 빈 값으로만 받아옴(조회 실패/동시 checkout 충돌 추정) → scope-match 판정 생략, REVIEW 유지(안전 폴백)."
         } else {
-            $scopeJudge = Invoke-ScopeMatchJudge $isn $issueContent $commentsText $prInfo $prDiff
+            # [giip #3833 구조수정] 이 이슈에 매칭된 **모든 PR** 의 diff 를 모아 합산 판정한다.
+            # 종전엔 primary PR 하나만 판정에 실어, 여러 PR(레포 횡단 포함)로 구현한 이슈는
+            # "신고 범위보다 훨씬 좁다"가 구조적으로 보장돼 3회 캡까지 REVIEW→READY 로 되돌았다
+            # (실측: isn 3833 은 PR 8개로 구현됐는데 #939 하나만 평가됨).
+            # Get-IssuePrInfo 가 이미 모아둔 $prInfo.all 을 쓴다(코멘트 증거로만 쓰던 것).
+            # 프롬프트 크기를 묶기 위해 상위 $ScopeMultiPrCap 개까지만 싣고, 잘렸으면 판정기에 알린다.
+            $prDiffList = @()
+            $allPrs = @($prInfo.all | Where-Object { $_ -and (Test-ValidPrNumber $_.number) })
+            if ($allPrs.Count -gt 1) {
+                # 머지된 것을 먼저(실제 반영분), 그 다음 번호 큰 것(최신) 순으로.
+                $ordered = @($allPrs | Sort-Object -Property @{ Expression = { if ("$($_.state)" -eq 'MERGED') { 0 } else { 1 } } }, @{ Expression = { [int]$_.number }; Descending = $true })
+                foreach ($cand in @($ordered | Select-Object -First $ScopeMultiPrCap)) {
+                    $d = Get-PrDiffSummary $cand.repo $cand.number $cand.slug
+                    if ($d -and (($d.files -and $d.files.Trim() -ne '') -or ($d.diff -and $d.diff.Trim() -ne ''))) {
+                        $prDiffList += @{ info = $cand; diff = $d }
+                    }
+                }
+                if ($prDiffList.Count -gt 1) {
+                    Write-SweepLog "isn=${isn}: scope-match 합산 판정 — 매칭 PR $($allPrs.Count)건 중 diff 확보 $($prDiffList.Count)건으로 판정(단일 PR 판정이던 종전 동작 대체, giip #3833)."
+                } else {
+                    Write-SweepLog "isn=${isn}: 매칭 PR $($allPrs.Count)건이지만 diff 확보가 $($prDiffList.Count)건뿐 → 종전 단일 PR 판정으로 폴백."
+                }
+            }
+            $scopeJudge = Invoke-ScopeMatchJudge $isn $issueContent $commentsText $prInfo $prDiff $prDiffList
             if (-not $scopeJudge.ok) {
                 $gateWarn++
                 Write-SweepLog "isn=${isn}: scope-match 판정 호출 실패/차단(exit=$($scopeJudge.exit)) → 안전 폴백, REVIEW 유지."
