@@ -252,6 +252,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\secwatch\register-se
 
 ---
 
+## 9.5 AI 지시서 언어 (언어 해석기를 새로 만들지 말 것)
+
+모니터의 AI 지시서는 조직(csn)의 `tCorp.cLang` 언어로 생성된다. 해석 순서는 정본 규칙
+`.agent/rules/52_project_language_from_csn.md` 를 따르고, 1차 소스는 **`slack-bot/.csn-lang-cache.env`**
+(csn→cLang 영속 캐시)다. 설정이 없으면 영어.
+**이미 있는 메커니즘이므로 새 해석기를 만들지 않는다**(rule 52 가 중복 생성 위험을 명시 경고).
+상세·소비자 목록: `scripts/secwatch/README.md` §5.5.
+
 ## 10. 관련 문서
 
 - 설치·등록 일반 절차: [`secwatch-agent.md`](secwatch-agent.md)
