@@ -99,9 +99,17 @@ def parse_cloudfront(line, system, location, lineno):
         except (ValueError, TypeError): status = None
     ua = f[10] if len(f) > 10 else None
     query = f[11] if len(f) > 11 else None
+    # sc-bytes(응답 바이트) = W3C 4번째 필드. 사양서 §6.2 가 data_extracted("실제로 값을 읽어냈나")
+    # 판정 근거로 요구하는 "응답크기" 가 바로 이 값인데, 지금까지 읽지 않아 resp_bytes 가 늘 비어 있었다
+    # → Jev 에 유출 판정 근거가 없어 모니터의 '데이터 유출' 플래그가 뜰 수 없었다.
+    resp_bytes = None
+    if len(f) > 3:
+        try: resp_bytes = int(f[3])
+        except (ValueError, TypeError): resp_bytes = None
     return {
         "src": "cloudfront", "ts": ts, "req_uri": uri, "req_args_shape": query,
-        "retcode": status, "client_ip_class": "external", "ua_class": "script",
+        "retcode": status, "resp_bytes": resp_bytes,
+        "client_ip_class": "external", "ua_class": "script",
         "origin": _origin("cloudfront", system, location, "line#%d" % lineno, ts),
     }
 
@@ -122,6 +130,43 @@ def parse_generic(line, system, location, lineno):
 PARSERS = {"aurora_audit": parse_aurora_audit, "waf": parse_waf,
            "cloudfront": parse_cloudfront, "generic": parse_generic}
 
+# 한 요청 형상에 대해 같은 스윕 안에서 관측된 응답크기 목록을 최대 몇 개까지 실어 보낼지.
+# 길게 보낼 이유가 없다(이봉 판정에는 서로 다른 값 2개면 충분하고, state 크기는 비용이다 — 사양서 §9-3).
+_SERIES_MAX = 12
+
+def attach_resp_series(events):
+    """같은 요청 형상끼리 묶어 resp_series(응답크기 목록)를 채운다 — 유출 가능성 지표의 근거.
+
+    왜 필요한가: 전단필터(secevt_lib.prefilter)에는 이미 `resp_bimodal` 규칙이 있다
+    (응답크기가 서로 다른 값 2개 이상 + boolean_blind/union_based 동반 → 블라인드 인젝션이
+    참/거짓에 따라 다른 크기를 돌려주고 있다는 신호). 그런데 `resp_series` 를 **아무도 채우지 않아
+    그 규칙이 한 번도 발동할 수 없었다.** 사양서 §6.2·§6.3 이 data_extracted("실제로 값을 읽어냈나")
+    판정 근거로 드는 "응답 2189B/428B 이봉" 이 바로 이 series 다.
+
+    수집기(에이전트)만 원본 로그의 응답크기를 볼 수 있으므로 여기서 조립해 보낸다
+    (게이트웨이는 마스킹된 이벤트만 받기 때문에 스스로 만들 수 없다).
+
+    묶는 키: (src, req_uri) — 쿼리스트링(req_args_shape)은 공격자가 값만 바꿔가며 넣는 쪽이라
+    제외해야 같은 엔드포인트에 대한 크기 변화가 한 묶음으로 모인다.
+    순수 함수에 가깝게 유지하려고 입력 리스트를 제자리에서 갱신하고 그대로 돌려준다.
+    """
+    groups = {}
+    for ev in events:
+        if not isinstance(ev, dict):
+            continue
+        rb = ev.get("resp_bytes")
+        if not isinstance(rb, int):
+            continue
+        key = (ev.get("src"), ev.get("req_uri"))
+        groups.setdefault(key, []).append(rb)
+    for ev in events:
+        if not isinstance(ev, dict) or ev.get("resp_series"):
+            continue  # 파서/소스가 이미 series 를 줬으면 건드리지 않는다
+        series = groups.get((ev.get("src"), ev.get("req_uri")))
+        if series and len(series) >= 2:
+            ev["resp_series"] = series[:_SERIES_MAX]
+    return events
+
 def collect_events(source, file=None, use_stdin=False, system=None, since_offset=None):
     """소스 로그를 읽어 정규화 이벤트 리스트를 반환한다(secevt_run.py 도 이 함수를 쓴다)."""
     parser = PARSERS[source]
@@ -134,7 +179,7 @@ def collect_events(source, file=None, use_stdin=False, system=None, since_offset
             ev = parser(line, system, location, i)
             if ev:
                 events.append(ev)
-        return events
+        return attach_resp_series(events)
     start = 0
     if since_offset and os.path.exists(since_offset):
         try:
@@ -155,7 +200,7 @@ def collect_events(source, file=None, use_stdin=False, system=None, since_offset
                 open(since_offset, "w", encoding="utf-8").write(str(fh.tell()))
             except OSError:
                 pass
-    return events
+    return attach_resp_series(events)
 
 def main():
     ap = argparse.ArgumentParser(description="소스 로그 → 정규화 이벤트(+origin) 수집부")
