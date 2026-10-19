@@ -62,11 +62,40 @@ def normalize_prompt_lang(v):
     base = s.split("-")[0]
     return base if base in ("ko", "ja", "en") else "en"
 
+# [정본 재사용, rule 52] csn → 언어는 **이미 있는 메커니즘**이 있다. 새로 만들지 않고 그것을 읽는다.
+#   정본 규칙: .agent/rules/52_project_language_from_csn.md
+#   영속 캐시: slack-bot/.csn-lang-cache.env (dotenv, git-ignored, write-through)
+#              형식: CSN_<csn>_LANG=ko / CSN_<csn>_LANG_AT=<epoch ms>
+#   채우는 쪽: slack-bot/csn-lang-cache.js(prefetch → pApiCorpLangGetbySk)
+# rule 52 §17 가 "(c) 이미 있는 캐시/우선순위 메커니즘과 중복되는 별도 메커니즘을 새로 만들 위험"을
+# 명시적으로 경고한다 — 그래서 여기서 API 를 다시 부르지 않고 그 캐시를 1차 소스로 쓴다.
+def _csn_lang_from_cache(csn):
+    """slack-bot/.csn-lang-cache.env 에서 CSN_<csn>_LANG 을 읽는다. 없으면 None."""
+    if not csn:
+        return None
+    here = os.path.dirname(os.path.abspath(__file__))
+    for rel in (os.path.join(here, "..", "..", "slack-bot", ".csn-lang-cache.env"),
+                os.path.join(here, "..", "slack-bot", ".csn-lang-cache.env")):
+        path = os.path.normpath(rel)
+        try:
+            with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    m = re.match(r"\s*CSN_%s_LANG\s*=\s*(.+)" % re.escape(str(csn)), line)
+                    if m:
+                        return m.group(1).strip().strip('"').strip()
+        except (OSError, IOError):
+            continue
+    return None
+
 def resolve():
     sk = os.environ.get("GIIP_SK") or _cfg("sk")
     csn = os.environ.get("GIIP_CSN") or _cfg("csn")  # display only (sk identifies)
-    # cLang: env → 설정파일(cLang/clang). 없으면 normalize_prompt_lang 이 'en' 으로 떨어진다.
-    clang = os.environ.get("GIIP_CLANG") or _cfg("cLang") or _cfg("clang")
+    # 언어 해석 순서(rule 52 의 우선순위를 그대로 따른다):
+    #   ① GIIP_CLANG 환경변수(명시 override)  ② csn-lang-cache 영속 캐시  ③ giipAgent.cfg 의 cLang
+    #   ④ 없으면 normalize_prompt_lang 이 'en' 으로 떨어진다(설정 없으면 영어)
+    clang = (os.environ.get("GIIP_CLANG")
+             or _csn_lang_from_cache(csn)
+             or _cfg("cLang") or _cfg("clang"))
     return sk, csn, clang
 
 def fetch_results(sk, minutes=60):
@@ -583,7 +612,7 @@ def main():
     ap.add_argument("--page-size", type=int, default=25, help="rows per page (default 25)")
     ap.add_argument("--lang", default="en", help="UI language (default en; extend via I18N in PAGE)")
     ap.add_argument("--prompt-lang", default=None,
-                    help="AI prompt language (default: organization cLang from config/env; 'en' if unset)")
+                    help="AI prompt language (default: csn-lang-cache / cfg cLang per rule 52; 'en' if unset)")
     ap.add_argument("--heartbeat", default=None,
                     help="secevt_run 하트비트 파일 경로(기본 env GIIP_SECEVT_HEARTBEAT 또는 ./secwatch.last_run.json). secevt_run 과 같은 경로를 가리켜야 한다")
     ap.add_argument("--self-test", action="store_true", help="run one query and exit (no server)")

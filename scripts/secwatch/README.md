@@ -164,6 +164,27 @@ FROM tKVSSecurityCheck WHERE kscKey = '<내 lssn>' ORDER BY kscsn DESC;
 
 ---
 
+## 5.5 AI 지시서 언어 — 조직 cLang 을 따른다 (새로 만들지 말 것)
+
+모니터의 `copy AI prompt` 는 **조직(csn)의 `tCorp.cLang`** 언어로 만들어진다. 설정이 없으면 영어다.
+
+해석 순서(정본 규칙 `.agent/rules/52_project_language_from_csn.md` 의 우선순위를 그대로 따른다):
+
+1. `GIIP_CLANG` 환경변수(명시 override)
+2. **`slack-bot/.csn-lang-cache.env`** 의 `CSN_<csn>_LANG` — csn→cLang 영속 캐시(정본 메커니즘).
+   이 캐시는 `slack-bot/csn-lang-cache.js` 의 `prefetch()` 가 `pApiCorpLangGetbySk` 로 채운다.
+3. `giipAgent.cfg`/`.cnf` 의 `cLang`
+4. 없으면 `en`
+
+지원 언어키: `en`(기본) · `ko` · `ja` · `zh-CN` · `zh-TW`. `cLang` 값이 `ko-kr`/`en-US` 처럼
+지역 접미사를 가지면 정규화된다(중국어만 간체/번체 구분을 위해 지역 유지).
+
+> **중요**: 언어 해석기를 **새로 만들지 말 것.** 이미 정본 메커니즘이 있고, rule 52 가 "중복 메커니즘을
+> 새로 만들 위험"을 명시 경고한다. 2026-10-19 에 실제로 그 중복이 발생했다(경위는 rule 52 말미 참조).
+> 웹 콘솔(giipv3 `admin/secwatch-monitor`)은 **페이지 로케일**을 쓴다 — 언어 전환 UI 가 있기 때문이다.
+
+---
+
 ## 6. 실행
 
 ```bash
