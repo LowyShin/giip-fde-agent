@@ -129,6 +129,10 @@ $CsnLangCacheFile = Join-Path $Root '..\..\slack-bot\.csn-lang-cache.env'  # CSN
 $CsnLangCacheTtlMs = 24 * 60 * 60 * 1000  # csn-lang-cache.js SUCCESS_TTL_MS 와 동일(24시간)
 $SlackBotDir      = Join-Path $Root '..\..\slack-bot'  # pm2 "MISSING" 워치독이 신규 기동할 때 쓰는 cwd
 $LockMaxAgeHr = 2   # 이 시간보다 오래된 lock 은 stale 로 보고 자동 제거
+# [giip #3829] hung watchdog: worker 로그(gissue_csn{N}.log) 무출력 임계값.
+# hung 판정 조건: (a) lock 경과 > soft_budget×2 AND (b) 로그 마지막 기록으로부터 >= LogQuietThresholdMin 경과 AND (c) PID 생존
+# pwsh -s 서브셸 데드락은 엔진이 아예 기동되지 않아 로그 출력이 전혀 없는 채로 lock 점유가 지속되는 케이스를 잡는다.
+$LogQuietThresholdMin = 5
 # [giip #1572, 2026-08-27 실측] Windows Task Scheduler 의 ExecutionTimeLimit(2시간)과 정확히 같으면
 # 여유가 없다 — CSN47 잡이 01:00:48까지 정상 작업 중이었는데 01:07:00 에 Windows 가 먼저 프로세스를
 # 강제종료해 Phase 2 의 우아한 정리(Complete-Run, 락 해제)가 실행되지 못했고 lock 파일이 고아로 남았다.
@@ -2345,10 +2349,16 @@ foreach ($csn in $map.PSObject.Properties.Name) {
         $age = (Get-Date) - (Get-Item $lock).LastWriteTime
         $lockPid = $null
         $lockStartTime = $null
+        $lockLastLogWrite = $null
         try {
             $lockRaw = (Get-Content $lock -Raw -ErrorAction Stop).Trim()
-            if ($lockRaw -match '^(\d+)\|(.+)$') {
-                # 새 형식: PID|시작시각(yyyy-MM-ddTHH:mm:ssZ)
+            if ($lockRaw -match '^(\d+)\|(.+)\|(.+)$') {
+                # 새 형식: PID|시작시각(yyyy-MM-ddTHH:mm:ssZ)|마지막로그기록시각(yyyy-MM-ddTHH:mm:ssZ)
+                $lockPid = [int]$Matches[1]
+                try { $lockStartTime = [DateTime]::Parse($Matches[2], [System.Globalization.CultureInfo]::InvariantCulture) } catch {}
+                try { $lockLastLogWrite = [DateTime]::Parse($Matches[3], [System.Globalization.CultureInfo]::InvariantCulture) } catch {}
+            } elseif ($lockRaw -match '^(\d+)\|(.+)$') {
+                # PR #176 형식: PID|시작시각 — 마지막 로그 시각은 미포함
                 $lockPid = [int]$Matches[1]
                 try { $lockStartTime = [DateTime]::Parse($Matches[2], [System.Globalization.CultureInfo]::InvariantCulture) } catch {}
             } elseif ($lockRaw -match '^\d+$') {
@@ -2361,19 +2371,32 @@ foreach ($csn in $map.PSObject.Properties.Name) {
             $procAlive = $null -ne (Get-Process -Id $lockPid -ErrorAction SilentlyContinue)
             if (-not $procAlive) { $pidDead = $true }
         }
-        # hung 판정: (a) 경과 > soft_budget×2 AND (b) PID 생존 → lock 점유자가 엔진 출력 없이 멈춤
+        # hung 판정: (a) lock 경과 > soft_budget×2 AND (b) 로그 N분 무출력 AND (c) PID 생존
+        # — pwsh -s 서브셸 데드락은 엔진 출력 자체가 없으므로 로그 무출력으로만 포착 가능하다.
         $hungThresholdMin = $SoftBudgetMin * 2
         $isHung = $false
+        $hungReason = $null
         if ($lockStartTime -and -not $pidDead) {
             $lockAgeMin = ((Get-Date) - $lockStartTime).TotalMinutes
-            if ($lockAgeMin -ge $hungThresholdMin) {
+            $logQuietMin = [int]::MaxValue
+            if ($lockLastLogWrite) {
+                $logQuietMin = [int]((Get-Date) - $lockLastLogWrite).TotalMinutes
+            } else {
+                # 마지막 로그 시각이 없으면 worker 로그 파일(gissue_csn{N}.log)의 LastWriteTime으로 역산
+                $workerLog = Join-Path $LogDir "gissue_csn$csn.log"
+                if (Test-Path $workerLog) {
+                    $logQuietMin = [int]((Get-Date) - (Get-Item $workerLog).LastWriteTime).TotalMinutes
+                }
+            }
+            if ($lockAgeMin -ge $hungThresholdMin -and $logQuietMin -ge $LogQuietThresholdMin) {
                 $isHung = $true
-                Write-Log $csn "[HUNG-WATCHDOG] lock 경과 ${lockAgeMin}분 >= hung 임계값 ${hungThresholdMin}분(soft_budget×2), PID $lockPid 생존 — hung 판정"
+                $hungReason = "lock경과=${lockAgeMin}분>=${hungThresholdMin}분(soft_budget×2) AND 로그무출력=${logQuietMin}분>=${LogQuietThresholdMin}분, PID=$lockPid 생존"
+                Write-Log $csn "[HUNG-WATCHDOG] hung 판정 — $hungReason"
             }
         }
         if ($age.TotalHours -ge $LockMaxAgeHr -or $pidDead -or $isHung) {
             $staleReason = if ($isHung) {
-                "hung watchdog: 경과 ${hungThresholdMin}분(soft_budget×2) 초과, PID $lockPid 생존"
+                "hung watchdog: $hungReason"
             } elseif ($pidDead -and $age.TotalHours -ge $LockMaxAgeHr) {
                 "PID $lockPid 죽음 + 시간초과($([int]$age.TotalHours)h)"
             } elseif ($pidDead) {
@@ -2391,7 +2414,7 @@ foreach ($csn in $map.PSObject.Properties.Name) {
             Remove-Item $lock -Force
             Write-Log $csn "stale lock 제거 - $staleReason"
         } else {
-            Write-Log $csn "SKIP: 실행 중(lock $([int]$age.TotalMinutes)분 전, PID $lockPid 생존 확인)"
+            Write-Log $csn "SKIP: 실행 중(lock $([int]$age.TotalMinutes)분 전, PID $lockPid 생존, 로그무출력=$(if ($logQuietMin -lt [int]::MaxValue) { "${logQuietMin}분" } else { "미측정" }))"
             continue
         }
     }
