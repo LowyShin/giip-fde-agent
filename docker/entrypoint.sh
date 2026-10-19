@@ -154,6 +154,15 @@ if [ "${GIIP_ENABLE_SCHEDULER:-true}" = "true" ]; then
   } > /etc/cron.d/gissue-feedback-analyzer
   chmod 0644 /etc/cron.d/gissue-feedback-analyzer
   echo "[entrypoint] registered feedback-analyzer cron (every 20 min: :12/:32/:52, pwsh) via /etc/cron.d"
+  # giip 3659: tKVS 읽기모델 증분 이관 cron — giipAgent(* * * * *)·CQE(*/5)·page-feedback-analyze(:12/:32/:52)와
+  # 동일한 HTTP POST giipApiSk2 디스패처 호출 방식. SK/엔드포인트는 giipAgent.cnf 에서 해석(exec-kvs-readmodel-sync.sh).
+  # exec-kvs-readmodel-sync.sh 가 exit 0 으로 항상 끝나므로 cron 오류가 다른 작업에 영향 안 함.
+  {
+    echo "SHELL=/bin/bash"
+    echo "* * * * * $SCHED_USER cd $REPO_DIR && [ -f scripts/exec-kvs-readmodel-sync.sh ] && bash scripts/exec-kvs-readmodel-sync.sh >> $REPO_DIR/scripts/gissue/logs/kvs-sync.log 2>&1"
+  } > /etc/cron.d/giip-kvs-readmodel-sync
+  chmod 0644 /etc/cron.d/giip-kvs-readmodel-sync
+  echo "[entrypoint] registered KVS-readmodel-sync cron (every 1 min) via /etc/cron.d"
   # giip #3405: 방금 쓴 cron 의 -OnlyCsn 이 SSOT 와 일치하는지 재검증(요구사항 2 — cron ↔ csn-projects.json 가드)
   if [ -n "$SSOT_CSN" ]; then
     CRON_CSN="$(grep -oE '\-OnlyCsn [0-9]+' /etc/cron.d/gissue-scheduler | grep -oE '[0-9]+' || true)"
