@@ -872,13 +872,16 @@ foreach ($iss in $allIssues) {
         Invoke-AuditIssue $iss $repos
         continue
     }
-    $comments = Get-IssueComments $isn $ApiKey $ApiBaseUrl
-    $hasRecent = $false
-    foreach ($c in $comments) {
-        $rd = Parse-Utc $c.regdate
-        if ($rd -and $rd -ge $sinceRecent) { $hasRecent = $true; break }
-    }
-    if (-not $hasRecent) { $outOfWindow++; continue }
+    # ── [giip #3802] "최근 코멘트됨" 판정은 목록 응답의 last_comment_date 로 끝낸다.
+    #   giipIssues 목록은 pApiGiipIssueListbyAK 를 거치고 그 SP 가 코멘트 TOP 1 서브쿼리로
+    #   last_comment_date 를 함께 돌려주므로 이슈마다 giipIssueComments 를 부를 필요가 없다.
+    #   판정 규칙과 분기 근거는 gissue-audit-lib.ps1 의 Test-GissueRecentComment 주석 참고
+    #   (테스트: tests/test-recent-comment-filter.ps1).
+    $recent = Test-GissueRecentComment -Issue $iss -SinceRecent $sinceRecent `
+        -FetchComments { Get-IssueComments $isn $ApiKey $ApiBaseUrl } `
+        -ParseUtc { param($s) Parse-Utc $s }
+
+    if (-not $recent.HasRecent) { $outOfWindow++; continue }
     $targeted++
     Invoke-AuditIssue $iss $repos
 }
