@@ -63,6 +63,36 @@ function resolveLangForProject(projectName) {
    방식 등)을 바꾸는 변경은 이 규칙 문서(52)도 함께 갱신한다.** 코드와 문서가 벌어지면 다음
    에이전트가 다시 "문서화 안 된 기존 동작"을 재발견하는 같은 상황이 반복된다.
 
+## 이 메커니즘의 소비자 (추가 시 여기에 등재한다)
+
+언어를 쓰는 곳이 늘 때마다 **여기에 한 줄 추가**한다. 목록이 없으면 다음 에이전트가 소비자를 못 찾고
+또 중복 메커니즘을 만든다(아래 2026-10-19 사례).
+
+| 소비자 | 읽는 방법 | 비고 |
+|---|---|---|
+| `slack-bot` (config.js `resolveLangForProject`) | `csn-lang-cache.peekCachedLangCode(csn)` | 정본 구현. 캐시를 채우는 쪽도 여기(`prefetch`) |
+| `scripts/gissue/run-gissue-claude.ps1` | `pApiCorpLangGetbySk` 직접 호출 + 자체 정규화(298행 부근) | gissue 세션 출력 언어 |
+| **`scripts/secwatch/monitor.py`** | `.csn-lang-cache.env` 의 `CSN_<csn>_LANG` 을 **직접 읽는다**(파이썬이라 JS 모듈을 못 쓴다) → 없으면 `giipAgent.cfg` 의 `cLang` → 없으면 `en` | AI 조사 지시서 언어. 웹 콘솔(giipv3)은 **페이지 로케일**을 쓴다(언어 전환 UI 가 있으므로) |
+
+### 2026-10-19 사례 — 이 규칙이 왜 필요한지 다시 증명됐다
+
+secwatch `monitor.py` 의 AI 지시서를 현지어로 바꾸는 작업에서, 작업자가 **이 메커니즘을 모른 채**
+`cLang` 정규화 함수를 새로 만들고(`run-gissue-claude.ps1` 에 이미 같은 것이 있었다) "설정 파일에
+`cLang` 키가 없다"고 결론 내렸다. 사용자가 "환경 구성 때 csn 으로 project 정보를 찾아 cLang 을
+환경 파일에 저장하게 되어 있는 걸 아느냐"고 지적해서야 발견했다.
+
+**놓친 이유(재발 방지용으로 남긴다):**
+1. **생성물만 보고 생성기를 안 봤다** — `giipAgent.cfg`/`.cnf` 를 grep 해 "lang 키 없음"으로 단정했다.
+   그 파일을 **만드는 쪽**(설정 구성 절차·캐시 영속화)을 보지 않았다.
+2. **작업 대상 레포의 `.agent/rules/` 를 읽지 않았다** — 허브(giipprj-hub)의 룰은 읽었지만,
+   정작 고치는 레포(giip-fde-agent)의 규칙을 읽지 않았다. 언어 기능을 건드리기 전에 이 파일(rule 52)
+   하나만 봤으면 끝났다.
+3. **`cLang` 를 레포 전체로 grep 하지 않았다** — 했다면 `run-gissue-claude.ps1:298` 의 동일 정규화와
+   `CLAUDE.md` 의 "PROJECT RESPONSE LANGUAGE" 섹션이 바로 나왔다.
+
+**교훈**: 언어·로케일·타임존처럼 "조직 속성에서 파생되는 값"은 **거의 항상 이미 해석기가 있다.**
+새로 만들기 전에 (a) 그 레포 `.agent/rules/`, (b) 속성명 전체 grep, (c) 설정 파일의 **생성기** 를 본다.
+
 ## 알아둘 것 (버그 아님)
 
 - `pApiCorpLangGetbySk`(giip-api.js `corpLangGet`, 281~289행)는 현재 하드코딩된 단일 Admin SK

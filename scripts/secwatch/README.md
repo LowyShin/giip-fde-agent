@@ -44,7 +44,7 @@
 
 | 파일 | 용도 |
 |---|---|
-| `secevt_collect.py` | **수집부①→②**. 소스 로그(aurora_audit/waf/cloudfront/generic) → 정규화 이벤트(+origin) |
+| `secevt_collect.py` | **수집부①→②**. 소스 로그(aurora_audit/waf/cloudfront/**sec_monitor**/generic) → 정규화 이벤트(+origin) |
 | `secevt_agent.py` | **에이전트②**. 이벤트 → 마스킹·전단필터 → 게이트웨이 POST(키 없음) |
 | `secevt_run.py` | **스윕 진입점**. 설정대로 수집→전송 1회(스케줄러가 호출) |
 | `secevt_lib.py` | 공용 helper(마스킹·전단필터·이벤트 조립·설정 해석) |
@@ -75,6 +75,7 @@
   "src": "aurora_audit|waf|cloudfront|signal|applog|other  (→ §2 표로 타입 결정)",
   "ts": "2026-10-15T21:20:49Z",
   "db": "prd-cmsdb", "dbuser": "cur_app", "op": "QUERY", "retcode": 1064,
+  "client_ip": "203.0.113.9",
   "client_ip_class": "internal|external|cloud|nat|unknown",
   "ua_class": "browser|script|bot|unknown",
   "sql_shape": "원본 SQL 또는 이미 마스킹된 shape (에이전트가 리터럴 '?' 치환)",
@@ -87,8 +88,100 @@
               "ts":"2026-10-15T21:20:49Z" }
 }
 ```
-- **`origin` 를 반드시 채운다.** 마스킹 때문에 비마스킹 원본은 ①소스에만 남으므로, 결과행에서 원본으로 되돌아갈 유일한 단서다(침해대응).
-- **IP 는 원본 대신 `client_ip_class` 로만** 싣는다. **원본 SQL/PII 를 그대로 보내지 않는다**(마스킹은 에이전트가 수행).
+
+### 5.1 필드를 빼면 **무엇이 조용히 죽는가** (이 표가 이 문서의 핵심)
+
+빠진 필드는 에러를 내지 않는다 — 판정이 조용히 약해질 뿐이다. 그래서 "왜 화면에 안 보이지?"로만 드러난다.
+실제 사고(2026-10-19): 어떤 수집기가 `client_ip`·`resp_bytes` 없이 10분마다 보냈고, 화면의 공격자 IP 가 계속 `-` 였다.
+
+| 필드 | 없으면 | 결과(화면에서 보이는 증상) |
+|---|---|---|
+| `client_ip` | **같은 공격자 추적 불가** | `공격자 IP` 칸이 `-`. IP 로 묶기·차단 판단을 못 한다 |
+| `resp_bytes` | 유출 판정 근거 없음 | `데이터 유출` 플래그가 **영원히 안 뜬다**(Jev `data_extracted` 가 판정 불가) |
+| `resp_series` | 응답크기 이봉 탐지 불가 | 전단필터 `resp_bimodal` 룰이 **발동 자체를 못 한다**(블라인드 인젝션이 값을 빼내는 신호를 놓침) |
+| `retcode` | 성공/실패 구분 불가 | `1064`(구문오류=실패) 같은 판단 근거가 사라진다. `error_retcode` 룰도 안 걸린다 |
+| `sql_shape` / `req_args_shape` / `req_uri` | **전단필터가 볼 게 없다** | 룰이 하나도 안 걸려 `candidate=false` → 전송조차 안 되거나 저강도(`recon_probe`)로만 판정된다 |
+| `baseline` | 평시 대비 문맥 없음 | 정상 업무도구를 공격으로 오판할 확률이 올라간다(오탐) |
+| `origin` | **원본 복귀 단서 없음** | 마스킹 때문에 비마스킹 원본은 ①소스에만 남는다 → 침해대응 때 되돌아갈 수 없다 |
+
+### 5.2 IP 정책 (2026-10-19 개정 — 이전 문서와 다르다)
+
+**실제 IP(`client_ip`)를 보낸다.** 종전 문서는 "IP 는 `client_ip_class` 라벨로만" 이었는데, **같은 공격자를 추적·차단하려면 실제 IP 가 필요**하다는 제품 결정으로 바뀌었다. 종전 규정의 취지(외부 SaaS 에 PII 미전송)는 **보내는 쪽이 아니라 게이트웨이가** 지킨다:
+
+- 실제 IP → **giip DB(`kscActorIp`)에만** 저장(추적·차단·동일 공격자 판정)
+- **Jev(외부 SaaS) 전송 state 에는 IP 를 넣지 않는다** — 게이트웨이가 state 조립에서 제외한다. Jev 는 요청/SQL 형태로 판정하므로 IP 없이도 판정력이 떨어지지 않는다
+- `client_ip_class` 도 **같이** 보낸다(빠른 필터용). 둘 중 하나만 보내지 말 것
+
+정본: giipdb `docs/30_Specs/SPEC_JEV_SQLI_DETECTION.md` §17.3
+(https://github.com/LowyShin/giipdb/blob/main/docs/30_Specs/SPEC_JEV_SQLI_DETECTION.md)
+
+### 5.3 `generic` 경로의 함정 — **직접 만든 JSON 은 아무도 보완해주지 않는다**
+
+`--source generic` 은 받은 JSON 을 **그대로 통과**시킨다(남이 정규화한 이벤트를 변조하지 않는다는 설계). 즉:
+
+> **`generic` 으로 보내면 `client_ip`·`resp_bytes`·`resp_series` 를 당신이 직접 넣어야 한다.**
+> 최신 giip-fde-agent 를 쓰는 것만으로는 채워지지 않는다 — 그 필드를 채우는 코드는
+> `aurora_audit`/`waf`/`cloudfront` **파서 안에** 있다.
+
+**`dbre_tools/sec_monitor` 리포트는 전용 파서가 이미 있다** — `--source sec_monitor` 를 쓰면 끝이다:
+```bash
+python3 secevt_collect.py --source sec_monitor --file out/report_20261019_0348.json \
+  | python3 secevt_agent.py --lssn <LSSN> --stdin
+```
+파일 전체가 JSON 1개(배열 또는 `findings`/`alerts`/`events`/… 컨테이너)인 형식을 받아,
+`client_ip`·`resp_bytes`·`retcode`·페이로드를 **원본에서 뽑아** §5 로 매핑한다(필드명 동의어를 폭넓게 인식 —
+`src_ip`/`remote_addr`/`clientIp`/`c-ip`, `bytes`/`response_bytes`/`sc-bytes` 등). `resp_series` 는 자동 조립된다.
+받는 키 전체 목록은 `secevt_collect.py` 의 `parse_sec_monitor_*` 주석에 있다(그 주석이 입력 사양이다).
+
+그 밖의 자체 포맷이면 선택지는 둘이다:
+1. **파서를 추가한다(권장)** — `secevt_collect.py` 에 `parse_<name>` 을 붙이고 `PARSERS` 에 한 줄 등록.
+   기존 `parse_cloudfront`(응답크기 `sc-bytes` 추출) / `parse_waf`(`httpRequest.clientIp` 추출)를 본뜨면 된다.
+   파일 하나만 고치면 되고, `attach_resp_series()` 가 같은 스윕의 응답크기를 자동으로 묶어준다.
+2. **생산자 쪽에서 §5 를 완전히 채워 `generic` 으로 보낸다** — 위 5.1 표의 필드를 직접 채운다.
+
+### 5.4 도입 직후 자기점검 (보내기 전에 1분)
+
+```bash
+# 내 소스가 §5 를 채우는지 payload 로 눈으로 확인(전송 안 함, sk 는 가려짐)
+python3 secevt_collect.py --source <내소스> --file <경로> \
+  | python3 secevt_agent.py --lssn <LSSN> --stdin --dry-run
+```
+출력 payload 에서 **아래가 보이는지** 확인한다 — 안 보이면 위 5.1 표의 "결과" 열이 그대로 현실이 된다.
+
+- `"client_ip": "..."` (실제 IP) + `"client_ip_class": "..."`
+- `"resp_bytes": <숫자>` / 같은 경로 요청이 2건 이상이면 `"resp_series": [...]`
+- `"sql_shape"` 또는 `"req_args_shape"` 에 **리터럴이 `?` 로 치환된** 공격 페이로드
+- `"origin": {...}` 가 비어 있지 않음
+- `"prefilter": {"candidate": true, "rules": [...]}` — rules 가 비면 전송 대상이 아니다
+
+적재 후 화면/DB 확인:
+```sql
+-- 공격자 IP·패턴번호·응답정보가 실제로 들어왔는지
+SELECT TOP 5 kscsn, kscActorIp, kscPatternNo, kscRespBytes, kscAttackType, kscRoutedTo, kscRegdt
+FROM tKVSSecurityCheck WHERE kscKey = '<내 lssn>' ORDER BY kscsn DESC;
+```
+`kscActorIp` 가 `NULL` 이면 **보내는 쪽이 `client_ip` 를 안 넣은 것이다**(게이트웨이·DB·화면은 이미 받을 준비가 되어 있다).
+
+---
+
+## 5.5 AI 지시서 언어 — 조직 cLang 을 따른다 (새로 만들지 말 것)
+
+모니터의 `copy AI prompt` 는 **조직(csn)의 `tCorp.cLang`** 언어로 만들어진다. 설정이 없으면 영어다.
+
+해석 순서(정본 규칙 `.agent/rules/52_project_language_from_csn.md` 의 우선순위를 그대로 따른다):
+
+1. `GIIP_CLANG` 환경변수(명시 override)
+2. **`slack-bot/.csn-lang-cache.env`** 의 `CSN_<csn>_LANG` — csn→cLang 영속 캐시(정본 메커니즘).
+   이 캐시는 `slack-bot/csn-lang-cache.js` 의 `prefetch()` 가 `pApiCorpLangGetbySk` 로 채운다.
+3. `giipAgent.cfg`/`.cnf` 의 `cLang`
+4. 없으면 `en`
+
+지원 언어키: `en`(기본) · `ko` · `ja` · `zh-CN` · `zh-TW`. `cLang` 값이 `ko-kr`/`en-US` 처럼
+지역 접미사를 가지면 정규화된다(중국어만 간체/번체 구분을 위해 지역 유지).
+
+> **중요**: 언어 해석기를 **새로 만들지 말 것.** 이미 정본 메커니즘이 있고, rule 52 가 "중복 메커니즘을
+> 새로 만들 위험"을 명시 경고한다. 2026-10-19 에 실제로 그 중복이 발생했다(경위는 rule 52 말미 참조).
+> 웹 콘솔(giipv3 `admin/secwatch-monitor`)은 **페이지 로케일**을 쓴다 — 언어 전환 UI 가 있기 때문이다.
 
 ---
 
@@ -119,11 +212,14 @@ python3 secevt_agent.py --lssn <LSSN> --event-file events.json --all
 
 ## 8. 다른 PC 에 적용 (AI 에게 그대로 지시 가능)
 
+> **"사용자가 항목을 지시하면 AI 가 수집→정규화→상시감시 편입" 전용 지시서**:
+> [`docs/60-operations/secwatch-ai-onboarding.md`](../../docs/60-operations/secwatch-ai-onboarding.md). 아래는 그 요약이다.
+
 1. 이 레포(giip-fde-agent)를 그 PC 에 두고 `scripts/secwatch/` 를 확인.
 2. 그 PC 의 `giipAgent.cfg`(또는 `.cnf`)에 `sk=`/`lssn=` 가 있는지 확인. 없으면 `GIIP_SK`/`GIIP_LSSN` 환경변수로 준다. **Jev 키는 필요 없다(게이트웨이가 보유).**
 3. 연결 점검: `python3 secevt_sample.py --no-label | python3 secevt_agent.py --lssn <LSSN> --stdin --dry-run` → payload 가 출력되면 OK.
 4. 합성 전송: `--dry-run` 을 빼고 실행 → 게이트웨이 verdict 반환 + `tKVSSecurityCheck` 적재 확인.
-5. 실데이터 연동: `secwatch.sources.example.json` 을 `secwatch.sources.json` 으로 복사해 소스별 `file`/`system`/`since_offset` 와 `lssn` 을 채운다. `secevt_collect.py` 가 aurora_audit/waf/cloudfront 를 파싱하며, 포맷이 다르면 `generic`(정규화된 JSON-lines) 경로를 쓴다.
+5. 실데이터 연동: `secwatch.sources.example.json` 을 `secwatch.sources.json` 으로 복사해 최상위 `lssn`(한 번) 과 소스별 `file`/`system`/`since_offset` 를 채운다. `secevt_collect.py` 가 aurora_audit/waf/cloudfront 를 파싱하며, 포맷이 다르면 `generic`(정규화된 JSON-lines) 경로를 쓴다.
    - **운영 실데이터 투입 전 반드시**: 사양서 §9 데이터취급 심사(외부 Jev 송신은 게이트웨이가 하지만, 마스킹 규약·송신 범위는 이 정책을 따른다).
 6. **등록(정기 실행)**: Windows 는 `register-secwatch-scheduler.ps1 -Action Register -Config <경로> -IntervalMinutes 5`, 리눅스는 cron 으로 `secevt_run.py --config <경로>` 를 주기 호출. 상세는 [`docs/60-operations/secwatch-agent.md`](../../docs/60-operations/secwatch-agent.md) §6.
 
@@ -143,4 +239,5 @@ python3 secevt_agent.py --lssn <LSSN> --event-file events.json --all
 
 - 마스킹은 따옴표 문자열·숫자 리터럴을 `?` 로 치환한다(shape 보존). 16진 blob(`0x..`) 등 일부 상수는 남을 수 있어, 민감 상수를 쓰는 소스라면 수집부에서 추가 정규화한다.
 - 전단필터는 **재현율 우선**(의심되면 candidate=true). 정상 과탐(예: `biwa` 의 정상 `information_schema` 조회)은 게이트웨이의 2차 Jev + `baseline` 이 교정한다.
+- **전단필터 판정기준(규칙 목록·대상 필드·점수식·비후보·방침) 정본**: [`docs/60-operations/secwatch-agent.md` §10](../../docs/60-operations/secwatch-agent.md#10-1차-전단필터-판정기준-정본). 규칙을 바꾸면 그 §10 표도 함께 고친다.
 - 에이전트는 전송만 한다. 통지/차단은 게이트웨이·대시보드 쪽(사양서 §7)이 담당.
