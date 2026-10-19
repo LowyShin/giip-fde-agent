@@ -51,6 +51,8 @@ def parse_aurora_audit(line, system, location, lineno):
         return None  # CONNECT/DISCONNECT 등은 대상 아님
     return {
         "src": "aurora_audit", "ts": ts, "db": database, "dbuser": username,
+        # 감사로그의 host 필드 = 접속원. 추적용으로 실제 값을 보낸다(giip #3833, 2026-10-19 결정).
+        "client_ip": (row[3].strip() if len(row) > 3 and row[3].strip() not in ("", "-") else None),
         "op": "QUERY", "retcode": retcode, "sql_shape": sql,
         "origin": _origin("aurora_audit", system, location, "queryid#%s" % queryid if queryid else "line#%d" % lineno, ts),
     }
@@ -75,6 +77,10 @@ def parse_waf(line, system, location, lineno):
     return {
         "src": "waf", "ts": ts,
         "req_uri": hr.get("uri"), "req_args_shape": hr.get("args"),
+        # client_ip: 공격자 추적·차단에 실제 IP 가 필요하다는 제품 결정(2026-10-19, giip #3833).
+        # 이 값은 giip DB(kscActorIp)에만 저장되고 Jev(외부 SaaS) 전송 state 에는 들어가지 않는다 —
+        # 게이트웨이가 state 조립 시 제외한다. class 라벨은 종전처럼 함께 보낸다(빠른 필터용).
+        "client_ip": hr.get("clientIp"),
         "client_ip_class": "external" if hr.get("clientIp") else "unknown",
         "ua_class": "script" if (ua and not re.search(r"Mozilla|Chrome|Safari|Firefox", ua or "")) else "browser",
         "origin": _origin("waf", system, location,
@@ -109,6 +115,8 @@ def parse_cloudfront(line, system, location, lineno):
     return {
         "src": "cloudfront", "ts": ts, "req_uri": uri, "req_args_shape": query,
         "retcode": status, "resp_bytes": resp_bytes,
+        # c-ip(W3C 5번째 필드) = 공격자 IP. 추적·차단용으로 실제 값을 보낸다(giip #3833, 2026-10-19 결정).
+        "client_ip": (f[4] if len(f) > 4 and f[4] not in ("", "-") else None),
         "client_ip_class": "external", "ua_class": "script",
         "origin": _origin("cloudfront", system, location, "line#%d" % lineno, ts),
     }
