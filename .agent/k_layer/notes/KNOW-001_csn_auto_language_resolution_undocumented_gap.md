@@ -40,7 +40,7 @@ SK 로는 403 이 날 수 있는데, 이는 설계상 정상 폴백 경로로 �
 - 진입점 링크: `giip-fde-agent/CLAUDE.md` "PROJECT RESPONSE LANGUAGE" 섹션.
 - 이 노트: `giip-fde-agent/.agent/k_layer/notes/KNOW-001_csn_auto_language_resolution_undocumented_gap.md`
   + `INDEX.md`.
-- tKB: CSN 70424 로 `node <lowyworkenv>/scripts/gissue/tkb.js sync-klayer --csn 70424 --dir
+- tPrivateKB: CSN 70424 로 `python3 scripts/privatekb/privatekb.py sync-klayer --csn 70424 --dir
   .agent/k_layer/notes` 동기화 시도(세션 보고 참고 — 성공 여부는 완료 보고에 명시).
 
 ## 소비처
