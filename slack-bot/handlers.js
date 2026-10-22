@@ -1571,8 +1571,12 @@ async function processMessage({ channelId, msg, isDM, conversations, threadTs })
   const effectiveThreadTs = threadTs || msg.thread_ts || null;
   const mentionsBot = config.getBotUserId() && msg.text.includes(`<@${config.getBotUserId()}>`);
   const isTaskReply = isActiveTaskThread(channelId, effectiveThreadTs);
-  // giip-773: other-bot mention also qualifies — bot間对话対応
-  const mentionsOtherBot = !mentionsBot && /<@[A-Z0-9]+>/.test(msg.text);
+  // bot-bot 대화는 OTHER_BOT_IDS allowlist 로만 열린다 —
+  // 종전의 /<@[A-Z0-9]+>/ 판정은 Slack 멘션 토큰이 사람과 봇에서 같은 형식이라
+  // 동료를 멘션한 일반 대화까지 "다른 봇 멘션"으로 인정해, 봇이 무관한 메시지에
+  // 끼어들어 태스크를 실행할 수 있었다. 사양: README.md "When the bot responds
+  // (mention policy)" — 자기 앞 멘션은 app_mention 이 처리하므로 !mentionsBot 유지.
+  const mentionsOtherBot = !mentionsBot && config.hasOtherBotMention(msg.text);
   // giip-729: 채널에서는 "명시 멘션 + 활성 태스크 스레드"만 응답한다.
   // 과거의 isBotEngagedThread(7일간 봇이 한 번이라도 말한 스레드) 자동응답은
   // 봇이 참여했던 스레드의 사람들끼리의 일반 대화(무멘션)까지 개입하게 만들어 제거.
