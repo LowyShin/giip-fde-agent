@@ -28,6 +28,8 @@ Raw Traces/Results → LLM Analysis → Source-Linked Claims → K-Layer Wiki �
 2. **Immutable append-only**: Claim 삭제 금지. `invalidated_at` 필드로만 무효화
 3. **자기강화 루프**: 새 작업 시작 전 관련 K-Layer 노트 참조 필수
 4. **Raw는 보존**: K-Layer는 raw 위에 올라가는 정제 계층. raw를 대체하지 않음
+5. **프로젝트 경계**: 작업 전 검색은 현재 작업공간의 `.agent/knowledge/notes`만 조회합니다. 프로젝트와 CSN이 다른 claim을 절대 합치지 않습니다. 범위가 없는 과거 claim은 `giip-fde-agent` 저장소에서만 참조합니다.
+6. **신선도와 예산**: `invalidated_at`이 null인 claim만 유효합니다. `expires_at`이 지난 claim, `review_due_at`에 재확인이 완료되지 않은 claim, 검증 가능한 `source_hash`와 실제 파일 해시가 다른 claim은 제외합니다. 검색은 최대 10건, 1600자로 제한합니다.
 
 ---
 
@@ -62,9 +64,17 @@ CLAIM-{NNN}: {관찰된 사실 또는 패턴}
 - **observed_at**: {YYYYMMDD}
 - **invalidated_at**: null  ← 항상 null로 시작, 무효화 시만 날짜 기입
 - **confidence**: high|mid|low
+- **project**: {현재 작업공간 이름; 고객별 필수}
+- **csn**: {CSN; 확인 가능한 경우 기록, 해당 CSN 작업에서만 조회}
+- **expires_at**: {YYYY-MM-DD; 재검증 기한이 있는 사실에서만 지정}
+- **review_due_at**: {YYYY-MM-DD; 이날부터 재검증 완료 전까지 검색 제외, 검증 후 새 기한 기록}
+- **source_file**: {현재 작업공간 상대경로; 로컬 원본 해시를 쓰는 경우}
+- **source_hash**: {source_file 전체 내용의 SHA-256; 변경 시 자동 제외, 선택 사항}
 ```
 
 ### 예시
+
+`project`는 고객 작업공간에 새 claim을 쓸 때 반드시 기록합니다. CSN을 모르는 경우 추측해서 채우지 말고 비워 두며, CSN을 기록한 claim은 정확히 일치하는 CSN에서만 검색합니다. `expires_at`은 사실의 유효기간 종료일(해당 날짜까지 검색 가능), `review_due_at`은 재검증 시작일(해당 날짜부터 검색 제외)입니다. 두 필드의 날짜가 잘못되면 검색에서 제외합니다. `source_file`과 `source_hash`는 함께 기록하며, 해시 검사는 2 MiB 이하의 작업공간 내부 파일에만 적용합니다. 큰 파일이나 작업공간 밖 원본은 해시를 만들지 않고 기존 `source` 근거와 재검증 기한을 기록합니다.
 
 ```markdown
 ## API 오류 패턴

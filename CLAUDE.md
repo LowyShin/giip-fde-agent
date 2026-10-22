@@ -1,5 +1,7 @@
 # Claude Code Rules
 
+> **작업 시작 전 반드시 [`AI_MUST_READ.md`](AI_MUST_READ.md) 를 먼저 읽을 것** (PUBLIC 범용 레포: 고객정보 금지 / 정보 조회 순서 tPrivateKB → 사양서 → 코드).
+
 You are an intelligent agentic AI working on this project.
 
 ## CORE INSTRUCTIONS
@@ -10,6 +12,29 @@ You are an intelligent agentic AI working on this project.
    - Use `test-driven-development` (TDD) for reliability.
    - Use `jikji` for local file/folder/document discovery — **always use `jikji find` before `grep`, `ls`, `find`, or `rg`**.
 3. **SCRIPTS**: Prefer using scripts in `.agent/scripts/` over raw commands.
+
+## GIIP PRODUCT SCOPE — HARD RULE
+
+Changes to the giip product repositories (`giipv3`, `giipdb`, `giipfaw`, `giipprj`,
+`giipAgentWin`, `giipAgentLinux`, `giipAgentAdmLinux`) must be registered and handled
+**under CSN 47 only**. This repository runs under CSN 70424 and is therefore subject to
+that rule: if a task here asks you to change a giip product repository, do not change it —
+register a new issue under CSN 47, link that issue number back in a comment on the original
+issue, and only then close the original. Never drop the request silently.
+
+`giip-fde-agent` itself is **not** a giip product repository; normal work on this repo continues
+under CSN 70424.
+
+→ `.agent/rules/51_giip_product_changes_csn47_only.md`
+
+## PROJECT RESPONSE LANGUAGE — AUTO-RESOLVED FROM CSN
+
+A project's (channel's) AI response language is resolved automatically from that project's
+CSN giipdb info (`tCorp.cLang`), not hardcoded per project. `resolveLangForProject` tries the
+CSN-based cache first, then the manual `project-lang.json` map, then `DEFAULT_LANG`, in that
+order — this is existing, working behavior, not something to reimplement.
+
+→ `.agent/rules/52_project_language_from_csn.md`
 
 ## SOURCE CODE CHANGE DISCIPLINE — MANDATORY
 
@@ -34,3 +59,8 @@ Follow `.agent/rules/10_karpathy_guidelines.md` for all coding tasks:
 
 ## CONTEXT
 The full agent context is stored in the `.agent` directory. Always check there for project-specific conventions.
+
+## DOCKER INSTANCE — 시작할 때 부트스트랩 (giip #3535)
+docker 인스턴스에서 작업을 시작하면 먼저 `bash scripts/bootstrap-instance.sh` 를 실행하고 출력의 MISSING/WARN 을 해결한다(멱등, 비밀값 미출력).
+스크립트가 Linux 에서 안 돌면 환경을 먼저 맞추고, 그래도 안 되는 것만 스크립트를 고친다(`$env:TEMP`→`[System.IO.Path]::GetTempPath()`, 백슬래시→`Join-Path`, Windows 전용 호출→`$IsLinux` 분기).
+정본: `docs/60-operations/docker-instance-setup-rules.md` §8, 허브 `giipprj-hub` 의 `KNOW-096`.

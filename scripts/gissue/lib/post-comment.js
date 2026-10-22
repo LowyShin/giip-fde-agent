@@ -8,14 +8,15 @@
  * 사용: node post-comment.js <isn> <content> <sk> [apiBase] [issuetype]
  *   content 가 '@<path>' 형태면 그 파일을 UTF-8 로 읽어 본문으로 쓴다
  *   (긴 본문/따옴표 많은 본문을 커맨드라인 인자로 넘기지 않아도 되게 하는 안전 경로).
+ *   role(7번째 위치 인자, giip #1324): 주어지면 loadedRole 로 함께 등록한다.
  */
 const fs = require('fs');
 const { postCommentVerified, DEFAULT_API_BASE } = require('./comment-api');
 
-const [, , isnArg, contentArg, sk, apiBaseArg, issuetypeArg] = process.argv;
+const [, , isnArg, contentArg, sk, apiBaseArg, issuetypeArg, roleArg] = process.argv;
 
 if (!isnArg || contentArg === undefined || !sk) {
-  console.error('사용법: node post-comment.js <isn> <content|@file> <sk> [apiBase] [issuetype]');
+  console.error('사용법: node post-comment.js <isn> <content|@file> <sk> [apiBase] [issuetype] [role]');
   process.exit(2);
 }
 
@@ -30,6 +31,7 @@ postCommentVerified({
   isn: Number(isnArg),
   content,
   issuetype: issuetypeArg || 'note',
+  loadedRole: roleArg || undefined,
 })
   .then((r) => {
     r.log.forEach((l) => console.log(l));

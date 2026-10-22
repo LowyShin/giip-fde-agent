@@ -62,6 +62,12 @@ pm2 save
 pm2 startup   # follow the printed instructions
 ```
 
+### Docker (auto clone + csn/sk/login_id registration)
+
+For a fresh environment that should set itself up in one shot (clone the repo, fill in
+`.secrets/giip-accounts.json`, start this bot, and optionally the hourly-issue-scheduler),
+see [`docker/`](../docker/README.md) / [`docs/60-operations/docker-deployment.md`](../docs/60-operations/docker-deployment.md).
+
 ## Workspace Structure
 
 The bot expects a `.agent/` directory in `WORKSPACE_DIR`:

@@ -56,3 +56,9 @@ This file tracks the history of tasks and changes performed by the GIIP Agent sy
 - 20260701: k-layer.js 키워드 업데이트 및 `BASE_DIR` 처리 개선.
 - 20260703: README를 FDE Agent 정체성 중심으로 재구성하고 EN/JP를 동기화. QUICK_START, 범용 워크플로 규칙, Slack 봇의 taskmerge·타임아웃·수정요청 라우팅·워크플로 명령·결과 URL 처리를 개선.
 - 20260706: What's New 롤링 페이지를 신설하고, `paperthin` 스킬 14종과 `keep-codex-fast` 외부 저장소 정보를 등록.
+- 20260910: Windows Hook Doctor 추가 — FDE 소유 훅의 Node 실행 가능성·대상 경로·BOM/CRLF 진단, backup-once 복구 후 재검증, Windows CI 회귀 차단. (docs/plans/2026-09-10-windows-hook-doctor.md)
+- 20260915: K-Layer 프로젝트 범위 및 유효성 검사 — 다른 작업 공간·프로젝트·CSN 의 Claim 을 실행 컨텍스트에서 제외, 재확인 기한·원본 변경·컨텍스트 예산 확인. (slack-bot/k-layer.js)
+- 20260915: 태스크 완료 증거 구분 — 봇이 관측한 준비·실행·종료와 독립 검증을 구분, Slack 및 GIIP REVIEW 에 검증 대기 명시. (slack-bot/task-evidence.js)
+- 20260916: 작업 입력과 사용자 지시 보존 — Slack 태스크의 선택 컨텍스트 해시 고정·변경 시 재분석, 개정·추가 지시 원문을 재개 프롬프트에 보존. (slack-bot/task-manager.js)
+- 20261004: dev 사용자 sudo 스크립트 + docker-bypass 이동 — `scripts/setup-dev-sudo.sh` 로 dev 에게 NOPASSWD sudo 를 부여하고, 루트의 `docker-bypass.sh` 를 `scripts/` 로 옮겼습니다. → [운영 문서](./60-operations/docker-dev-user-and-sudo.md)
+- 20261006: dev NOPASSWD sudo 부팅 시 자동 부여 — `docker-bypass.sh` 의 root 구간(사용자 전환 직전)이 `setup-dev-sudo.sh` 를 자동 호출하도록 했습니다. 이제 수동 2단계 없이 부팅만으로 dev 가 sudo 를 쓸 수 있습니다(예: `/usr` 전역 npm `claude` 자동업데이트). 끄려면 `FDE_GRANT_SUDO=0`. → [운영 문서](./60-operations/docker-dev-user-and-sudo.md)

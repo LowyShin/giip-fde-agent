@@ -278,6 +278,7 @@ function buildInitialExecutionPrompt(p = {}) {
   ].join('\n')));
 
   // 6: 태스크 내용
+  if (p.bindingInstructions) push('binding_instructions', section('=== 사용자 지시 원문 (요약으로 대체하지 마라) ===', p.bindingInstructions));
   push('task', section('=== 태스크 ===', p.taskContent || ''));
   if (Array.isArray(p.kLayerClaims) && p.kLayerClaims.length) {
     push('klayer', section('=== K-Layer 지식 ===', p.kLayerClaims.map(c => `• ${c}`).join('\n')));
@@ -294,7 +295,9 @@ function buildInitialExecutionPrompt(p = {}) {
 
   const budget = (p.limits && p.limits.initialMaxChars)
     || modelConfig.promptLimits(p.taskClass).initialMaxChars;
-  const { text, trimmed } = fitParts(parts, budget,
+  const protectedChars = parts.filter(x => !['context', 'klayer', 'task', 'context_reasons'].includes(x.name))
+    .reduce((n, x) => n + x.text.length, 0);
+  const { text, trimmed } = fitParts(parts, Math.max(budget, protectedChars + 100),
     ['context', 'klayer', 'task', 'context_reasons']);
   if (trimmed.length) {
     console.warn(`[prompt] 최초 프롬프트가 ${p.taskClass || 'standard'} 상한(${budget}자)을 넘어 축약: ${trimmed.join(', ')}`);
@@ -364,6 +367,7 @@ function buildResumeExecutionPrompt(p = {}) {
   // 3: 태스크 요약 (전체 사양 아님)
   const summary = p.taskSummary || summarizeTaskSpec(p.taskContent || '');
   push('task_summary', section('=== 태스크 요약 (전체 사양 아님) ===', summary));
+  if (p.bindingInstructions) push('binding_instructions', section('=== 사용자 지시 원문 (재개 시에도 유효) ===', p.bindingInstructions));
 
   // 4~5: 완료 / 미완료 단계
   push('completed_steps', section('=== 완료된 단계 (다시 하지 마라) ===',
@@ -418,6 +422,12 @@ function buildResumeExecutionPrompt(p = {}) {
     // 애초에 재개 프롬프트 대신 동일 프롬프트 재사용이 허용된다(판정은 task-manager).
     budget = Math.max(MIN_RESUME_PROMPT_CHARS,
       Math.min(budget, Math.floor(initialChars * limits.resumeMaxRatio)));
+  }
+  const protectedChars = parts.filter(x => !RESUME_TRIM_ORDER.includes(x.name))
+    .reduce((n, x) => n + x.text.length, 0);
+  if (protectedChars > budget) {
+    console.warn(`[prompt] 재개 프롬프트 ${budget}자 예산보다 사용자 원문 등 필수 정보가 큼 — 지시 보존 우선`);
+    budget = protectedChars + 100;
   }
   const { text, trimmed } = fitParts(parts, budget, RESUME_TRIM_ORDER);
   if (trimmed.length) {

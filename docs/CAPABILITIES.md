@@ -63,6 +63,12 @@ giip FDE Agent는 단순한 프롬프트 모음이 아니라, 검증된 여러 �
 - **주기적 유지보수**: 주간/격주 알림으로 Codex 상태를 자동 점검하되, 적용은 사용자 승인 후 수동으로 진행합니다.
 - [keep-codex-fast 스킬](../.agent/skills/keep-codex-fast/SKILL.md) | [유지보수 워크플로우](../.agent/workflows/codex-maintenance.md) | [Codex 도구 가이드](04-tools/codex.md)
 
+## 11. secwatch — 보안점검(SQL 인젝션 탐지)
+- **소스→판정 파이프라인**: 고객 수집 PC 에서 소스 로그(Aurora 감사로그·WAF·CloudFront·신호)를 수집·마스킹·전단필터해, 후보만 giip **Jev 게이트웨이**로 보내 SQL 인젝션 등 해킹 의심을 2차 판정·적재합니다.
+- **키 없는 수집 PC**: 고객 PC 에는 Jev 키가 없고(sk 인증만), Jev 키는 giip 게이트웨이(Azure 앱설정)에만 둡니다. 마스킹은 소스에서 수행(원본 SQL/PII 미송신), 결과행의 `origin` 으로 원본 소스로 복귀합니다.
+- **"secwatch 등록" 한 흐름**: 설정(`secwatch.sources.json`) → `secevt_run.py` 스윕 → cron/작업스케줄러 등록.
+- [운영·등록 절차](60-operations/secwatch-agent.md) | [scripts 설명](../scripts/secwatch/README.md) | 설계 정본: giipdb `SPEC_JEV_SQLI_DETECTION.md` (giip #3833)
+
 ---
 
 ## 📂 시스템 아키텍처 (System Architecture)
