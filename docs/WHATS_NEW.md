@@ -11,6 +11,7 @@
 ---
 
 ## 2026-10-22
+- **저장소 위생 정비 6차 — 머지 완료 후 잔존 브랜치 삭제 (CSN 70424)** — 직전 실행이 재생성해 둔 `fix/giip-3535-gitguardian-config` 와 `feat/is3905-privatekb-client` 원격 브랜치 2건과 로컬 브랜치 1건을, PR MERGED 상태와 blob 해시 동일성(내용 무손실)을 확인한 뒤 삭제했습니다. 충돌 PR·실패 CI·orphan stash 는 0건이었고 최근 코멘트(2시간 창)도 0건이라 이슈 쓰기는 하지 않았습니다. → [작업 기록](../.agent/work_history/20261022_233622_csn70424_repo-maintenance.md)
 - **GitGuardian 제외 설정 근거 주석 보강 (CSN 70424)** — 설정 파일에 "SaaS 쪽에는 `version: 2` + `paths-ignored:` 형태의 변형도 실제로 쓰인다" 는 근거를 주석으로 남겨, 같은 설정을 뒤에서 다시 논쟁하지 않게 했습니다. 실제로는 문서에서 확인된 키(`secret.ignored_paths`)만 사용합니다. → [.gitguardian.yaml](../.gitguardian.yaml)
 - **역할 문서 죽은 링크 교정 (CSN 70424)** — 소개문서 퍼블리셔 역할이 가리키던 `reference-doc-manager.md` 링크가 이 저장소에는 대상 파일이 없어 404 였던 것을 제거하고, "존재 검증 후 링크" 원칙 문구를 본문에 그대로 남겼습니다. → [역할 정의](../.agent/roles/intro_docs_publisher.md)
 - **GitGuardian 비밀 스캔 제외 설정 정상화** — 문서화된 설정 파일명(`.gitguardian.yaml`)과 스키마(`secret.ignored_paths`)로 바꿔, `log-ship.js` 의 비밀 마스킹 정규식 패턴이 비밀로 오탐 탐지되지 않게 했습니다. 이전 `.gitguardian.yml` 은 파일명과 키가 모두 문서화되지 않은 형태라 제외가 적용된 적이 없었습니다. → [.gitguardian.yaml](../.gitguardian.yaml)
