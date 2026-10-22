@@ -66,17 +66,29 @@ python3 scripts/privatekb/privatekb.py sync-klayer --csn 47 --dir .agent/k_layer
 
 ## 호출 경로 (실측 확인, 추측 아님)
 
-에이전트에는 AK 가 없고 SK 만 있습니다. 그래서 AK 전용 `giipKb` 함수가 아니라 **`giipApiSk3` 디스패처 → `pApiKb*bySk`** 를 씁니다.
+에이전트에는 AK 가 없고 SK 만 있습니다. 그래서 AK 전용 `giipKb` 함수가 아니라 **`giipApiSk4` → `pApiKb*bySk`** 를 씁니다.
 
 ```
-POST https://giipfaw.azurewebsites.net/api/giipApiSk3
+POST https://giipfaw.azurewebsites.net/api/giipApiSk4
 Content-Type: application/x-www-form-urlencoded
 
-token=<sk>&text=KbCreate jsondata&jsondata={"csn":47,...}
-  → 서버가 exec pApiKbCreatebySk '<sk>', N'{...}' 로 변환
+token=<sk>&text=KbCreate jsondata&jsondata={"jsondata":"<전체 JSON 문자열>"}
+  → 서버가 EXEC pApiKbCreatebySk @p0, @p1 로 파라미터 바인딩 실행
 ```
 
-`text` 에 `jsondata` 라는 낱말이 있으면 디스패처가 그 자리를 실제 JSON 으로 치환합니다. 이 낱말을 빼면 jsondata 가 마지막 인자로 자동 추가되는 다른 경로를 타므로 **명시적으로 넣으십시오.**
+`text` 는 `"<SPName> <토큰1> <토큰2> ..."` 규약이고, 각 토큰은 jsondata 객체의 **키 이름**에서 값을 찾아 그 위치의 파라미터로 바인딩됩니다. 이 SP 는 `@jsondata` 로 JSON 전체를 받으므로, 전체 JSON 을 문자열로 만들어 `{"jsondata": "..."}` 로 한 겹 감쌉니다.
+
+### `giipApiSk3` 를 쓰지 마십시오 (성역 우회의 실제 적용 사례)
+
+`giipApiSk3` 로 먼저 구현했다가 두 가지 결함을 실측했습니다. `giipfaw/**/run.ps1` 은 성역이라 고칠 수 없어서, `.agent/rules/PROTOCOL_SANCTUARY_BYPASS.md` 규약대로 **이미 만들어져 있던 새 함수(`giipApiSk4`)로 호출부를 전환**했습니다. 새 함수를 또 만들 필요는 없었습니다 — `giipApiSk4` 자체가 같은 이유(giip #1215)로 만들어진 우회 함수입니다.
+
+| | `giipApiSk3` | `giipApiSk4` |
+|---|---|---|
+| 응답에 SK | **평문으로 들어옴** (`_debug_executedQuery`) | 없음 |
+| 본문에 줄바꿈이 있을 때 | **응답 전체가 JSON 파싱 불가** (`Invalid \escape`). 그런데 DB 쓰기는 성공한 상태라 재시도하면 **중복이 쌓인다** | 정상 |
+| 파라미터 전달 | 문자열 이어붙이기 | `SqlParameter` 진짜 바인딩 |
+
+`giipApiSk4` 는 문자열을 이어붙이지 않아 두 결함이 구조적으로 없습니다. debug 필드에도 `EXEC pApiKbCreatebySk @p0, @p1` 처럼 **값이 아닌 플레이스홀더만** 담깁니다.
 
 쓸 수 있는 `text` 값: `KbCreate` / `KbGet` / `KbList` / `KbUpdate` / `KbDelete` (각각 `pApiKb*bySk` 로 매핑).
 
@@ -86,25 +98,11 @@ token=<sk>&text=KbCreate jsondata&jsondata={"csn":47,...}
 
 ## 함정 5가지 (전부 실제로 겪은 것)
 
-### 1. 응답에 SK 가 그대로 담겨 옵니다
+### 1·2. `giipApiSk3` 의 두 결함 — **`giipApiSk4` 로 전환해 해소됨**
 
-`giipApiSk3` 가 `_debug_executedQuery` 에 `exec pApiKbCreatebySk '<sk>', ...` 를 넣어 돌려줍니다. `giipfaw/**/run.ps1` 은 성역이라 고칠 수 없습니다.
+위 "호출 경로" 의 표를 보십시오. 이 스크립트는 `giipApiSk4` 를 쓰므로 둘 다 해당되지 않습니다. 다만 **다른 SK 경로를 직접 구현할 때는 같은 함정을 만나게 되므로** 기록을 남겨둡니다.
 
-→ **클라이언트가 버려야 합니다.** 이 스크립트는 파싱 전에 텍스트에서 `debug` 블록을 잘라냅니다. 직접 구현한다면 응답을 **절대 그대로 로그에 남기지 마십시오.**
-
-### 2. 응답이 JSON 으로 파싱되지 않는 경우가 있습니다 (가장 위험)
-
-같은 `_debug_executedQuery` 가 **JSON 이스케이프를 잘못합니다.** 본문에 줄바꿈이 있으면 `\` + 실제 개행을 내보내 응답 전체가 깨집니다.
-
-```
-json.decoder.JSONDecodeError: Invalid \escape: line 10 column 189
-```
-
-**그런데 DB 쓰기는 성공한 상태입니다.** 클라이언트만 실패로 보고, 그대로 재시도하면 **중복 행이 쌓입니다.** k_layer 노트는 전부 여러 줄 마크다운이라 이 경로를 반드시 지나갑니다.
-
-→ 파싱 **전에** `debug` 블록을 텍스트에서 제거하십시오(함정 1 과 같은 조치로 둘 다 해결됩니다).
-
-→ 그래도 파싱이 실패하면 **재시도하기 전에 `list` 로 이미 들어갔는지 확인**하십시오.
+구 경로로 되돌릴 일이 생기거나 서버가 debug 내용을 바꿔도 영향받지 않도록, 이 스크립트는 여전히 파싱 **전에** `debug` 블록을 텍스트에서 잘라냅니다(방어선). 어떤 경우에도 응답을 그대로 로그에 남기지 마십시오.
 
 ### 3. `pApiKbCreatebySk` 에는 중복 방지가 없습니다
 
@@ -126,19 +124,31 @@ AK 버전(`pApiKbCreatebyAk`)은 `extRefId` 로 여러 번 돌려도 안전한 u
 
 ---
 
-## 검증 기록 (2026-10-20)
+## 검증 기록
 
 라이브 DB·라이브 API 로 실제 확인했습니다.
 
+**2026-10-20 (giipApiSk3 경로)**
+
 | 항목 | 결과 |
 |---|---|
-| `list` | OK |
-| `put` 신규 (여러 줄 한글) | `created kbSn=...` |
-| `put` 재실행 (같은 title) | `updated kbSn=` 같은 값 — **중복 생성 없음** |
-| 본문 왕복 | 한글·줄바꿈 보존 확인 (`'검증 2차 — 갱신됨.\n\n줄바꿈 유지.\n'`) |
-| `get` | OK |
-| `sync-klayer` dry-run / 1차 / 2차 | 미실행 / `created` / `updated` (중복 없음) |
-| 검증용 행 정리 | 5건 삭제, 총계 6,171 로 원상복귀 |
+| `list` / `get` | OK |
+| `put` 신규 (여러 줄 한글) | `created` |
+| `put` 재실행 (같은 title) | `updated` 같은 kbSn — 중복 없음 |
+| 본문 왕복 | 한글·줄바꿈 보존 |
+| `sync-klayer` dry-run / 1차 / 2차 | 미실행 / `created` / `updated` |
+| 검증용 행 정리 | 5건 삭제, 총계 원상복귀 |
+
+**2026-10-22 (giipApiSk4 로 전환 후 재검증)**
+
+| 항목 | 결과 |
+|---|---|
+| JSON 파싱 (여러 줄 한글 본문) | **OK** — giipApiSk3 는 이 지점에서 깨졌다 |
+| 응답에 SK 포함 | **없음** — giipApiSk3 는 흘렸다 |
+| debug 필드 | `EXEC pApiKbCreatebySk @p0, @p1` (플레이스홀더만) |
+| 줄바꿈 DB 보존 | OK |
+| `put` 신규 → 재실행 | `created` → `updated` 같은 kbSn (중복 없음) |
+| 검증용 행 정리 | 2건 삭제, 잔여 0 확인 |
 
 ## 관련 정본
 
