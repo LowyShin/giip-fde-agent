@@ -62,3 +62,4 @@ This file tracks the history of tasks and changes performed by the GIIP Agent sy
 - 20260916: 작업 입력과 사용자 지시 보존 — Slack 태스크의 선택 컨텍스트 해시 고정·변경 시 재분석, 개정·추가 지시 원문을 재개 프롬프트에 보존. (slack-bot/task-manager.js)
 - 20261004: dev 사용자 sudo 스크립트 + docker-bypass 이동 — `scripts/setup-dev-sudo.sh` 로 dev 에게 NOPASSWD sudo 를 부여하고, 루트의 `docker-bypass.sh` 를 `scripts/` 로 옮겼습니다. → [운영 문서](./60-operations/docker-dev-user-and-sudo.md)
 - 20261006: dev NOPASSWD sudo 부팅 시 자동 부여 — `docker-bypass.sh` 의 root 구간(사용자 전환 직전)이 `setup-dev-sudo.sh` 를 자동 호출하도록 했습니다. 이제 수동 2단계 없이 부팅만으로 dev 가 sudo 를 쓸 수 있습니다(예: `/usr` 전역 npm `claude` 자동업데이트). 끄려면 `FDE_GRANT_SUDO=0`. → [운영 문서](./60-operations/docker-dev-user-and-sudo.md)
+- 20260908: Pi에서 배운 다국어 토큰 이중 예산 도입 — 선택 컨텍스트·체크포인트 재개·고정 prefix는 유지하고, 한글·일본어·한자 입력에도 최초·재개 프롬프트의 추정 토큰 상한을 적용합니다. (`slack-bot/token-budget.js`, `slack-bot/prompt-templates.js`, `slack-bot/model-config.js`) → [비교 및 적용 결과](./03-analysis/pi-comparison-token-efficiency.analysis.md)

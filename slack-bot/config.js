@@ -15,6 +15,11 @@ const CHANNEL_IDS = (process.env.SLACK_CHANNEL_IDS || '').split(',').map(s => s.
 // SLACK_ALLOWED_USERS: Slack user ID whitelist (comma-separated). Empty = allow everyone.
 const ALLOWED_USERS = (process.env.SLACK_ALLOWED_USERS || '').split(',').map(s => s.trim()).filter(Boolean);
 const SLACK_APP_TOKEN = process.env.SLACK_APP_TOKEN;
+// OTHER_BOT_IDS: bot-to-bot 대화를 열어 줄 상대 봇의 Slack ID allowlist (comma-separated).
+// 비어 있으면(기본값) 어떤 멘션도 "다른 봇 멘션"으로 인정하지 않는다 —
+// Slack 의 `<@U...>` 토큰은 사람과 봇이 같은 형식이라 ID 만으로는 구분할 수 없다.
+// 사양: README.md "When the bot responds (mention policy)".
+const OTHER_BOT_IDS = (process.env.OTHER_BOT_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
 
 const BOT_NAME        = process.env.BOT_NAME || 'giipclaude Bot'; // Slack 표시용 봇 이름 (BOT_NAME 환경변수로 변경 가능)
 // WORKSPACE_DIR: 기본 작업 폴더(.agent 위치 / git push 대상). 미설정 시 slack-bot 상위 폴더로 자동 결정.
@@ -39,6 +44,19 @@ function setBotUserId(id) { botUserId = id; }
 let selfBotId = null;
 function getSelfBotId() { return selfBotId; }
 function setSelfBotId(id) { selfBotId = id; }
+
+// ── 다른 봇 멘션 판정 (allowlist 기반) ───────────────────────────────────────
+// 판정 로직은 여기에 모아 둔다 — 호출부(handlers.js)가 멘션 정규식을 직접 다루지 않게 한다.
+function getOtherBotIds() { return OTHER_BOT_IDS; }
+function isOtherBotId(id) { return OTHER_BOT_IDS.includes(id); }
+
+// 본문의 멘션 토큰을 전부 추출해, allowlist 에 있는 ID 가 하나라도 있으면 true.
+// allowlist 가 비어 있으면 항상 false(기본값은 봇-봇 대화 비활성).
+function hasOtherBotMention(text) {
+  if (!OTHER_BOT_IDS.length || !text) return false;
+  const mentioned = [...String(text).matchAll(/<@([A-Z0-9]+)>/g)].map(m => m[1]);
+  return mentioned.some(isOtherBotId);
+}
 
 // ── プロジェクトの .agent ディレクトリを解決 ─────────────────────────────────
 // workDir 内に .agent があればそれを使い、なければ BASE_DIR/.agent にフォールバック
@@ -328,6 +346,7 @@ module.exports = {
   BOT_TOKEN,
   CHANNEL_IDS,
   ALLOWED_USERS,
+  OTHER_BOT_IDS,
   SLACK_APP_TOKEN,
   BOT_NAME,
   BASE_DIR,
@@ -340,6 +359,9 @@ module.exports = {
   setBotUserId,
   getSelfBotId,
   setSelfBotId,
+  getOtherBotIds,
+  isOtherBotId,
+  hasOtherBotMention,
   getAgentDir,
   parseProjectPrefix,
   resolveProjectCsn,
