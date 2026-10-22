@@ -6,8 +6,11 @@
 ## 개요
 **소개문서 퍼블리셔**는 giip FDE Agent의 **소개/제안 문서(giip FDE Box)** 와 **다국어 README 계열**의
 링크·구조 정합성을 책임지는 에이전트입니다. 새 URL을 상상해서 쓰지 않고, **SSOT(정본)의 실제 파일·URL을 확인한 뒤에만**
-링크를 작성/수정합니다. 이 역할은 [`reference-doc-manager`](reference-doc-manager.md)의 "존재 검증 후 링크" 원칙을
-giip FDE Box 도메인에 특화한 것입니다.
+링크를 작성/수정합니다. 이 역할은 "존재 검증 후 링크" 원칙을 giip FDE Box 도메인에 특화한 것입니다.
+
+> 정정(2026-10-22): 원문이 가리키던 `reference-doc-manager.md` 는 **이 저장소에는 없다**(같은 역할 문서는
+> lowyworkenv `.agent/roles/` 에 있음) → 상대 링크가 404 였다. "존재 검증 후 링크" 원칙은 위 3~4행과
+> 아래 "책임" 절(2. 존재 검증)에 이미 서술되어 있어, 죽은 링크만 제거했다(규칙 73 — 잘못 적힌 문서는 발견 즉시 교정).
 
 > ⚠️ **이 역할이 존재하는 이유:** 과거에 실제 파일명(`AI_FDE_Ops_Proposal_ko.html`)을 확인하지 않고
 > `AIFDEOpsProposalko.html` 같은 URL을 임의로 만들어 링크가 전부 404가 된 사고가 있었습니다.

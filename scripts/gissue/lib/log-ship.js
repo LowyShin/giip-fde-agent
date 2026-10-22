@@ -25,7 +25,9 @@ const MAX_LINE_CHARS = 4000;
 const MAX_LINES_PER_RUN = 6000;
 
 // 명백한 비밀 패턴만 가린다(스펙 §8). 완벽한 DLP 가 아니다.
-/* gitguardian ignore all */
+// GitGuardian 비밀 스캔 제외는 이 파일 안의 인라인 마커가 아니라 `.gitguardian.yaml` 의
+// `secret.ignored_paths` (경로 단위 제외) 로 처리한다 — 인라인 마커는 줄 단위 탐지 건만
+// 억제하며 문서화된 파일 단위 제외 수단이 아니다.
 const MASKS = [
   [/\b(sk|ak|token|password|pwd|secret|api[_-]?key)\s*[=:]\s*("[^"]*"|'[^']*'|[^\s,;&]+)/gi, '$1=***'],
   [/(Authorization\s*:\s*)(Bearer\s+)?\S+/gi, '$1***'],

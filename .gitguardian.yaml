@@ -1,0 +1,17 @@
+# GitGuardian Security Scans Configuration
+# https://docs.gitguardian.com
+#
+# 문서 근거(2026-10-22 확인):
+#   - 설정 파일명: `.gitguardian.yaml` (문서: ggshield configuration, endpoint-protection configuration-reference)
+#   - 경로 제외 키: `secret.ignored_paths` (glob)
+#   - 종료코드 키: `exit_zero` (SaaS 대시보드 스캔에는 무관)
+# 이전 `.gitguardian.yml` 은 위 두 가지가 모두 어긋나 있었다 — 파일명(.yml)과 문서화되지 않은
+# 키(`exit_code_config.allow_existing`)를 쓰고 있어 경로 제외가 적용된 적이 없다.
+#
+# 제외 사유: 아래 두 파일은 로그에서 비밀을 가리는 **정규식 패턴**(MASKS 배열)과 그 테스트
+# 예시값(가짜 sk/hash)만 담고 있어 비밀 스캔 오탐의 원인이다. 실제 비밀값은 없다.
+# 관련 이슈: giip #3535 후속 (log-ship.js 신설)
+secret:
+  ignored_paths:
+    - 'scripts/gissue/lib/log-ship.js'
+    - 'scripts/gissue/tests/test-log-ship.mjs'
