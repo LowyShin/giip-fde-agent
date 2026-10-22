@@ -6,15 +6,13 @@
 >
 > *(EN/JP 독자는 각 항목을 AI 에이전트에 번역 요청하세요. / Ask your AI assistant to translate entries.)*
 
-**기준일 (as of): 2026-10-06**
+**기준일 (as of): 2026-10-22**
 
 ---
 
-## 2026-10-06
-- **dev NOPASSWD sudo 부팅 시 자동 부여** — `docker-bypass.sh` 의 root 구간(사용자 전환 직전)이 `setup-dev-sudo.sh` 를 자동 호출하도록 했습니다. 이제 수동 2단계 없이 부팅만으로 dev 가 sudo 를 쓸 수 있습니다(예: `/usr` 전역 npm `claude` 자동업데이트). 끄려면 `FDE_GRANT_SUDO=0`. → [운영 문서](./60-operations/docker-dev-user-and-sudo.md)
-
-## 2026-10-04
-- **dev 사용자 sudo 스크립트 + docker-bypass 이동** — `scripts/setup-dev-sudo.sh` 로 dev 에게 NOPASSWD sudo 를 부여하고, 루트의 `docker-bypass.sh` 를 `scripts/` 로 옮겼습니다. → [운영 문서](./60-operations/docker-dev-user-and-sudo.md)
+## 2026-10-22
+- **저장소 위생 정비 (CSN 70424)** — 머지 완료가 확인된 원격 브랜치 26건과 로컬 브랜치 77건, 그리고 워크트리 2건을 내용 검증 후 정리했습니다. 워크트리 회수는 규칙 55 절차(링크(정션·심볼릭) 사전검사 → 항목별 삭제 → 인접 레포 HEAD 재검증)를 거쳐 진행했고, 되돌릴 수 없는 판단은 하지 않았습니다. → [작업 기록](../.agent/work_history/20261022_090900_csn70424_repo-maintenance.md)
+- **저장소 위생 정비 2차 — 죽은 세션 잔해 구조 (CSN 70424)** — 직전 실행이 타임아웃으로 자동 stash 처리했던 잔해(작업 기록 1건 + What's New 롤링 갱신)를 소관 매칭·사실 검증 후 새 브랜치로 이관해 복구했습니다. stash 는 이관 성공 확인 후 정리했습니다. → [작업 기록](../.agent/work_history/20261022_103400_csn70424_repo-maintenance.md)
 
 ---
 *이 페이지는 [규칙 36 — What's New 유지](../.agent/rules/36_whats_new_maintenance.md)에 따라 갱신·정리됩니다.*
