@@ -11,6 +11,9 @@
 ---
 
 ## 2026-10-23
+- **스케줄러 러너 3건 결함 수정 — PS 5.1 파싱 불가 + 조상 판정 상수 false + upstream 없는 브랜치에서 기동 사망 (CSN 70424)** — 이 PC 에 `pwsh` 가 없는 Windows PowerShell 5.1 에서 러너 파일이 **파싱 에러 16건**으로 아예 뜨지 않던 문제(PS 7 전용 `??` 연산자), `git merge-base --is-ancestor` 의 **stdout 출력**을 검사해 항상 `false` 를 반환하던 문제(NOT-ON-MAIN 자동 복귀가 한 번도 동작하지 않던 근본 원인), 그리고 체크아웃이 upstream 없는 브랜치일 때 **러너가 기동하자마자 죽던** 문제(stderr 가 terminating → `NativeCommandError`)를 고쳤습니다. → [러너 스크립트](../scripts/gissue/run-gissue-claude.ps1)
+- **NOT-ON-MAIN 회귀 테스트 실측 가동 — 거짓 통과 제거 (CSN 70424)** — 테스트가 실제로는 **검사 0건**인데 "ALL TESTS PASSED" 로 보고되던 구조를 고쳤습니다(러너에 함수만 적재하는 진입점 추가 · 픽스처가 "원격 브랜치 삭제" 시나리오를 재현하도록 수정 · 함수 미적재/검사 0건 가드 추가). **12 checks, 0 failures** 를 실측 확인했고, 결함을 되살린 사본으로 음성 검증까지 했습니다(C1·C3·D2 3건 실패 확인). → [회귀 테스트](../scripts/gissue/tests/test-selfpull-not-on-main.ps1)
+- **슬랙 봇 명령 문서의 죽은 출처 교정 + `giip ...` 명령군 문서화 (CSN 70424)** — `COMMANDS.md` 가 "소스의 진실은 `index.js`" 라고 적었으나 실제로는 `handlers.js` 였습니다(`giip ...` 系는 `giip-commands.js`). 실제 코드와 대조해 미문서화돼 있던 `giip account/issue/project/channel/api` 명령 5개군을 문서화했습니다. → [COMMANDS.md](../slack-bot/COMMANDS.md)
 - **저장소 위생 정비 7차 — What's New 롤링 창 정리 + 죽은 링크 교정 (CSN 70424)** — 기준일이 하루 지나면서 7일 창을 벗어난 `2026-10-15` 섹션 2건을 [HISTORY.md](./HISTORY.md) 로 이관했습니다. 저장소 전체 마크다운 상대링크를 스캔해 실제로 없는 파일을 가리키는 링크 1건(`ANTIGRAVITY_USAGE_GUIDE.md` → `GIIP_DEV_AGENT_FRAMEWORK.md`)을 실재하는 문서로 교체했습니다. 충돌 PR·실패 CI·orphan stash·재검증 대상 코멘트는 모두 0건이었고 giip 이슈 쓰기는 하지 않았습니다. → [작업 기록](../.agent/work_history/20261023_033541_csn70424_repo-maintenance.md)
 
 ## 2026-10-22
