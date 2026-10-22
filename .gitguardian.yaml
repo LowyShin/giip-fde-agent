@@ -11,6 +11,10 @@
 # 제외 사유: 아래 두 파일은 로그에서 비밀을 가리는 **정규식 패턴**(MASKS 배열)과 그 테스트
 # 예시값(가짜 sk/hash)만 담고 있어 비밀 스캔 오탐의 원인이다. 실제 비밀값은 없다.
 # 관련 이슈: giip #3535 후속 (log-ship.js 신설)
+#
+# 참고: SaaS 쪽에는 `version: 2` + `paths-ignored:` 형태의 변형도 실제로 쓰인다(공개 저장소 실측).
+#   위 두 문서에서 확인된 키(`secret.ignored_paths`)만 사용했고, 문서화되지 않은 키는 넣지 않았다.
+#   제외가 실제로 적용되는지는 GitGuardian 대시보드 스캔 결과로 확인해야 한다.
 secret:
   ignored_paths:
     - 'scripts/gissue/lib/log-ship.js'
