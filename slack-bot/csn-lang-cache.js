@@ -25,7 +25,7 @@ const fs = require('fs');
 const path = require('path');
 const giip = require('./giip-api');
 
-const SUCCESS_TTL_MS = 5 * 60 * 1000;   // 5분 — 성공 조회는 비교적 오래 재사용
+const SUCCESS_TTL_MS = 24 * 60 * 60 * 1000; // 24시간(1일) — 영속 캐시(.csn-lang-cache.env)가 1차 소스이고, 성공 조회는 하루에 한 번만 재조회한다(2026-10-05 사용자 지시)
 const FAILURE_TTL_MS = 60 * 1000;       // 1분 — 실패(403 등)는 짧게만 캐시해 과도한 침묵을 피함
 
 // 영속 캐시 파일(dotenv 형식) — CSN_<n>_LANG=<code|빈문자열>, CSN_<n>_LANG_AT=<epoch_ms>.

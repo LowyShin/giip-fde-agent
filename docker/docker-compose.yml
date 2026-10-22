@@ -1,0 +1,23 @@
+services:
+  giip-fde-agent:
+    build: .
+    # Multiple instances on one host: the bootstrap script (giip mssn 6122) runs each instance
+    # under its own compose project (`-p giip-fde-<diSn>`, so the data volume below is separate
+    # automatically) and sets these two variables. With neither set (legacy / single instance)
+    # the names and .env path are exactly the ones used before, so an existing container is
+    # NOT recreated.
+    container_name: ${GIIP_CONTAINER_NAME:-giip-fde-agent}
+    restart: unless-stopped
+    env_file:
+      - ${GIIP_ENV_FILE:-.env}
+    volumes:
+      # Persist the clone + generated registration files + scheduler logs across
+      # container restarts (also lets you edit csn-projects.json/giip-accounts.json
+      # by hand without losing them on the next `docker compose up`). Mounted at
+      # /work (not just /work/giip-fde-agent) so giipAgent.cnf/giipAgentLinux
+      # (giip 2665 후속 — live GIIP agent) keep the same self-registered lssn
+      # across restarts instead of registering a brand-new one every time.
+      - giip-fde-agent-data:/work
+
+volumes:
+  giip-fde-agent-data:

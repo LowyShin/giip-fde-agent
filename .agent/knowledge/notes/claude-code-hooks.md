@@ -77,3 +77,12 @@ CLAIM-036: PowerShell variables (`$r`, `$x`, etc.) inside `.claude/settings.json
   ```
   "if (Test-Path (Join-Path (git rev-parse --show-toplevel) '.agent/hooks/post-task.js')) { Set-Location (git rev-parse --show-toplevel) } ..."
   ```
+
+CLAIM-037: Windows hook repair must stay inside the FDE-owned agent root and verify after repair
+- **evidence**: `.agent/lib/windows-hook-doctor.js` resolves real paths, rejects root escapes, creates a backup only once under ignored runtime storage, normalizes only UTF-8 BOM/CRLF, and performs a second inspection after repair
+- **source**: `.agent/lib/windows-hook-doctor.js`, `.agent/tests/windows-hook-doctor.test.js`
+- **observed_at**: 20260910
+- **invalidated_at**: null
+- **confidence**: high
+- **rule**: Do not mutate external plugins or user settings from the FDE doctor. Missing `PreToolUse` targets and a non-functional Node runtime are blocking health states; availability-only hook gaps remain warnings.
+- **verification**: `node .agent/tests/windows-hook-doctor.test.js` and Windows CI workflow `.github/workflows/windows-hook-doctor.yml`

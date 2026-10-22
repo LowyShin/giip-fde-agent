@@ -1,4 +1,4 @@
-<#
+﻿<#
 register-hourly-issue-scheduler.ps1
 
 giip issue 상태머신을 매시 :07(cron: `7 * * * *`)에 무인 처리하는 Windows 스케줄러를 등록/해제/확인한다.

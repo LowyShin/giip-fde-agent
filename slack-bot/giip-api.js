@@ -23,6 +23,29 @@ function actorTag() {
   return process.env.GIIP_ACTOR_TAG || `slack-bot@${os.hostname()}`;
 }
 
+/**
+ * [giip #1236] non-ASCII 텍스트를 \uXXXX JSON escape 로 바꾸는 헬퍼.
+ * giipfaw 백엔드의 T-SQL N-prefix mojibake 버그(giip #581→#1030→#1044) 우회용.
+ * lowyworkenv/scripts/gissue/lib/text-escape.js 와 동일한 로직.
+ */
+function escapeNonAscii(str) {
+  let out = '';
+  for (const ch of str) {
+    const cp = ch.codePointAt(0);
+    if (cp > 0xffff) {
+      const v = cp - 0x10000;
+      const hi = 0xd800 + (v >> 10);
+      const lo = 0xdc00 + (v & 0x3ff);
+      out += '\\u' + hi.toString(16).padStart(4, '0') + '\\u' + lo.toString(16).padStart(4, '0');
+    } else if (cp > 127) {
+      out += '\\u' + cp.toString(16).padStart(4, '0');
+    } else {
+      out += ch;
+    }
+  }
+  return out;
+}
+
 function request(method, urlStr, { headers = {}, body = null, timeoutMs = 30000 } = {}) {
   return new Promise((resolve, reject) => {
     const u = new URL(urlStr);
@@ -63,8 +86,20 @@ function form(params) {
  * 전용 이슈 엔드포인트(/api/giipIssues 등)는 **SK 를 그대로 x-api-key 로** 인증한다(익명).
  * AK 도출(AdminGetAK)은 불필요하며, SK 를 AdminGetAK 의 token(=AT 자리)으로 넣으면 401 이 난다
  * (SK≠AT 혼동 금지). 따라서 네트워크 호출 없이 SK 를 그대로 반환한다.
+ *
+ * [giip #2616] actors 섹션 우선 확인: AI 행위자 계정(ai.*)은 actors[login_id].ak 에 AK가
+ * 저장되어 있어서 이걸 먼저 쓴다. actors 에 없으면 기존대로 account.sk 를 쓴다.
+ * {force:true} 가 전달되면 actors 재조회 없이 account.sk 를 쓴다(기존 401 재시도 패턴 호환).
  */
-async function getAK(account) {
+async function getAK(account, { force = false } = {}) {
+  if (force) return { ak: account.sk, csn: account.csn ?? null, usn: null, fetchedAt: 0 };
+  if (account.login_id) {
+    const cfg = accounts.load();
+    const actor = cfg.actors && cfg.actors[account.login_id];
+    if (actor && actor.ak) {
+      return { ak: actor.ak, csn: account.csn ?? null, usn: actor.usn ?? null, fetchedAt: Date.now() };
+    }
+  }
   return { ak: account.sk, csn: account.csn ?? null, usn: null, fetchedAt: Date.now() };
 }
 
@@ -157,7 +192,7 @@ async function issueUpdate(account, fields, opts = {}) {
         `**시각(When)**: ${when}`,
         `**사유(Why)**: ${reason}`,
       ].join('\n');
-      await issueComment(account, fields.isn, commentBody);
+      await issueComment(account, fields.isn, commentBody, actor);
     } catch (e) {
       console.error(`[giip-api] 상태전이 코멘트 등록 실패(isn=${fields.isn}):`, e.message);
     }
@@ -166,13 +201,21 @@ async function issueUpdate(account, fields, opts = {}) {
   return res.body;
 }
 
-async function issueComment(account, isn, content) {
+/**
+ * 코멘트 작성자(author)는 명시 지정이 없으면 이 채널의 giip 계정 login_id 를 쓴다.
+ * [giip #2616] AI 행위자 계정(ai.*)은 actors[login_id].ak 로 인증하므로 author 도 그 계정명이
+ * 되어야 코멘트 작성자가 올바르게 기록된다.
+ */
+async function issueComment(account, isn, content, author) {
   const base = account.apiBase || accounts.apiBase();
   let ak = (await getAK(account)).ak;
+  const finalAuthor = author || account.login_id || undefined;
+  // [giip #1236] non-ASCII(한글/이모지)를 \uXXXX 로 escape 한 순수 ASCII JSON 문자열을 만들어 보낸다
+  const escapedBody = escapeNonAscii(JSON.stringify({ isn: Number(isn), content, author: finalAuthor }));
   const doPost = (token) =>
     request('POST', `${base}/giipIssueComments`, {
       headers: { 'x-api-key': token, 'Content-Type': 'application/json' },
-      body: { isn: Number(isn), content },
+      body: escapedBody,
     });
   let res = await doPost(ak);
   if (res.status === 401) { ak = (await getAK(account, { force: true })).ak; res = await doPost(ak); }

@@ -25,6 +25,7 @@ const { BOT_TOKEN, CHANNEL_IDS, SLACK_APP_TOKEN, AGENT_DIR, HISTORY_FILE, TASK_S
 const { loadJSON, saveJSON, isBotEngagedThread } = require('./state');
 const { slackGet } = require('./slack-api');
 const { onSlackMessage, drainNextQueued } = require('./handlers');
+const lssnAgent = require('./lssn-agent'); // [giip #2349] 기동 시 lssn 자동등록 + 처리마다 상태보고
 
 // ── 重複プロセス検出・自己終了 ───────────────────────────────────────────────
 function killDuplicateBots() {
@@ -220,6 +221,10 @@ async function main() {
     ? `[Bot] 実行エンジン: MiniMax(${mmBoot.model}) 優先 → 失敗時 Claude フォールバック`
     : '[Bot] 実行エンジン: Claude のみ (MINIMAX_API_KEY 未設定 → MiniMax スキップ)');
 
+  // [giip #2349] 기동 시 자신을 GIIP lssn 으로 자동등록(멱등 heartbeat). best-effort —
+  // 실패해도 registerOnStartup 이 내부에서 예외를 삼키므로 봇 기동을 막지 않는다.
+  await lssnAgent.registerOnStartup();
+
   killDuplicateBots();
   // 起動時: 再起動で孤児化した running を即 reconcile（サブプロセスは既に死亡）
   reconcileTaskState({ staleMinutes: 0 });
@@ -304,7 +309,13 @@ async function main() {
     if (!isAllowedUser(event.user)) return; // 발신자 검증
     if (!isAllowedChannel(event.channel)) return; // 채널 검증
     console.log('[Bot] app_mention:', event.channel, (event.text || '').slice(0, 60));
-    await onSlackMessage(event, conversations);
+    // [giip #2349] 처리 시작/종료를 GIIP 에 상태보고(fire-and-forget, best-effort — blocking 없음).
+    lssnAgent.reportStatus('processing', `app_mention ${event.channel}`);
+    try {
+      await onSlackMessage(event, conversations);
+    } finally {
+      lssnAgent.reportStatus('idle', 'ready');
+    }
   });
 
   // DM・スレッド返信 (message イベント — message.im / message.channels 購読時)
@@ -326,7 +337,13 @@ async function main() {
       if (!isBotEngagedThread(event.channel, event.thread_ts)) return; // 미관여 채널 발화는 무시
     }
     console.log('[Bot] message:', event.channel_type, (event.text || '').slice(0, 60));
-    await onSlackMessage(event, conversations);
+    // [giip #2349] 처리 시작/종료를 GIIP 에 상태보고(fire-and-forget, best-effort — blocking 없음).
+    lssnAgent.reportStatus('processing', `message ${event.channel_type || event.channel}`);
+    try {
+      await onSlackMessage(event, conversations);
+    } finally {
+      lssnAgent.reportStatus('idle', 'ready');
+    }
   });
 
   // 全WebSocketメッセージをデバッグログ

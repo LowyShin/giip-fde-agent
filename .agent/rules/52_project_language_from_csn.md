@@ -1,0 +1,143 @@
+# 52. 프로젝트 응답 언어는 CSN 프로젝트 정보에서 자동 해석한다
+
+> **HARD RULE** — 프로젝트(채널)의 AI 응답 언어는 CSN 의 giipdb 프로젝트 정보(`tCorp.cLang`)에서
+> **자동으로** 가져와 설정한다. 프로젝트별로 언어를 수동 하드코딩하는 것을 1차 수단으로 쓰지 않는다.
+> 근거: giip #1252 — https://giip.littleworld.net/ko/admin/giip-issues/1252
+> 구현: `slack-bot/csn-lang-cache.js` + `slack-bot/config.js#resolveLangForProject`.
+
+## 배경
+
+이 메커니즘(csn → `tCorp.cLang` 자동 조회 → 응답 언어 결정)은 이미 구현돼 있고 동작도 확인됐다.
+하지만 이를 설명하는 `.agent/rules/` 문서가 지금까지 없었다 — 그동안 `project-lang.json`(수동
+언어 맵)에 이미 값이 들어가 있어서 "언어가 잘 맞는다"는 사실 자체가 CSN 자동해석이 작동한
+결과인지, 수동 맵이 맞아서인지 구분되지 않은 채 넘어갔다.
+
+규칙 문서가 없으면 향후 AI 에이전트가 이 사실을 모른 채 (a) 새 프로젝트를 추가할 때 언어를
+`project-lang.json`에 수동으로 넣어야 한다고 가정하거나 (b) 언어 결정 로직을 코드 안에
+하드코딩하거나 (c) 이미 있는 캐시/우선순위 메커니즘과 중복되는 별도 메커니즘을 새로 만들
+위험이 있다. 이 문서는 **기존 동작을 바꾸지 않고** 그 동작을 공식 규칙으로 옮겨 적은 것이다
+(Karpathy 원칙 — 동작하는 코드를 고치지 않는다, `.agent/rules/10_karpathy_guidelines.md`).
+
+## 해석 순서(우선순위)
+
+| 순서 | 수단 | 조건 |
+|---|---|---|
+| ① | `csn-lang-cache.peekCachedLangCode(csn)` — csn → `tCorp.cLang` 캐시(동기, 네트워크 없음). 성공 조회 TTL(`SUCCESS_TTL_MS`)은 **24시간(1일)** — 캐시 미스일 때만 API 를 부르고, 성공 값은 하루에 한 번만 재조회한다. 실패 TTL(`FAILURE_TTL_MS`)은 1분 그대로(변경 없음). | csn 을 알고 캐시에 유효한 히트가 있을 때 최우선 |
+| ② | 수동 맵 `slack-bot/project-lang.json`(`loadProjectLangMap()`) | csn 미상, 캐시 미스, 또는 조회 실패(예: 403) 시 폴백 |
+| ③ | `DEFAULT_LANG`(`'ko'`, `slack-bot/config.js`) | ①②모두 없을 때 최종 폴백 |
+
+구현 지점: `slack-bot/config.js` `resolveLangForProject(projectName)`(219행 주석부터 226~235행
+함수 본문)이 이 순서를 그대로 구현한다.
+
+```js
+// slack-bot/config.js:226-235 (발췌)
+function resolveLangForProject(projectName) {
+  const key = String(projectName || '').trim().toLowerCase();
+  if (!key) return DEFAULT_LANG;
+  const csn = resolveProjectCsn(key);
+  if (csn != null) {
+    const csnLang = require('./csn-lang-cache').peekCachedLangCode(csn);
+    if (csnLang) return csnLang;
+  }
+  return loadProjectLangMap()[key] || DEFAULT_LANG;
+}
+```
+
+## 규칙
+
+1. **프로젝트 응답 언어가 필요한 모든 새 코드는 `resolveLangForProject(projectName)`
+   (또는 동기 경로에서 `csn-lang-cache.peekCachedLangCode(csn)`)를 거쳐야 한다.** 언어를
+   하드코딩하거나, 이 두 함수를 거치지 않는 별도의 언어 결정 로직을 새로 만들지 않는다.
+2. **account+csn 이 함께 확보되는 지점에서 `csn-lang-cache.prefetch(account, csn)` 을
+   fire-and-forget 으로 반드시 호출해 캐시를 채운다.** 현재 호출 지점은 두 곳이다 —
+   `slack-bot/handlers.js` `triggerCsnLangPrefetch(channelId, projectName)`(48~59행)과
+   `slack-bot/giip-task.js` `maybeCreateIssue(...)` 내부(54~58행, 이슈 생성 시점). 이 호출을
+   빼먹으면 그 세션의 첫 응답은 캐시 미스로 항상 폴백 언어(②/③)로 나간다 — `prefetch` 결과는
+   현재 응답에는 반영되지 않고 다음 메시지부터 캐시가 적용된다(fire-and-forget 설계상 당연한
+   동작이며 버그가 아니다).
+3. **`project-lang.json` 수동 맵은 CSN 조회가 실패하거나 CSN 매핑이 없는 프로젝트를 위한
+   보조 수단일 뿐이다.** 신규 프로젝트를 추가할 때 "언어를 수동으로 넣어줘야 한다"고 가정하지
+   않는다. 그 프로젝트의 csn 이 `resolveProjectCsn`으로 해석되고 CSN 의 `tCorp.cLang` 이 이미
+   올바르게 설정돼 있으면, 수동 맵에 아무 것도 없어도 올바른 언어가 자동 적용된다.
+4. **이 메커니즘의 동작(캐시 TTL, 해석 우선순위, 폴백 조건, `pApiCorpLangGetbySk` 의 SK 게이트
+   방식 등)을 바꾸는 변경은 이 규칙 문서(52)도 함께 갱신한다.** 코드와 문서가 벌어지면 다음
+   에이전트가 다시 "문서화 안 된 기존 동작"을 재발견하는 같은 상황이 반복된다.
+
+## 이 메커니즘의 소비자 (추가 시 여기에 등재한다)
+
+언어를 쓰는 곳이 늘 때마다 **여기에 한 줄 추가**한다. 목록이 없으면 다음 에이전트가 소비자를 못 찾고
+또 중복 메커니즘을 만든다(아래 2026-10-19 사례).
+
+| 소비자 | 읽는 방법 | 비고 |
+|---|---|---|
+| `slack-bot` (config.js `resolveLangForProject`) | `csn-lang-cache.peekCachedLangCode(csn)` | 정본 구현. 캐시를 채우는 쪽도 여기(`prefetch`) |
+| `scripts/gissue/run-gissue-claude.ps1` | `pApiCorpLangGetbySk` 직접 호출 + 자체 정규화(298행 부근) | gissue 세션 출력 언어 |
+| **`scripts/secwatch/monitor.py`** | `.csn-lang-cache.env` 의 `CSN_<csn>_LANG` 을 **직접 읽는다**(파이썬이라 JS 모듈을 못 쓴다) → 없으면 `giipAgent.cfg` 의 `cLang` → 없으면 `en` | AI 조사 지시서 언어. 웹 콘솔(giipv3)은 **페이지 로케일**을 쓴다(언어 전환 UI 가 있으므로) |
+
+### 2026-10-19 사례 — 이 규칙이 왜 필요한지 다시 증명됐다
+
+secwatch `monitor.py` 의 AI 지시서를 현지어로 바꾸는 작업에서, 작업자가 **이 메커니즘을 모른 채**
+`cLang` 정규화 함수를 새로 만들고(`run-gissue-claude.ps1` 에 이미 같은 것이 있었다) "설정 파일에
+`cLang` 키가 없다"고 결론 내렸다. 사용자가 "환경 구성 때 csn 으로 project 정보를 찾아 cLang 을
+환경 파일에 저장하게 되어 있는 걸 아느냐"고 지적해서야 발견했다.
+
+**놓친 이유(재발 방지용으로 남긴다):**
+1. **생성물만 보고 생성기를 안 봤다** — `giipAgent.cfg`/`.cnf` 를 grep 해 "lang 키 없음"으로 단정했다.
+   그 파일을 **만드는 쪽**(설정 구성 절차·캐시 영속화)을 보지 않았다.
+2. **작업 대상 레포의 `.agent/rules/` 를 읽지 않았다** — 허브(giipprj-hub)의 룰은 읽었지만,
+   정작 고치는 레포(giip-fde-agent)의 규칙을 읽지 않았다. 언어 기능을 건드리기 전에 이 파일(rule 52)
+   하나만 봤으면 끝났다.
+3. **`cLang` 를 레포 전체로 grep 하지 않았다** — 했다면 `run-gissue-claude.ps1:298` 의 동일 정규화와
+   `CLAUDE.md` 의 "PROJECT RESPONSE LANGUAGE" 섹션이 바로 나왔다.
+
+**교훈**: 언어·로케일·타임존처럼 "조직 속성에서 파생되는 값"은 **거의 항상 이미 해석기가 있다.**
+새로 만들기 전에 (a) 그 레포 `.agent/rules/`, (b) 속성명 전체 grep, (c) 설정 파일의 **생성기** 를 본다.
+
+## 알아둘 것 (버그 아님)
+
+- `pApiCorpLangGetbySk`(giip-api.js `corpLangGet`, 281~289행)는 현재 하드코딩된 단일 Admin SK
+  게이트라, 이 레포가 쓰는 테넌트 SK(`account.sk`)로는 403 이 날 수 있다. 이는 설계상 정상
+  실패 경로로 취급돼 짧은 TTL(`FAILURE_TTL_MS`=1분)로 캐시되고 ②/③ 으로 조용히 폴백한다
+  (`csn-lang-cache.js` 15~17행, 266~273행 주석 참고). 이 403 자체를 "고쳐야 할 버그"로 오인하지
+  말 것 — giipdb 쪽 SP 완화 또는 전용 admin SK 프로비저닝이 필요한 별도 후속 과제다(이번 범위
+  밖).
+- 캐시는 프로세스 재시작에도 살아남도록 `slack-bot/.csn-lang-cache.env`(git-ignored, dotenv 형식)에
+  write-through 로 영속화된다(csn-lang-cache.js 18~22행).
+- 캐시 성공 TTL(`SUCCESS_TTL_MS`)은 **2026-10-05 사용자 지시로 5분 → 24시간(1일)으로 변경됐다.**
+  목적: CSN 언어 확인을 위해 매 트리거마다/5분마다 giipdb API(`pApiCorpLangGetbySk`)를 반복 호출하지
+  않고, 영속 캐시 파일(`.csn-lang-cache.env`)을 1차 소스로 삼아 캐시 미스일 때만 API 를 부르고
+  성공 값은 하루에 한 번만 재조회하도록 바꾼 것이다. `FAILURE_TTL_MS`(1분, 실패 캐시)는 변경하지
+  않았다 — 전송 오류가 길게 방치되지 않아야 하기 때문이다. 혼동 방지: 두 TTL 은 서로 다른 값이고
+  이번 변경은 성공 TTL 에만 적용된다.
+
+## gissue 스케줄러(run-gissue-claude.ps1) 경로
+
+PowerShell 스케줄러는 node 의 `resolveLangForProject` 를 동기로 부를 수 없어서 같은 규칙을 PS 로
+이식해 쓴다(`Get-GissueCsnLang` / `Get-GissueCsnLangFromApi`). 별도 언어 결정 로직을 새로 만든 것이
+아니라 아래처럼 **같은 캐시 파일·같은 API·같은 정규화·같은 TTL** 을 공유한다.
+
+- ① `slack-bot/.csn-lang-cache.env` 의 `CSN_<n>_LANG` / `CSN_<n>_LANG_AT` 을 먼저 읽고, 24시간 안의
+  값이면 그대로 쓴다(API 호출 없음).
+- 캐시 미스/만료면 `giipApiSk2` `CorpLangGet <csn>`(corpLangGet 과 동일)으로 조회 →
+  `normalizeLangCode` 와 같은 규칙으로 정규화 → 성공 값만 같은 파일에 기록한다(실패는 기록하지 않음).
+- ② `project-lang.json` 수동 맵은 ①이 없을 때만 쓴다.
+- **③ 은 다르다**: 스케줄러는 `DEFAULT_LANG('ko')` 로 폴백하지 않고 **언어 지시를 아예 넣지 않는다**
+  (도입 전 동작 그대로 — 조회 실패가 기존 결과물 언어를 바꾸지 않게).
+- 결정된 언어는 ⓐ 이슈 프롬프트 맨 앞의 `[OUTPUT LANGUAGE]` 지시(커밋·PR·GIIP 코멘트·문서 작성 언어)와
+  ⓑ 기존 CJK 혼입 QA 게이트(`projectLang='ja'` 일 때만)에 함께 쓰인다. 회차 로그에
+  `[LANG] 출력 언어=... (csn cLang=...)` 한 줄을 남긴다.
+
+## 상호참조
+
+- `slack-bot/csn-lang-cache.js` — `peekCachedLangCode(csn)`(동기 피크), `prefetch(account, csn)`
+  (백그라운드 조회+캐시 채움), 영속 캐시 파일 IO.
+- `slack-bot/config.js` — `resolveLangForProject(projectName)`(219~235행), `DEFAULT_LANG`(172행),
+  `loadProjectLangMap()`(192~194행).
+- `slack-bot/giip-api.js` — `corpLangGet(account, csn)`(266~289행, SP `pApiCorpLangGetbySk` 호출).
+- `scripts/gissue/run-gissue-claude.ps1` — `Get-GissueCsnLang` / `Get-GissueCsnLangFromApi`(스케줄러 이식판, 위 절).
+- `slack-bot/handlers.js` `triggerCsnLangPrefetch`(48~59행), `slack-bot/giip-task.js`
+  `maybeCreateIssue`(54~58행) — prefetch 호출 지점.
+- [`10_karpathy_guidelines.md`](10_karpathy_guidelines.md) — surgical changes 원칙, 이 문서가
+  동작을 바꾸지 않고 문서화만 하는 이유.
+- [`51_giip_product_changes_csn47_only.md`](51_giip_product_changes_csn47_only.md) — 포맷 참고용
+  선행 규칙 파일(이 문서와 무관한 주제지만 동일한 구조를 따름).

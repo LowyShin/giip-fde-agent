@@ -53,11 +53,13 @@ This file tracks the history of tasks and changes performed by the GIIP Agent sy
 - 20260510 12:35:00: Fixed broken link in `docs/70-LowyOpinion/capacydiagram.md` and restored the missing `docs/02-design/DESIGN_20260415_KARPATHY_K_LAYER.md` document.
 - 20260513 13:52:00: Moved `51-features/wiki-sync` to `docs/51-features/wiki-sync` to align with the project's documentation numbering convention.
 - 20260516 13:58:00: Integrated `msitarzewski/agency-agents` repository. Added new roles (Workflow Architect, Korean Business Navigator) and skills (workflow-mapping, premium-ui-craft). Updated `update_urls.json` and workflow guidelines.
-- 20260701 (시각 미기록): **k-layer.js 키워드 업데이트 및 `BASE_DIR` 처리 개선.**
-- 20260703 (시각 미기록): **README를 FDE Agent 정체성 중심으로 재구성** — FDE 정의를 Palantir "Forward Deployed Engineer"로 정정하고 EN/JP 동기화.
-- 20260703 (시각 미기록): **QUICK_START 개선** — Claude 최우선 추천 + Slack 봇 연결 가이드 추가.
-- 20260703 (시각 미기록): **범용 워크플로 규칙 3종 추가** — `33` repo-URL 보고 / `34` edit-approval / `35` commit-push-per-task. → [`.agent/rules/`](../.agent/rules/)
-- 20260703 (시각 미기록): **slack-bot 다수 개선** — `taskmerge`(미완료 중복 태스크 통합), 처리 타임아웃 5→20분, 태스크번호 포함 수정요청 라우팅 버그 수정, `wfrun`/`wflist` 워크플로 실행·목록 명령 추가, 결과 URL 유실 버그 수정.
-- 20260706 (시각 미기록): **What's New 롤링 페이지 신설** — README 최상단에 링크. 최근 7일 갱신을 이 페이지에서 확인, 유지 규칙은 [`36_whats_new_maintenance`](../.agent/rules/36_whats_new_maintenance.md).
-- 20260706 (시각 미기록): **paperthin 스킬 14종 이식 + 외부 레포 목록 등록** — [LilMGenius/paperthin](https://github.com/LilMGenius/paperthin)(MIT)의 "clean & true" 저수준 스킬(re0·shower·factchk·ssotchk·hate 등)을 `.agent/skills/`에 이식하고, `links.md` 및 `ai-repositories-index`(KR/EN/JP)에 등록. → [`.agent/skills/PAPERTHIN_NOTICE.md`](../.agent/skills/PAPERTHIN_NOTICE.md)
-- 20260706 (시각 미기록): **keep-codex-fast 외부 레포 목록 등록** — [vibeforge1111/keep-codex-fast](https://github.com/vibeforge1111/keep-codex-fast)(MIT, Codex 성능 유지 스킬)를 `links.md`·`ai-repositories-index`에 등록. 스킬은 기존 이식 완료(`codex-maintenance` 워크플로 포함).
+- 20260701: k-layer.js 키워드 업데이트 및 `BASE_DIR` 처리 개선.
+- 20260703: README를 FDE Agent 정체성 중심으로 재구성하고 EN/JP를 동기화. QUICK_START, 범용 워크플로 규칙, Slack 봇의 taskmerge·타임아웃·수정요청 라우팅·워크플로 명령·결과 URL 처리를 개선.
+- 20260706: What's New 롤링 페이지를 신설하고, `paperthin` 스킬 14종과 `keep-codex-fast` 외부 저장소 정보를 등록.
+- 20260910: Windows Hook Doctor 추가 — FDE 소유 훅의 Node 실행 가능성·대상 경로·BOM/CRLF 진단, backup-once 복구 후 재검증, Windows CI 회귀 차단. (docs/plans/2026-09-10-windows-hook-doctor.md)
+- 20260915: K-Layer 프로젝트 범위 및 유효성 검사 — 다른 작업 공간·프로젝트·CSN 의 Claim 을 실행 컨텍스트에서 제외, 재확인 기한·원본 변경·컨텍스트 예산 확인. (slack-bot/k-layer.js)
+- 20260915: 태스크 완료 증거 구분 — 봇이 관측한 준비·실행·종료와 독립 검증을 구분, Slack 및 GIIP REVIEW 에 검증 대기 명시. (slack-bot/task-evidence.js)
+- 20260916: 작업 입력과 사용자 지시 보존 — Slack 태스크의 선택 컨텍스트 해시 고정·변경 시 재분석, 개정·추가 지시 원문을 재개 프롬프트에 보존. (slack-bot/task-manager.js)
+- 20261004: dev 사용자 sudo 스크립트 + docker-bypass 이동 — `scripts/setup-dev-sudo.sh` 로 dev 에게 NOPASSWD sudo 를 부여하고, 루트의 `docker-bypass.sh` 를 `scripts/` 로 옮겼습니다. → [운영 문서](./60-operations/docker-dev-user-and-sudo.md)
+- 20261006: dev NOPASSWD sudo 부팅 시 자동 부여 — `docker-bypass.sh` 의 root 구간(사용자 전환 직전)이 `setup-dev-sudo.sh` 를 자동 호출하도록 했습니다. 이제 수동 2단계 없이 부팅만으로 dev 가 sudo 를 쓸 수 있습니다(예: `/usr` 전역 npm `claude` 자동업데이트). 끄려면 `FDE_GRANT_SUDO=0`. → [운영 문서](./60-operations/docker-dev-user-and-sudo.md)
+- 20260908: Pi에서 배운 다국어 토큰 이중 예산 도입 — 선택 컨텍스트·체크포인트 재개·고정 prefix는 유지하고, 한글·일본어·한자 입력에도 최초·재개 프롬프트의 추정 토큰 상한을 적용합니다. (`slack-bot/token-budget.js`, `slack-bot/prompt-templates.js`, `slack-bot/model-config.js`) → [비교 및 적용 결과](./03-analysis/pi-comparison-token-efficiency.analysis.md)

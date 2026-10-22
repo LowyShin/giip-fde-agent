@@ -1,0 +1,58 @@
+{
+  "_comment": "AI 행위자 계정 공개 레지스트리 (giip #2613). 비밀값(AccessToken)은 여기에 두지 않는다 — AK 는 git 비추적 slack-bot/.secrets/giip-accounts.json 의 actors[<uloginid>].ak 에 있고, scripts/gissue/sync-ai-actor-credentials.ps1 이 DB 에서 그리로 직접 옮긴다. 이 파일은 '어떤 주체가 있고 어떤 계정을 쓰는가'만 기술한다. 정본 사양서: giipprj/giipdb/docs/30_Specs/SPEC_AiActorAccounts.md, 절차서: scripts/gissue/AI_ACTOR_ACCOUNTS.md",
+  "namingRule": {
+    "pattern": "ai.<host>.<process>",
+    "prefix": "ai. — 사람 계정이 아님을 이름만 보고 판별할 수 있게 하는 고정 접두어. 집계도 author LIKE 'ai.%' 한 줄로 끝난다.",
+    "host": "실행 호스트 식별자. Lowy-DP01 => dp01. 호스트에 묶이지 않는 서비스는 svc.",
+    "process": "자동화/프로세스 식별자. 하이픈 허용, 소문자만.",
+    "identity": "uloginid = uname = 코멘트 author 문자열. 셋을 항상 같게 유지한다 — pApiGiipIssueCommentPutbyAK 가 AK 경로에서 author 를 tCorpUser.uname 으로 강제하므로, 같게 두면 클라이언트가 author 를 위조할 방법 자체가 없어진다.",
+    "maxLength": "uloginid 는 varchar(32) 다(pApiUserPutbyAk 파라미터 제약). 32자를 넘으면 계정 생성이 조용히 실패한다.",
+    "forbidden": [
+      "이슈번호가 박힌 1회용 이름(blocked-sp-perf-2467, pnpm-bin-2487 등) — 계정이 아니라 잘못된 사용이다.",
+      "사람 계정(lowyshin.giip=usn 156, Lowy Shin=usn 29/47) 사용 — 이번 이슈가 금지하려는 바로 그 행위다.",
+      "게이트/서브태스크마다 계정을 새로 파는 것 — 세분은 loadedRole 과 본문 태그로 남긴다."
+    ]
+  },
+  "defaultActor": "ai.dp01.console",
+  "_defaultActorNote": "GIIP_ACTOR 환경변수가 없을 때 쓰는 주체. 대화형 세션이 가장 흔한 호출자라 이 값으로 둔다. 무인 자동화(스케줄러/워치독/봇)는 반드시 자기 GIIP_ACTOR 를 명시적으로 설정한다 — 설정을 빠뜨리면 자기 작업이 대화형 세션 이름으로 기록된다.",
+  "csnScope": [2, 33, 47, 70335, 70371, 70374, 70417, 70422, 70423, 70424, 70426, 70427, 70428, 70432],
+  "_csnScopeNote": "scripts/gissue/csn-projects.json 의 14개 CSN 과 동일. 모든 ai.* 계정을 tCorpUserRel 로 이 14개에 소속시킨다 — pApiGiipIssueComment*byAK 의 인가 게이트가 tCorpUserRel 멤버십을 보기 때문에, 빠진 CSN 이 있으면 그 CSN 이슈에 코멘트를 남기려 할 때 404(no permission)로 실패한다. CSN 을 늘리면 여기와 DB 양쪽에 추가해야 한다(절차: AI_ACTOR_ACCOUNTS.md).",
+  "actors": {
+    "ai.dp01.console": {
+      "usn": 2416,
+      "host": "Lowy-DP01",
+      "process": "대화형 Claude Code 세션(오케스트레이터 + 그 서브에이전트)",
+      "replaces": ["dp01-console", "Workflow Orchestrator", "Claude", "lowyshin.giip(대화형 세션이 남긴 분량)", "blocked-sp-perf-2467", "pnpm-bin-2487"],
+      "env": "GIIP_ACTOR=ai.dp01.console (미지정 시 기본값)"
+    },
+    "ai.dp01.gissue-scheduler": {
+      "usn": 2417,
+      "host": "Lowy-DP01",
+      "process": "매시 :07 GIIP_Gissue_Claude 스케줄러와 그 부속 게이트(review-audit / scope-gate / pr-gate / comment-gate / gate-recheck / pr-attribution)",
+      "replaces": ["gissue-agent", "Agent", "gissue-csn47", "gissue-review-audit", "gissue-scope-gate", "gissue-pr-gate", "gissue-comment-gate", "gissue-gate-recheck", "gissue-pr-attribution", "lowyshin.giip(스케줄러가 남긴 분량)"],
+      "env": "GIIP_ACTOR=ai.dp01.gissue-scheduler",
+      "_note": "게이트별 세분은 계정을 나누지 않는다. 게이트 스크립트는 자기 라벨을 addIssueComment.ps1 -author 로 계속 넘기되(기존 멱등성 판정이 author 문자열 일치에 의존한다), -Actor 로 이 계정을 지정해 authorUsn 이 채워지게 한다."
+    },
+    "ai.dp01.gissue-watchdog": {
+      "usn": 2418,
+      "host": "Lowy-DP01",
+      "process": "gissue 스케줄러 감시 워치독(스케줄러가 멈췄을 때 보고하는 주체라 스케줄러와 계정을 공유하면 안 된다)",
+      "replaces": ["gissue-scheduler-watchdog"],
+      "env": "GIIP_ACTOR=ai.dp01.gissue-watchdog"
+    },
+    "ai.svc.slack-bot": {
+      "usn": 2420,
+      "host": "(호스트 비의존)",
+      "process": "Slack 봇",
+      "replaces": ["lowyclaude", "slack-bot"],
+      "env": "GIIP_ACTOR=ai.svc.slack-bot"
+    },
+    "ai.svc.antigravity": {
+      "usn": 2419,
+      "host": "(호스트 비의존)",
+      "process": "외부 IDE 에이전트(Antigravity / Codex / ChatGPT Work)",
+      "replaces": ["Antigravity", "ChatGPT Work"],
+      "env": "GIIP_ACTOR=ai.svc.antigravity"
+    }
+  }
+}

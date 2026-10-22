@@ -1,4 +1,4 @@
-# Register the Slack bot (via pm2) to auto-start on user logon.
+﻿# Register the Slack bot (via pm2) to auto-start on user logon.
 # Run in an elevated (Administrator) PowerShell session.
 #
 # Project-agnostic: uses the current user and auto-detects the pm2 launcher.

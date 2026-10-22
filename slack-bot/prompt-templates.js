@@ -314,6 +314,7 @@ function buildInitialExecutionPrompt(p = {}) {
   ].join('\n')));
 
   // 6: 태스크 내용
+  if (p.bindingInstructions) push('binding_instructions', section('=== 사용자 지시 원문 (요약으로 대체하지 마라) ===', p.bindingInstructions));
   push('task', section('=== 태스크 ===', p.taskContent || ''));
   if (Array.isArray(p.kLayerClaims) && p.kLayerClaims.length) {
     push('klayer', section('=== K-Layer 지식 ===', p.kLayerClaims.map(c => `• ${c}`).join('\n')));
@@ -331,8 +332,12 @@ function buildInitialExecutionPrompt(p = {}) {
   const limits = { ...modelConfig.promptLimits(p.taskClass), ...(p.limits || {}) };
   const budget = limits.initialMaxChars;
   const tokenBudget = limits.initialMaxTokensEstimated;
-  const { text, trimmed, overflow } = fitParts(parts, budget,
-    ['context', 'klayer', 'task', 'context_reasons', 'resume_legacy'], tokenBudget);
+  // 보호 구간(축약 대상이 아닌 절)의 길이만큼은 예산을 올려 두고 — 사용자 원문·안내 문구가
+  // 잘려나가지 않게 한다(2026-10-22 main 반영분). 토큰 예산은 그 위에서 추가로 적용한다.
+  const protectedChars = parts.filter(x => !['context', 'klayer', 'task', 'context_reasons'].includes(x.name))
+    .reduce((n, x) => n + x.text.length, 0);
+  const { text, trimmed, overflow } = fitParts(parts, Math.max(budget, protectedChars + 100),
+    ['context', 'klayer', 'task', 'context_reasons'], tokenBudget);
   if (trimmed.length) {
     console.warn(`[prompt] 최초 프롬프트를 ${budget}자/${tokenBudget}토큰 예산에 맞춰 축약: ${trimmed.join(', ')}`);
   }
@@ -424,6 +429,7 @@ function buildResumeExecutionPrompt(p = {}) {
   // 3: 태스크 요약 (전체 사양 아님)
   const summary = p.taskSummary || summarizeTaskSpec(p.taskContent || '');
   push('task_summary', section('=== 태스크 요약 (전체 사양 아님) ===', summary));
+  if (p.bindingInstructions) push('binding_instructions', section('=== 사용자 지시 원문 (재개 시에도 유효) ===', p.bindingInstructions));
 
   // 4~5: 완료 / 미완료 단계
   push('completed_steps', section('=== 완료된 단계 (다시 하지 마라) ===',
@@ -480,8 +486,13 @@ function buildResumeExecutionPrompt(p = {}) {
     budget = Math.max(MIN_RESUME_PROMPT_CHARS,
       Math.min(budget, Math.floor(initialChars * limits.resumeMaxRatio)));
   }
-  const { text, trimmed, overflow } = fitParts(parts, budget,
-    ['resume_context_reasons', ...RESUME_TRIM_ORDER], tokenBudget);
+  const protectedChars = parts.filter(x => !RESUME_TRIM_ORDER.includes(x.name))
+    .reduce((n, x) => n + x.text.length, 0);
+  if (protectedChars > budget) {
+    console.warn(`[prompt] 재개 프롬프트 ${budget}자 예산보다 사용자 원문 등 필수 정보가 큼 — 지시 보존 우선`);
+    budget = protectedChars + 100;
+  }
+  const { text, trimmed, overflow } = fitParts(parts, budget, RESUME_TRIM_ORDER, tokenBudget);
   if (trimmed.length) {
     console.log(`[prompt] 재개 프롬프트를 ${budget}자/${tokenBudget}토큰 예산에 맞춰 축약: ${trimmed.join(', ')}`);
   }

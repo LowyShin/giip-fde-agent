@@ -349,15 +349,26 @@ function readSelectedContext(selected, baseDir, opts = {}) {
   for (const s of list) {
     const rel = String(s && s.path || '').replace(/\\/g, '/');
     if (!rel) continue;
+    if (path.isAbsolute(rel) || rel.split('/').includes('..')) {
+      throw new Error(`컨텍스트 경로가 프로젝트 범위를 벗어남: ${rel}`);
+    }
 
     // 같은 파일이 여러 경로 표기로 선택되면 한 번만
     let abs = path.resolve(baseDir, rel);
     if (!fs.existsSync(abs)) abs = path.resolve(workspaceDir, rel);
+    if (s.hash && !fs.existsSync(abs)) throw new Error(`선택 컨텍스트 파일이 사라짐: ${rel} — 재분석 필요`);
     let key;
     try { key = fs.realpathSync(abs); } catch { key = abs; }
+    const roots = [baseDir, workspaceDir].map(p => fs.realpathSync(p));
+    if (!roots.some(root => key === root || key.startsWith(root + path.sep))) {
+      throw new Error(`컨텍스트 실경로가 프로젝트 범위를 벗어남: ${rel}`);
+    }
     if (seenPath.has(key)) continue;
 
     const body = getBody(abs);
+    if (s.hash && (!body || body.hash !== s.hash)) {
+      throw new Error(`선택 컨텍스트가 분석 이후 변경됨: ${rel} — 재분석 필요`);
+    }
     if (!body) continue;
     if (seenHash.has(body.hash)) continue;   // 동일 내용 중복 규칙 제거
     if (body.cached) cacheHits += 1;
@@ -407,6 +418,7 @@ function formatContextFilesYaml(files) {
       `  - path: ${f.path}`,
       `    reason: "${esc(f.reason)}"`,
       `    max_chars: ${f.max_chars || modelConfig.contextLimits().perFileMaxChars}`,
+      ...(f.hash ? [`    hash: ${f.hash}`] : []),
     ].join('\n'))
   ).join('\n');
 }
@@ -432,6 +444,8 @@ function parseContextFiles(taskContent) {
       if (r) { cur.reason = r[1].trim().replace(/^"|"$/g, '').replace(/\\"/g, '"'); continue; }
       const m = line.match(/^\s*max_chars:\s*(\d+)\s*$/);
       if (m) { cur.max_chars = Number(m[1]); continue; }
+      const h = line.match(/^\s*hash:\s*([a-f0-9]{16})\s*$/);
+      if (h) { cur.hash = h[1]; continue; }
     }
     if (cur) out.push(cur);
     if (out.length) return out;
@@ -463,6 +477,7 @@ function normalize(files, baseDir = null) {
       path: String((f && f.path) || '').replace(/\\/g, '/'),
       reason: (f && f.reason) || '(사유 미기재)',
       max_chars: (f && Number(f.max_chars)) || per,
+      hash: (f && /^[a-f0-9]{16}$/.test(f.hash || '')) ? f.hash : undefined,
     };
   }).filter(f => f.path);
 }

@@ -1,5 +1,7 @@
 # GitHub Copilot Instructions
 
+> **작업 시작 전 반드시 [`AI_MUST_READ.md`](AI_MUST_READ.md) 를 먼저 읽을 것** (PUBLIC 범용 레포: 고객정보 금지 / 정보 조회 순서 tPrivateKB → 사양서 → 코드).
+
 You are working on the 'antigravity-agent' project.
 
 ## 🚨 CRITICAL RULES 🚨
@@ -8,6 +10,13 @@ You are working on the 'antigravity-agent' project.
    - Rules are in `.agent/GEMINI.md` and `.agent/rules/`.
    - Skills are in `.agent/skills/`.
    - Scripts are in `.agent/scripts/`.
+
+## 🚨 GIIP PRODUCT SCOPE — HARD RULE 🚨
+Changes to the giip product repositories (`giipv3`, `giipdb`, `giipfaw`, `giipprj`, `giipAgentWin`, `giipAgentLinux`, `giipAgentAdmLinux`) must be registered and handled **under CSN 47 only**. This repository runs under CSN 70424: if a task here asks you to change a giip product repository, do not change it — register a new issue under CSN 47, link that issue number back in a comment on the original issue, and only then close the original. Never drop the request silently.
+
+`giip-fde-agent` itself is **not** a giip product repository; normal work on this repo continues under CSN 70424.
+
+→ `.agent/rules/51_giip_product_changes_csn47_only.md`
 
 ## 🛠️ WORKFLOW (Superpowers)
 When asked to implement a feature:

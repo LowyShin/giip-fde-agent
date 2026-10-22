@@ -1,0 +1,35 @@
+name: Windows Hook Doctor
+
+on:
+  pull_request:
+    paths:
+      - '.agent/hooks/**'
+      - '.agent/lib/windows-hook-doctor.js'
+      - '.agent/scripts/windows-hook-doctor.js'
+      - '.agent/tests/windows-hook-doctor.test.js'
+      - '.github/workflows/windows-hook-doctor.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.agent/hooks/**'
+      - '.agent/lib/windows-hook-doctor.js'
+      - '.agent/scripts/windows-hook-doctor.js'
+      - '.agent/tests/windows-hook-doctor.test.js'
+
+permissions:
+  contents: read
+
+jobs:
+  verify-windows-hooks:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Run unit tests
+        run: node .agent/tests/windows-hook-doctor.test.js
+      - name: Verify repository hooks
+        run: node .agent/scripts/windows-hook-doctor.js --json
+

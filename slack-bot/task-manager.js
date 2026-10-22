@@ -21,6 +21,9 @@ const costTracker = require('./cost-tracker');
 // giip-1068 비용 최적화 2차
 const progressEvents = require('./progress-events');
 const resumeCtx = require('./resume-context-builder');
+const taskEvidence = require('./task-evidence');
+const instructionLedger = require('./instruction-ledger');
+const receipt = require('./execution-receipt');
 
 const BASE_DIR = path.join(__dirname, '..');
 // giip-1063/1068: 비용 로그와 checkpoint 는 같은 중앙 runtime root 를 쓴다(7).
@@ -313,7 +316,11 @@ function buildFastPathPlan(requestText, cls) {
 function analyzeRequest(requestText, taskId, baseDir = BASE_DIR) {
   ensureDirs();
 
-  const claims = searchKLayer(requestText);
+  const claims = searchKLayer(requestText, {
+    workspaceDir: baseDir,
+    project: path.basename(baseDir),
+    csn: config.resolveProjectCsn(baseDir),
+  });
   const projectName = path.basename(baseDir);
 
   // 1) 카탈로그(본문 미로딩) + 사전 정적 분류(모델 호출 0회)
@@ -387,7 +394,7 @@ function createTaskFile(taskId, requestText, planContent, filesRead = [], meta =
 task_id: ${taskId}
 status: pending
 requested_at: ${new Date().toISOString()}
-request: "${requestText.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"
+request: ${JSON.stringify(requestText)}
 task_class: ${meta.taskClass || 'standard'}
 risk_class: ${meta.riskClass || 'none'}
 operation: ${meta.operation || 'write'}
@@ -543,11 +550,18 @@ function startExecution(taskId, taskFilePath, { onComplete, onError, isn = null 
   let selected = ctxBuilder.parseContextFiles(taskContent);
   let contextSource = selected.length ? 'task-metadata' : 'minimal-default';
   if (!selected.length) selected = ctxBuilder.minimalDefaultContext(baseDir, BASE_DIR);
-  const ctxRead = ctxBuilder.readSelectedContext(selected, baseDir, {
-    workspaceDir: BASE_DIR,
-    queryText: taskContent,
-    limits: modelConfig.contextLimits(taskClass),
-  });
+  let ctxRead, bindingInstructions;
+  try {
+    bindingInstructions = instructionLedger.render(taskContent);
+    ctxRead = ctxBuilder.readSelectedContext(selected, baseDir, {
+      workspaceDir: BASE_DIR,
+      queryText: taskContent,
+      limits: modelConfig.contextLimits(taskClass),
+    });
+  } catch (err) {
+    if (onError) setImmediate(() => onError(err, null));
+    return;
+  }
   if (!ctxRead.filesRead.length && contextSource === 'task-metadata') {
     // 선택 목록이 손상돼 하나도 못 읽은 경우에만 최소 기본으로 대체
     const fb = ctxBuilder.readSelectedContext(
@@ -560,11 +574,24 @@ function startExecution(taskId, taskFilePath, { onComplete, onError, isn = null 
   }
   console.log(`[TaskManager] task ${taskId}: 실행 컨텍스트 ${ctxRead.filesRead.length}개 파일 / ${ctxRead.stats.chars}자 (${contextSource})`);
 
-  const claims = searchKLayer(taskContent);
+  const claims = searchKLayer(taskContent, {
+    workspaceDir: baseDir,
+    project: path.basename(baseDir),
+    csn: config.resolveProjectCsn(baseDir),
+  });
 
   // ctx が渡されていれば prepareTaskBranch 済みの専用ブランチ。無ければ現在ブランチ(後方互換)。
   const currentBranch = (ctx && ctx.branch) || getCurrentBranch(baseDir);
   const baseBranch = (ctx && ctx.base) || getBaseBranch(baseDir);
+  try {
+    receipt.begin(RUNTIME_BASE_DIR, taskId, {
+      project: path.basename(baseDir), branch: currentBranch, taskContent,
+      bindingInstructions, contextFiles: ctxRead.filesRead,
+    });
+  } catch (err) {
+    if (onError) setImmediate(() => onError(err, null));
+    return;
+  }
 
   console.log(`[TaskManager] task ${taskId}: class=${taskClass}${fastPath ? ' (fast path)' : ''}`
     + `${classification.operation ? ` op=${classification.operation} risk=${classification.risk_class}` : ''}`
@@ -599,6 +626,7 @@ function startExecution(taskId, taskFilePath, { onComplete, onError, isn = null 
     ...commonPromptFields,
     fastPath,
     contextText: ctxRead.context,
+    bindingInstructions,
     contextFiles: ctxRead.filesRead.map(f => ({ path: f.path, reason: f.reason })),
     taskContent,
     kLayerClaims: claims,
@@ -626,6 +654,7 @@ function startExecution(taskId, taskFilePath, { onComplete, onError, isn = null 
       ...commonPromptFields,
       attempt: attemptNo,
       taskSummary,
+      bindingInstructions,
       taskFilePath: path.relative(BASE_DIR, taskFilePath).replace(/\\/g, '/'),
       completedSteps: cp.completed_steps || [],
       pendingSteps: cp.pending_steps || [],
@@ -737,6 +766,8 @@ function startExecution(taskId, taskFilePath, { onComplete, onError, isn = null 
       stdio: ['pipe', 'pipe', 'pipe'], // stdin 으로 프롬프트 전달(ENAMETOOLONG 회피)
       env,
     });
+    try { taskEvidence.recordStarted(taskId, { attempt: attemptNo, provider }, RUNTIME_BASE_DIR); }
+    catch (e) { console.error('[TaskManager] evidence start failed:', e.message); }
     proc.stdin.on('error', () => {}); // 자식이 먼저 종료하면 EPIPE — 무시
     proc.stdin.end(executionPrompt);
 
@@ -746,6 +777,8 @@ function startExecution(taskId, taskFilePath, { onComplete, onError, isn = null 
     proc.stderr.on('data', d => { stderr += d; });
 
     proc.on('close', (code) => {
+      try { taskEvidence.recordExit(taskId, code, { attempt: attemptNo }, RUNTIME_BASE_DIR); }
+      catch (e) { console.error('[TaskManager] evidence exit failed:', e.message); }
       const combinedOut = `${stdout}\n${stderr}`;
       const usage = costTracker.parseUsageFromOutput(combinedOut);
       // 6.2: 태스크/결과/런타임 파일을 제외한 "실제" 소스 변경만 센다.
@@ -830,6 +863,11 @@ function startExecution(taskId, taskFilePath, { onComplete, onError, isn = null 
           stderr ? `\n## Errors\n${stderr.slice(0, 500)}` : '',
         ].join('\n'));
       }
+      try {
+        receipt.finish(RUNTIME_BASE_DIR, taskId, {
+          exitCode: code, sourceFiles: srcChanged.sourceFiles, resultFile,
+        });
+      } catch (err) { console.error(`[TaskManager] receipt 저장 실패: ${err.message}`); }
 
       if (code === 0) {
         checkpoint.recordSuccess(RUNTIME_BASE_DIR, taskId, { attempt: attemptNo, provider, model: modelName, cwd: baseDir });
@@ -839,7 +877,12 @@ function startExecution(taskId, taskFilePath, { onComplete, onError, isn = null 
       }
     });
 
-    proc.on('error', (err) => onError(err, null));
+    proc.on('error', (err) => {
+      try { taskEvidence.recordExit(taskId, null, { attempt: attemptNo }, RUNTIME_BASE_DIR); }
+      catch (e) { console.error('[TaskManager] evidence error failed:', e.message); }
+      try { receipt.finish(RUNTIME_BASE_DIR, taskId, { exitCode: null, sourceFiles: [], resultFile }); } catch {}
+      onError(err, null);
+    });
     return proc;
   }
 
@@ -1726,6 +1769,8 @@ function extractSummary(planContent) {
 }
 
 function addToTasklist(taskId, title, summary, requestText) {
+  try { taskEvidence.recordPrepared(taskId, RUNTIME_BASE_DIR); }
+  catch (e) { console.error('[TaskManager] evidence prepare failed:', e.message); }
   const list = loadTasklist();
   list.push({
     taskId,
@@ -1752,7 +1797,12 @@ function updateTasklistEntry(taskId, updates) {
 // status: 'pending' | 'running' | 'completed' | 'cancelled' | null(全件)
 function getTasklistByStatus(status = null) {
   const list = loadTasklist();
-  return status ? list.filter(t => t.status === status) : list;
+  const selected = status ? list.filter(t => t.status === status) : list;
+  return selected.map(t => {
+    let receipt = null;
+    try { receipt = taskEvidence.read(t.taskId, RUNTIME_BASE_DIR); } catch {}
+    return { ...t, verification_state: receipt ? receipt.verification_state : 'unknown' };
+  });
 }
 
 // ステータス絵文字

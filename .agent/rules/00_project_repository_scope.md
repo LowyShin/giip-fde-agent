@@ -29,3 +29,10 @@ For repository-backed tasks:
 ## Anti-confusion guardrail
 
 Never perform work against a different repository merely because it appeared in another GIIP conversation, project, issue, or memory. Repository switching requires an explicit task-level instruction from the user.
+
+## Related rule — which repositories may be changed
+
+This rule decides **which repository is the canonical source of truth for this project**;
+[`51_giip_product_changes_csn47_only.md`](51_giip_product_changes_csn47_only.md) decides
+**which repositories this session is allowed to change** (giip product repositories are
+CSN 47 only; `giip-fde-agent` itself is not a giip product repository).
