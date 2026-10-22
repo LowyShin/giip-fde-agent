@@ -1,20 +1,15 @@
 # KNOW-002: 제품 레포 변경은 CSN 무관 PR 허용(2026-10-15 개정) + wiki 링크 생성기 결함
 
 - 작업 CSN: 70424
-- 관련 파일: `.agent/rules/51_giip_product_changes_csn47_only.md`,
-  `CLAUDE.md`·`AGENTS.md`·`CODEX.md`·`COPILOT_INSTRUCTIONS.md`·`.cursorrules`·`.windsurfrules`·`GEMINI.md`,
-  `.agent/rules/00_project_repository_scope.md`, `.agent/rules/41_issue_session_safety_index.md`,
-  `.agent/rules/46_cross_csn_write_scope.md`,
-  `docs/51-features/wiki-sync/wiki_sync.js`, `wiki/entities/giip.md`,
-  `wiki/concepts/n-slash-a-b-i.md`, `wiki/concepts/database-sync.md`
+- 관련 파일: `.agent/rules/51_giip_product_changes_csn47_only.md` + 진입점 7개
+  (`CLAUDE.md`·`AGENTS.md`·`CODEX.md`·`COPILOT_INSTRUCTIONS.md`·`.cursorrules`·`.windsurfrules`·
+  `GEMINI.md`) + 규칙 `00`/`41`/`46` + `docs/51-features/wiki-sync/wiki_sync.js` + `wiki/` 3개 파일
 - 근거: (1) 사용자 직접 지시 **2026-10-15** — "전체 제품 레포에 CSN 무관 PR 허용"(정본:
   `lowyworkenv/.agent/rules/71_giip_product_changes_csn47_only.md` 개정(2026-10-15) 절).
   폐기된 규칙의 원 출처는 giip 2679(2026-09-18 사용자 직접 지시)이며 그 PR 이
   `.agent/rules/51_giip_product_changes_csn47_only.md` 를 신설했다(커밋 `48e1ab2`).
-  (2) wiki 생성기 결함 — `docs/51-features/wiki-sync/wiki_sync.js` 는 커밋 `0ced92e`
-  ("chore: relocate wiki-sync to docs/51-features and update pre-commit hook") 로 현 위치로 옮겨졌고,
-  최초 구현 커밋은 `0936248`("docs: add system component architecture documentation and implement
-  wiki sync automation")이다. wiki 페이지 커밋도 `0936248`·`72112e0` lineage다.
+  (2) wiki 생성기 결함 — `wiki_sync.js` 는 커밋 `0ced92e` 로 현 위치로 옮겨졌고, 최초 구현 커밋은
+  `0936248` 이다. wiki 페이지 커밋도 `0936248`·`72112e0` lineage다.
 
 ## 1. 원인분석 — "CSN 47 로만" 규칙이 이 레포에 남은 이유
 
@@ -40,7 +35,7 @@
 - 규칙 문서에는 **"개정(YYYY-MM-DD)" 절을 앞에 두고** 과거 본문은 삭제 없이 `[개정으로 폐지]` 표시만
   붙여 보존한다(rule 73 — 과거 기록은 고쳐 쓰지 않는다). 파일명은 유지한다(링크 파괴 방지).
 - 유지되는 규칙을 개정 절에 **명시적으로 나열**한다: 작업 CSN 규칙 · PR 경유 · 전 CSN 공통 ·
-  giipdb SQL 규칙 · 플랫폼 경계. "허용" 만 적으면 다음修订이 경계를 넓힐 여지가 생긴다.
+  giipdb SQL 규칙 · 플랫폼 경계. "허용" 만 적으면 다음 개정이 경계를 넓힐 여지가 생긴다.
 
 ## 3. 원인분석 — wiki 링크 생성기 결함(2종)
 
@@ -55,8 +50,8 @@
    어긋났다. 정규식이 **한 번도 매칭되지 않아** 생성기가 기존 페이지를 갱신하지 못했다(페이지가
    통째로 stale 로 남고 링크가 죽은 채 방치된 원인). → separator 정규식을 3열 + `\r?\n` 허용으로 수정.
 
-검증 방식: 저장소 wiki 에 직접 돌리지 않고 **격리된 샌드박스**(`.agent/knowledge/notes` + `wiki/` 복사본)에서
-생성기를 실행한 뒤 상대링크를 전수 검사했다 → checked=30, broken=0.
+검증 방식: 저장소 wiki 에 직접 돌리지 않고 **격리된 샌드박스**에서 생성기를 실행한 뒤 상대링크를
+전수 검사했다 → checked=30, broken=0.
 
 ## 4. 재발방지(생성기 쪽)
 
@@ -68,13 +63,11 @@
 
 ## 5. 결과가 저장되는 곳
 
-- 규칙 정본: `giip-fde-agent/.agent/rules/51_giip_product_changes_csn47_only.md`(개정 절 추가, git-tracked).
-- 진입점 링크: `CLAUDE.md`·`AGENTS.md`·`CODEX.md`·`COPILOT_INSTRUCTIONS.md`·`.cursorrules`·
-  `.windsurfrules`·`GEMINI.md` 의 "GIIP PRODUCT SCOPE" 절(7곳 동일 문구로 갱신).
-- 생성기: `giip-fde-agent/docs/51-features/wiki-sync/wiki_sync.js`.
-- 작업 기록: `giip-fde-agent/.agent/work_history/20261023_081900_csn70424_repo-maintenance.md`.
-- 이 노트: `giip-fde-agent/.agent/k_layer/notes/KNOW-002_csn_agnostic_product_pr_and_wiki_link_generator_defect.md`
-  + `INDEX.md`.
+- 규칙 정본: `.agent/rules/51_giip_product_changes_csn47_only.md`(개정 절 추가, git-tracked).
+- 진입점 링크: 진입점 7개 파일의 "GIIP PRODUCT SCOPE" 절(7곳 동일 문구로 갱신).
+- 생성기: `docs/51-features/wiki-sync/wiki_sync.js`.
+- 작업 기록: `.agent/work_history/20261023_081900_csn70424_repo-maintenance.md`.
+- 이 노트: `.agent/k_layer/notes/KNOW-002_csn_agnostic_product_pr_and_wiki_link_generator_defect.md` + `INDEX.md`.
 
 ## 6. 소비처
 
