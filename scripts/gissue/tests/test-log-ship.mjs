@@ -8,7 +8,7 @@ const require = createRequire(import.meta.url);
 const { maskLine, readNewLines, lineTs } = require('../lib/log-ship.js');
 
 // 비밀 마스킹
-/* gitguardian ignore all */
+// (이 파일의 GitGuardian 비밀 스캔 제외는 `.gitguardian.yaml` 의 secret.ignored_paths 로 처리)
 assert.strictEqual(maskLine('a sk=abc123 b'), 'a sk=*** b');
 assert.ok(!maskLine('Authorization: Bearer abc.def').includes('abc'));
 assert.ok(!maskLine('Server=x;Password=P@ss;').includes('P@ss'));
