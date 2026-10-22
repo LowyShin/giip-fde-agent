@@ -2,7 +2,7 @@
 
 > このファイルは Bot が実際に応答するカスタムコマンドの一覧です。
 > Slack で `@ボット名 !help`（チャンネル）または `!help`（DM）を送ると、このうちの主要コマンドが返信されます。
-> ソースの真実は `index.js` の `handleChannelMention` / `handleDM` 内の分岐です。コマンドを追加・変更したらこのファイルも更新してください。
+> ソースの真実は `handlers.js` の `handleChannelMention` / `handleDM` 内の分岐です（`giip ...` 系は `giip-commands.js` の `handleGiipCommand`）。コマンドを追加・変更したらこのファイルも更新してください。
 
 凡例: `<...>` はユーザーが埋める値。`|` は同義のエイリアス（どれでも同じ動作）。
 
@@ -77,6 +77,68 @@
 | `!klayer <キーワード>` | K-Layer 知識検索 |
 | `!help` | ヘルプ（主要コマンドを返信） |
 
+### 1-7. giip 連携コマンド（`giip ...`）
+
+giip サービスと連携するコマンド群です（チャンネル・DM 共通で動作。`giip-commands.js`）。
+`giip account` / `giip project` / `giip channel` は連携アカウント設定とは独立で、**Bot 再起動なし**に動作します。
+
+**アカウント連携**（`giip account`）
+
+| コマンド | 動作 |
+| --- | --- |
+| `giip account set <login_id> <sk> [csn]` | このチャンネルの連携アカウントを設定（**SK を含むため DM 推奨**） |
+| `giip account set-default <login_id> <sk> [csn]` | 既定（default）アカウントを設定 |
+| `giip account show`（エイリアス: `status`） | 現在の連携アカウントを表示（SK は伏せる） |
+
+**イシュー**（`giip issue`）
+
+| コマンド | 動作 |
+| --- | --- |
+| `giip issue list [status]` | イシュー一覧（連携アカウントの csn で絞り込み、最大 20 件） |
+| `giip issue #<isn>` | イシュー詳細照会（番号のみ） |
+| `giip issue get <isn>`（エイリアス: `show`） | イシュー詳細 |
+| `giip issue new "<title>"`（エイリアス: `create`） | イシュー新規作成（status `IN_PROGRESS`） |
+| `giip issue done <isn>` | ステータスを DONE に変更 |
+| `giip issue review <isn>` | ステータスを REVIEW に変更 |
+| `giip issue progress <isn>`（エイリアス: `start`） | ステータスを IN_PROGRESS に変更 |
+| `giip issue comment <isn> <text>` | コメント追加 |
+
+> **`giip issue #<isn> <指示文>`** — 番号のうしろに指示文が続く場合はコマンドとして消費せず、**タスク経路**に渡します（イシュー内容の確認 → 作業 → コメントまでがエージェントが行う）。`등록`（한글）/ `登録`（日本語）/ `register` も同じ経路です（`<プロジェクト名> issue 登録 <内容>` と同じ委任）。
+
+**プロジェクト → CSN マッピング**（`giip project`、エイリアス: `proj` / `csn`）
+
+`<プロジェクト名> issue 登録 <内容>` がどの csn で登録されるかを管理します（`project-csn.json`、**Bot 再起動不要**）。giip アカウント設定とは独立です。
+
+| コマンド | 動作 |
+| --- | --- |
+| `giip project set <プロジェクト名> <csn>`（エイリアス: `add`） | プロジェクト名 ↔ csn を登録（登録時にボットの csn メンバーシップを自動付与） |
+| `giip project list`（エイリアス: `ls` / `show`） | 登録済みマッピング一覧 |
+| `giip project del <プロジェクト名>`（エイリアス: `delete` / `rm` / `remove`） | マッピング削除 |
+
+**プロジェクト別 AI 応答言語**（`giip project lang ...`、`project-lang.json`、再起動不要）
+
+| コマンド | 動作 |
+| --- | --- |
+| `giip project lang set <プロジェクト名> <言語>` | プロジェクト別の AI 応答言語を設定（未登録プロジェクトは `ko` にフォールバック） |
+| `giip project lang list`（エイリアス: `ls` / `show`） | 言語マッピング一覧 |
+| `giip project lang del <プロジェクト名>`（エイリアス: `delete` / `rm` / `remove`） | 言語マッピング削除 |
+
+**チャンネル → 既定プロジェクト固定**（`giip channel`、エイリアス: `ch`）
+
+「このチャンネルの（接頭辞なし）発話はすべて `<プロジェクト>` として処理」する固定マッピング（`channel-project.json`、**Bot 再起動不要**）。明示的なプロジェクト接頭辞は引き続き優先されます。
+
+| コマンド | 動作 |
+| --- | --- |
+| `giip channel set <プロジェクト名> [チャンネルID]` | このチャンネル（または指定チャンネル）の既定プロジェクトを固定 |
+| `giip channel list`（エイリアス: `ls` / `show`） | 固定マッピング一覧（現在のチャンネルに `← 현재 채널` 表示） |
+| `giip channel del [チャンネルID]`（エイリアス: `delete` / `rm` / `remove`） | 固定マッピング削除 |
+
+**汎用 API**（`giip api`）
+
+| コマンド | 動作 |
+| --- | --- |
+| `giip api <Verb> [jsondata]` | 任意の giip API を直接呼び出し（jsondata は JSON オブジェクト） |
+
 ---
 
 ## 2. DM（ダイレクトメッセージ）コマンド
@@ -93,10 +155,12 @@ DM では `@メンション` 不要。普通のメッセージは会話履歴付
 | `!help` | DM コマンド一覧を返信 |
 | `<14桁の番号>`  （`status <14桁>` も可） | その Task 番号の状況を照会 |
 
+> **giip 連携コマンド**（`giip account` / `giip issue` / `giip project` / `giip channel` / `giip api`）は DM でも同じく使えます。詳細は「1-7. giip 連携コマンド」を参照。特に `giip account set`（SK を含む）は DM での実行を推奨します。
+
 ---
 
 ## 3. コマンドを追加したら
 
-1. `index.js` の `handleChannelMention`（チャンネル）または `handleDM`（DM）に分岐を追加。
+1. `handlers.js` の `handleChannelMention`（チャンネル）または `handleDM`（DM）に分岐を追加（`giip ...` 系は `giip-commands.js` の `handleGiipCommand`）。
 2. 該当する `!help` の応答文（チャンネル用は `cmd === '!help'` の配列、DM 用も同様）に 1 行追加。
 3. **このファイル（`COMMANDS.md`）にも追記**して同期を保つ。

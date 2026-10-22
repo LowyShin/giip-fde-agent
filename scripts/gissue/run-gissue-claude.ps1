@@ -57,7 +57,15 @@
 # 채우면 동일하게 동작해야 한다 — **이 파일에 특정 PC 의 절대경로를 절대 하드코딩하지 말 것.**
 param(
     [switch]$DryRun,          # claude 미기동, 무엇을 실행할지 로그만
-    [string]$OnlyCsn = ''     # 특정 CSN만 (테스트용)
+    [string]$OnlyCsn = '',    # 특정 CSN만 (테스트용)
+    # [저장소 정비 2026-10-23] 아래 2개는 **테스트 전용** 파라미터다.
+    #   -FunctionsOnly : 이 파일을 닷소싱(. .\run-gissue-claude.ps1)했을 때 **함수 정의만** 적재하고
+    #                     스케줄러 본문(Phase 1 이후) 실행을 건너뛴다. 닷소싱은 top-level 코드가 전부
+    #                     실행되므로, 이 스위치 없이는 회귀 테스트에서 스케줄러가 그대로 돌게 된다.
+    #   -MapFileOverride : CSN 매핑 파일(csn-projects.json) 경로 대체. 테스트는 임시 파일을 넘겨
+    #                     실제 배포용 매핑 파일(로컬 전용·gitignore)을 건드리지 않는다.
+    [switch]$FunctionsOnly,
+    [string]$MapFileOverride = ''
 )
 $ErrorActionPreference = 'Stop'
 
@@ -78,6 +86,8 @@ $Root         = Split-Path -Parent $MyInvocation.MyCommand.Path
 # $Root 는 <레포>/scripts/gissue 이므로 두 단계 위가 레포 루트다. 프롬프트의 {AGENT_REPO} 로 치환된다.
 $AgentRepo    = Split-Path -Parent (Split-Path -Parent $Root)
 $MapFile      = Join-Path $Root 'csn-projects.json'
+# [저장소 정비 2026-10-23] 테스트 전용: CSN 매핑 파일 경로 대체(-MapFileOverride).
+if ($MapFileOverride) { $MapFile = $MapFileOverride }
 $LogDir       = Join-Path $Root 'logs'
 $AlertLog     = Join-Path $LogDir 'gissue_ALERT.log'
 $ClaudeModel  = 'claude-opus-4-8'
@@ -1697,6 +1707,27 @@ if (Get-Command Initialize-GissueCodeFreshness -ErrorAction SilentlyContinue) {
 # ahead/behind 숫자를 보는데, 이 상황은 "로컬 main 은 멀쩡하고 체크아웃된 HEAD 만 다른 브랜치"라
 # 숫자가 `4 0` 으로に出て 경고에 걸리지 않는다.
 
+# [저장소 정비 2026-10-23] 위쪽 4개 함수(여기서 시작하는 구간)는 **같은 이름의 정의가
+#   파일 뒤쪽에 또 있다**(NOT-ON-MAIN 자동 감지 + 조건부 자동 복귀 구간). PowerShell 은 같은
+#   스코프의 같은 이름 정의를 나중 것으로 **덮어쓰기** 하므로 실제로 실행되는 것은 뒤쪽 정의다.
+#   즉 이쪽은 **도달 불가 코드**(dead code)이며, 규칙 64("안 쓰는 코드는 삭제하지 말고 사양서에
+#   남긴다")에 따라 삭제하지 않고 **무엇을 언제부터 왜 못 쓰는지**를 여기에 남긴다.
+#     (a) 용도        : NOT-ON-MAIN 감지/자동 복귀 헬퍼 4종 (giip #2696) — 위·아래 정의가 동일 역할
+#     (b) 처리 내용   : Test-GissueBranchOnMain / Test-GissueUpstreamGone /
+#                       Test-GissueBranchIsAncestorOfOriginMain / Invoke-GissueSelfPullNotOnMainCheck
+#     (c) 저장되는 곳 : 없음(메모리 상 함수 정의만)
+#     (d) 소비처     : 없음 — 뒤쪽同名 정의가 항상 이들을 가린다
+#     (e) 왜 만들었는지: PR #135(커밋 308eeae)가 giip #2696 의 최초 구현으로 추가
+#     (f) 언제부터    : PR #136(커밋 e4d3cc7)이 같은 기능의 두 번째 구현을 같은 파일에 추가하면서
+#                       뒤쪽 정의가 이쪽을 가리기 시작
+#     (g) 왜 안 쓰이게 됐는지: 동일 이슈(giip #2696)를 **두 PR 이 각각 독립 구현**해 머지된 결과.
+#                       그副作用으로 뒤쪽(실행되는) 쪽 `Test-GissueBranchIsAncestorOfOriginMain` 이
+#                       `git merge-base --is-ancestor` 의 **출력**(항상 $null)을 검사해서 항상
+#                       false 를 반환했다 → 자동 복귀 3조건 중 (c) 가 영영 성립하지 않아
+#                       NOT-ON-MAIN 자동 복귀가 실제로는 한 번도 동작하지 않았다.
+#                       2026-10-23 저장소 정비에서 뒤쪽 정의를 종료 코드 판정으로 고치고,
+#                       회귀 테스트(이쪽 정의가 올바른 판정 방식 `$LASTEXITCODE -eq 0` 을 쓰는 버전)를
+#                       실제로 돌릴 수 있게 만들어 확인했다.
 function Test-GissueBranchOnMain {
     # 현재 HEAD 브랜치가 main 인지 확인 (bare repo 는 항상 false)
     param([string]$RepoRoot = $AgentRepo)
@@ -1792,19 +1823,48 @@ function Test-GissueBranchOnMain {
 
 function Test-GissueUpstreamGone {
     # 현재 브랜치의 upstream ref 가 사라졌는지 확인한다(git rev-parse --abbrev-ref @{upstream} 실패 = gone).
+    #
+    # [저장소 정비 2026-10-23] `2>$null` 로 stderr 를 숨겨도 **Windows PowerShell 5.1 은
+    #   native 명령의 stderr 를 ErrorRecord(NativeCommandError)로 올리고**, 이 러너의 기본값이
+    #   `$ErrorActionPreference = 'Stop'` 이라 **terminating** 이 된다. 실측(2026-10-23):
+    #   체크아웃이 upstream 이 없는 브랜치(feature 브랜치 등)인 상태에서 러너가 시작하자마자
+    #   "fatal: no upstream configured for branch '...'" 로 **러너 전체가 죽었다**
+    #   (이 함수만 죽는 게 아니라 top-level 호출이 스케줄러 기동을 통째로 중단시킴).
+    #   → git 호출 구간만 `$ErrorActionPreference = 'Continue'` 로 임시 낮추고 종료 코드로 판정한다.
+    #     (같은 패턴을 아래 Test-GissueBranchIsAncestorOfOriginMain 에도 적용했다.)
     param([string]$RepoRoot)
-    $upstream = & git -C $RepoRoot rev-parse --abbrev-ref '@{upstream}' 2>$null
-    if ($LASTEXITCODE -ne 0) { return $true }   # upstream 이 없으면 gone
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    & git -C $RepoRoot rev-parse --abbrev-ref '@{upstream}' 2>&1 | Out-Null
+    $upstreamExit = $LASTEXITCODE
+    $ErrorActionPreference = $prevEap
+    if ($upstreamExit -ne 0) { return $true }   # upstream 이 없으면 gone
     return $false
 }
 
 function Test-GissueBranchIsAncestorOfOriginMain {
     # 현재 브랜치의 HEAD 가 origin/main 의 조상(ancestor)인지 확인한다(==이미 머지됨).
+    #
+    # [저장소 정비 2026-10-23] 판정은 **종료 코드**로 한다.
+    #   `git merge-base --is-ancestor` 는 결과를 stdout 에 쓰지 않고 종료 코드로만 알린다
+    #   (0=조상, 1=아님, 128=오류). 이전 구현은 그 출력을 $isAncestor 에 담은 뒤
+    #   `$isAncestor -eq $true` 로 같이 검사했는데, 출력이 항상 $null 이므로 이 함수가
+    #   **무조건 false** 를 반환했다 → 자동 복귀 3조건 중 (c) 가 영영 성립하지 않아
+    #   NOT-ON-MAIN 자동 복귀(giip #2696)가 실제로는 한 번도 동작하지 않았다.
+    #   (PR #135 = 커밋 308eeae 의 구현은 `$LASTEXITCODE -eq 0` 만으로 판정했고,
+    #    PR #136 = 커밋 e4d3cc7 이 그 위에 `$isAncestor -eq $true` 를 얹으면서 broke 됨.
+    #    회귀 테스트 scripts/gissue/tests/test-selfpull-not-on-main.ps1 의 C1/C3/D2 가 이걸 잡았다.)
     param([string]$RepoRoot)
     $head = & git -C $RepoRoot rev-parse HEAD 2>$null
     if ($LASTEXITCODE -ne 0) { return $false }
-    $isAncestor = & git -C $RepoRoot merge-base --is-ancestor $head origin/main 2>$null
-    return ($LASTEXITCODE -eq 0 -and $isAncestor -eq $true)
+    # stderr(git 오류 메시지)가 terminating 이 되지 않도록 일시적으로 'Continue' 로 둔다
+    # (이 러너 기본값은 'Stop' — 같은 패턴이 아래 Invoke-GissueSelfPullNotOnMainCheck 의 fetch 에 있다).
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    & git -C $RepoRoot merge-base --is-ancestor $head origin/main 2>&1 | Out-Null
+    $ancestorExit = $LASTEXITCODE
+    $ErrorActionPreference = $prevEap
+    return ($ancestorExit -eq 0)
 }
 
 function Invoke-GissueSelfPullNotOnMainCheck {
@@ -1865,6 +1925,31 @@ function Invoke-GissueSelfPullNotOnMainCheck {
     } else {
         &$say "[INFO][SELF-PULL][NOT-ON-MAIN] main 복귀 + pull 성공 — 이제 최신 코드로 실행됩니다."
     }
+}
+
+# ── [저장소 정비 2026-10-23] 테스트 전용 진입점: NOT-ON-MAIN 헬퍼 정의까지 적재하고 끝낸다 ──
+# 닷소싱(. .\run-gissue-claude.ps1)하면 top-level 코드가 전부 실행되므로, 이 스위치가 없으면
+# 회귀 테스트가 "스케줄러를 한 번 더 돌리는" 일이 된다(테스트가 처음 만들어졌을 때부터 무조건
+# 실행돼서, 본문 진입 전에 죽거나 아니면 스케줄러를 띄워 버리는 상태였다).
+#
+# [2026-10-23 정정 1] 이 진입점은 **처음에는 Phase 1 바로 앞**에 놓여 있었다. 그 위치는
+#   Phase -2(nested-repo 무결성 가드) / -2.5(미매핑 CSN 감시) / Phase -1(열린 PR 자동머지) /
+#   Phase 0(고아 프로세스 reaper) / Phase 0.5(slack-bot watchdog) **뒤**였다 — 즉 닷소싱만 하면
+#   **PR 자동머지·프로세스 종료·bot 재기동** 같은 부작용이 실제로 일어나고 나서야 함수가 적재됐다.
+#   실측: 2026-10-23 테스트 실행이 출력 0줄 상태에서 120초 초과(무한 대기)했다 —
+#   Phase 0.5 watchdog 의 pm2 호출이 응답하지 않은 것이 직접적 원인이었다.
+#
+# [2026-10-23 정정 2] Phase -2 직전으로 옮겼더니 **여전히 top-level 호출**(아래 "에이전트 레포의
+#   NOT-ON-MAIN 상태 체크" = 자기 저장소를 실제로 `checkout main` + `pull` 할 수 있는 호출)이
+#   먼저 실행됐다. 실측: 2026-10-23 feature 브랜치에서 테스트를 돌리자 이 호출이
+#   "fatal: no upstream configured for branch '...'" 로 terminating → 테스트 전체가 죽었다.
+#   (이건 테스트만의 문제가 아니라 **러너 기동 자체가 죽는 실제 결함**이었다 — 같은 실측에서
+#    Test-GissueUpstreamGone 를 수정했다.)
+#   → 따라서 진입점을 **모든 top-level 호출보다 앞**(여기)으로 옮긴다. 이 지점까지는
+#     preflight(매핑 파일 검사) 외에 부작용이 없고, NOT-ON-MAIN 헬퍼 4종은 모두 정의되어 있다.
+if ($FunctionsOnly) {
+    Write-Output "[FUNCTIONS-ONLY] NOT-ON-MAIN 헬퍼 정의 적재 완료 — 스케줄러 본문은 실행하지 않음"
+    return
 }
 
 # 에이전트 레포의 NOT-ON-MAIN 상태 체크 (이 함수 호출은 Phase 1 사전점검 보다 먼저 수행)
@@ -2350,6 +2435,9 @@ if (-not $DryRun -and $SlackBotInstalled) {
         Write-SlackBotHealthLog "체크 실패(pm2 미설치/미실행 등): $($_.Exception.Message)"
     }
 }
+
+# ── [저장소 정비 2026-10-23] 참고: 테스트 전용 진입점(-FunctionsOnly)은 **Phase -2 직전**에
+#    있다(부작용 phase 보다 앞이어야 하므로). 여기서는 스케줄러 본문이 이어진다.
 
 # ── Phase 1: CSN별 사전점검 + lock 획득 + 잡 병렬 기동 ──
 # 각 CSN 은 폴더·이슈·로그·lock 이 완전히 분리되어 병렬 안전하다(같은 workdir 를 두 CSN 이 공유하면
@@ -3259,7 +3347,12 @@ foreach ($csn in $map.PSObject.Properties.Name) {
                     if ($obj) {
                         foreach ($p in $obj.PSObject.Properties) { $result[$p.Name] = $p.Value }
                     }
-                    return [int]($result["$isnKey"] ?? 0)
+                    # [저장소 정비 2026-10-23] PowerShell 7 전용 연산자 `??` 를 쓰면
+                    #   Windows PowerShell 5.1 파서가 이 파일 전체를 파싱 에러로 버린다(본 파일은
+                    #   repo 자체 게이트 scripts/gissue/check-ps1-parse.ps1 에서 FAIL — 16건).
+                    #   5.1 과 7 양쪽에서 같은 결과가 나오도록 Hashtable 조회로 바꾼다.
+                    if ($result.ContainsKey("$isnKey")) { return [int]$result["$isnKey"] }
+                    return 0
                 } catch {
                     Start-Sleep -Milliseconds (300 * ($i + 1))
                 }
