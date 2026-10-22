@@ -19,29 +19,42 @@ tPrivateKB 와 /kb 는 다른 것이다
 호출 경로 (실측 확인, 추측 아님)
 ------------------------------
 에이전트는 AK 가 없고 SK 만 있다. 그래서 AK 전용 `giipKb` 함수가 아니라
-**giipApiSk3 디스패처 → pApiKb*bySk** 를 쓴다.
+**giipApiSk4 → pApiKb*bySk** 를 쓴다.
 
-    POST https://giipfaw.azurewebsites.net/api/giipApiSk3
+    POST https://giipfaw.azurewebsites.net/api/giipApiSk4
     Content-Type: application/x-www-form-urlencoded
-    token=<sk>&text=KbCreate jsondata&jsondata={...}
-      -> 서버가 exec pApiKbCreatebySk '<sk>', N'{...}' 로 변환
+    token=<sk>&text=KbCreate jsondata&jsondata={"jsondata":"<전체 JSON 문자열>"}
+      -> 서버가 EXEC pApiKbCreatebySk @p0, @p1 로 **파라미터 바인딩** 실행
 
-`text` 에 `jsondata` 라는 낱말이 있으면 디스패처가 그 자리를 실제 JSON 으로 치환한다
-(giipApiSk3/run.ps1 의 치환 로직). 이 낱말을 빼면 jsondata 가 마지막 인자로 자동
-추가되는 다른 경로를 타므로, 명시적으로 넣는 쪽이 안전하다.
+`text` 는 `"<SPName> <토큰1> <토큰2> ..."` 규약이고, 각 토큰은 jsondata 객체의 키
+이름에서 값을 찾아 그 위치의 파라미터로 바인딩된다. 이 SP 는 `@jsondata` 로 JSON
+전체를 받으므로 전체 JSON 을 문자열로 만들어 `{"jsondata": "..."}` 로 한 겹 감싼다.
+
+**왜 giipApiSk3 가 아니라 giipApiSk4 인가 (중요)**
+giipApiSk3 로 먼저 구현했다가 두 가지 결함을 실측했고, 성역 우회 규약
+(`.agent/rules/PROTOCOL_SANCTUARY_BYPASS.md` — 성역은 고치지 않고 이미 만들어진
+새 함수로 호출부를 전환한다)에 따라 giipApiSk4 로 옮겼다.
+
+  (a) giipApiSk3 는 응답 `_debug_executedQuery` 에 `exec ... '<sk>', ...` 를 넣어
+      **SK 를 평문으로 돌려준다.**
+  (b) 같은 필드가 JSON 이스케이프를 잘못해, 본문에 줄바꿈이 있으면 `\` + 실제
+      개행을 내보내 **응답 전체가 파싱 불가**가 된다(Invalid \escape). 그런데 DB
+      쓰기는 성공한 상태라, 그대로 재시도하면 **중복 행이 쌓인다.** k_layer 노트는
+      전부 여러 줄 마크다운이라 이 경로를 반드시 지나간다.
+
+giipApiSk4 는 문자열을 이어붙이지 않고 `SqlParameter` 로 진짜 바인딩하므로 두 결함이
+구조적으로 없다. 실측: 응답에 SK 없음, JSON 파싱 정상, 줄바꿈 DB 까지 보존,
+debug 는 `EXEC pApiKbCreatebySk @p0, @p1` 처럼 **값이 아닌 플레이스홀더만** 담긴다.
 
 함정 (실제로 겪은 것)
 -------------------
-1. **응답 `debug` 필드에 SK 가 그대로 담겨 온다.** giipApiSk3 가
-   `_debug_executedQuery` 에 `exec pApiKbCreatebySk '<sk>', ...` 를 넣어 돌려준다.
-   giipfaw run.ps1 은 성역이라 고칠 수 없으므로 **클라이언트가 버려야 한다** — 이
-   스크립트는 출력 전에 항상 `debug` 를 제거한다. 로그에 남기지 말 것.
-2. **giipAgent.cnf 의 값에 따옴표가 포함돼 있다**(`sk="..."`). 직접 파싱하지 말고
+1. **giipAgent.cnf 의 값에 따옴표가 포함돼 있다**(`sk="..."`). 직접 파싱하지 말고
    `secevt_lib.read_cfg_value` 를 쓸 것 — 거기에 따옴표 제거가 들어 있다.
-3. **`pApiKbCreatebySk` 에는 중복 방지가 없다.** AK 버전(`pApiKbCreatebyAk`)은
+2. **`pApiKbCreatebySk` 에는 중복 방지가 없다.** AK 버전(`pApiKbCreatebyAk`)은
    `extRefId` 로 여러 번 돌려도 안전한 upsert 를 하지만 SK 버전은 그냥 INSERT 다.
    그래서 이 스크립트의 `put` 은 **title 로 먼저 찾아보고 있으면 update** 한다
    (giipdb/mgmt/sync_klayer_to_privatekb.ps1 과 같은 방식).
+3. **title 의 `[` 가 티에스큐엘 LIKE 문자 클래스로 해석된다.** find_by_title 주석 참조.
 
 사용법
 -----
@@ -69,7 +82,7 @@ try:
 except ImportError:
     read_cfg_value = None
 
-API_URL = "https://giipfaw.azurewebsites.net/api/giipApiSk3"
+API_URL = "https://giipfaw.azurewebsites.net/api/giipApiSk4"
 TIMEOUT = 60
 
 
@@ -88,11 +101,17 @@ def resolve_sk():
 
 
 def call(sp_name, jsondata, sk):
-    """giipApiSk3 로 pApi{sp_name}bySk 를 호출하고 행 목록을 돌려준다."""
+    """giipApiSk4 로 pApi{sp_name}bySk 를 호출하고 행 목록을 돌려준다."""
+    # giipApiSk4 는 text 의 토큰 이름을 jsondata 객체의 키에서 찾아 바인딩한다.
+    # SP 는 @jsondata 로 JSON 전체를 받으므로, 전체 JSON 을 문자열로 만들어
+    # {"jsondata": "<전체 JSON>"} 으로 한 겹 감싼다. 그러면 토큰 'jsondata' 가
+    # 그 값에 매칭되어 @p1 = 전체 JSON 으로 바인딩된다.
     body = urllib.parse.urlencode({
         "token": sk,
         "text": "%s jsondata" % sp_name,
-        "jsondata": json.dumps(jsondata, ensure_ascii=False),
+        "jsondata": json.dumps(
+            {"jsondata": json.dumps(jsondata, ensure_ascii=False)},
+            ensure_ascii=False),
     }).encode("utf-8")
     req = urllib.request.Request(
         API_URL, data=body,
@@ -101,14 +120,9 @@ def call(sp_name, jsondata, sk):
     with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
         raw = resp.read().decode("utf-8", errors="replace")
 
-    # 함정 1·4: debug 블록을 **파싱 전에 텍스트에서 잘라낸다.**
-    #   (1) 거기에 sk 가 담겨 오므로 애초에 메모리에 올리지 않는 쪽이 낫다.
-    #   (4) 더 중요한 이유: giipApiSk3 의 _debug_executedQuery 가 JSON 이스케이프를
-    #       잘못한다. 본문에 줄바꿈이 있으면 `\` + 실제 개행을 내보내 **응답 전체가
-    #       파싱 불가**가 된다(Invalid \escape). DB 쓰기는 성공했는데 클라이언트만
-    #       실패로 보게 되어, 재시도하면 중복 행이 쌓인다. k_layer 노트는 전부
-    #       여러 줄 마크다운이라 이 경로를 반드시 지나간다.
-    #       giipfaw run.ps1 은 성역이라 고칠 수 없으므로 여기서 막는다.
+    # giipApiSk4 의 debug 에는 값이 아닌 플레이스홀더만 담기므로 SK 유출도, 이스케이프
+    # 깨짐도 없다. 그래도 파싱 전에 잘라낸다 — 구 경로(giipApiSk3)로 되돌릴 일이
+    # 생기거나 서버가 debug 내용을 바꿔도 클라이언트가 영향을 받지 않게 하는 방어선이다.
     raw = re.sub(r',\s*"debug"\s*:\s*\{.*$', "}", raw, flags=re.S)
 
     try:
