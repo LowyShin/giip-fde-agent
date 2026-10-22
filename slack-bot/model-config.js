@@ -96,6 +96,10 @@ function normTier(taskClass) {
 const CONTEXT_TOTAL_BY_CLASS = { trivial: 12000, standard: 24000, complex: 40000, critical: 64000 };
 const PROMPT_INITIAL_BY_CLASS = { trivial: 24000, standard: 48000, complex: 80000, critical: 120000 };
 const PROMPT_RESUME_BY_CLASS = { trivial: 12000, standard: 24000, complex: 40000, critical: 64000 };
+// ASCII 중심 프롬프트의 기존 chars/4 동작을 기본값으로 보존하되, 실제 조립 결과는
+// token-budget.js 의 다국어 추정기로 이 상한을 별도로 검사한다.
+const PROMPT_INITIAL_TOKENS_BY_CLASS = { trivial: 6000, standard: 12000, complex: 20000, critical: 30000 };
+const PROMPT_RESUME_TOKENS_BY_CLASS = { trivial: 3000, standard: 6000, complex: 10000, critical: 16000 };
 
 /** 재개 프롬프트는 최초 프롬프트의 이 비율을 넘으면 안 된다(2.2). */
 const RESUME_PROMPT_MAX_RATIO = 0.60;
@@ -140,7 +144,7 @@ function resumeContextLimits(taskClass) {
 }
 
 /**
- * 프롬프트 전체 문자 수 상한(2.1 / 2.2). 토큰 추정은 문자 수 ÷ 4.
+ * 프롬프트 전체 문자 수 및 다국어 추정 토큰 상한(2.1 / 2.2).
  * @returns {{taskClass, initialMaxChars, resumeMaxChars, resumeMaxRatio,
  *            initialMaxTokensEstimated, resumeMaxTokensEstimated}}
  */
@@ -148,14 +152,16 @@ function promptLimits(taskClass) {
   const tier = normTier(taskClass);
   const initial = numEnv('PROMPT_INITIAL_MAX_CHARS', PROMPT_INITIAL_BY_CLASS[tier]);
   const resume = numEnv('PROMPT_RESUME_MAX_CHARS', PROMPT_RESUME_BY_CLASS[tier]);
+  const initialTokens = numEnv('PROMPT_INITIAL_MAX_TOKENS', PROMPT_INITIAL_TOKENS_BY_CLASS[tier]);
+  const resumeTokens = numEnv('PROMPT_RESUME_MAX_TOKENS', PROMPT_RESUME_TOKENS_BY_CLASS[tier]);
   return {
     taskClass: tier,
     initialMaxChars: initial,
     resumeMaxChars: resume,
     resumeMaxRatio: RESUME_PROMPT_MAX_RATIO,
     smallPromptExemptChars: SMALL_PROMPT_EXEMPT_CHARS,
-    initialMaxTokensEstimated: Math.ceil(initial / 4),
-    resumeMaxTokensEstimated: Math.ceil(resume / 4),
+    initialMaxTokensEstimated: initialTokens,
+    resumeMaxTokensEstimated: resumeTokens,
   };
 }
 
@@ -231,6 +237,8 @@ module.exports = {
   CONTEXT_TOTAL_BY_CLASS,
   PROMPT_INITIAL_BY_CLASS,
   PROMPT_RESUME_BY_CLASS,
+  PROMPT_INITIAL_TOKENS_BY_CLASS,
+  PROMPT_RESUME_TOKENS_BY_CLASS,
   RESUME_PROMPT_MAX_RATIO,
   RESUME_REDUCTION_WARN_RATIO,
   SMALL_PROMPT_EXEMPT_CHARS,
