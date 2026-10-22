@@ -11,6 +11,7 @@
 ---
 
 ## 2026-10-22
+- **역할 문서 죽은 링크 교정 (CSN 70424)** — 소개문서 퍼블리셔 역할이 가리키던 `reference-doc-manager.md` 링크가 이 저장소에는 대상 파일이 없어 404 였던 것을 제거하고, "존재 검증 후 링크" 원칙 문구를 본문에 그대로 남겼습니다. → [역할 정의](../.agent/roles/intro_docs_publisher.md)
 - **GitGuardian 비밀 스캔 제외 설정 정상화** — 문서화된 설정 파일명(`.gitguardian.yaml`)과 스키마(`secret.ignored_paths`)로 바꿔, `log-ship.js` 의 비밀 마스킹 정규식 패턴이 비밀로 오탐 탐지되지 않게 했습니다. 이전 `.gitguardian.yml` 은 파일명과 키가 모두 문서화되지 않은 형태라 제외가 적용된 적이 없었습니다. → [.gitguardian.yaml](../.gitguardian.yaml)
 - **What's New 누락 항목 보완 (CSN 70424)** — 최근 7일 창(2026-10-15~2026-10-22)에 머지되었는데 이 페이지에 항목이 없던 변경을 모두 확인해 항목 30건을 추가했습니다(규칙 36 준수). → [작업 기록](../.agent/work_history/20261022_172849_csn70424_repo-maintenance.md)
 - **완료 검증 게이트 순수 판정기 도입 (slack-bot)** — ANT 유산에서 쓸 만한 동작만 추려 태스크 완료 판정을 `slack-bot/task-verifier.js` 순수 함수로 분리하고 회귀 테스트를 함께 추가했습니다. → [계획서](./plans/2026-09-10-ant-verification-gate.md)
