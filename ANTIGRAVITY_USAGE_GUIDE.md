@@ -90,8 +90,9 @@ LLM 코딩 실수를 줄이기 위한 행동 지침입니다. 전체 내용은 [
 
 더 강력한 자율형 멀티 에이전트 경험을 원하신다면 **GIIP Dev Agent 프레임워크**를 사용하는 것을 권장합니다. 오케스트레이터와 전문 서브 에이전트가 있는 구조화된 환경을 제공합니다.
 
-- **자세히 보기**: [GIIP_DEV_AGENT_FRAMEWORK.md](./GIIP_DEV_AGENT_FRAMEWORK.md)
-- **저장소**: [https://github.com/LowyShin/giip-dev-agent](https://github.com/LowyShin/giip-dev-agent)
+- **자세히 보기**: [`.agent/README.md` — GIIP Agent System Guide](./.agent/README.md) (구 `GIIP_DEV_AGENT_FRAMEWORK.md` 는 이 저장소에 존재하지 않는 파일이었습니다)
+- **구성 요소 요약**: [GIIP 에이전트 시스템 구성 요소](./docs/02-design/agent-components/overview.md) — 역할(Role)·규칙(Rule)·스킬(Skill)·워크플로우(Workflow)
+- **저장소**: [https://github.com/LowyShin/giip-fde-agent](https://github.com/LowyShin/giip-fde-agent)
 
 ### 다음 단계 권장
 새로운 기능을 염두에 두고 있다면 다음을 시도해 보세요:
