@@ -6,9 +6,12 @@
 >
 > *(EN/JP 독자는 각 항목을 AI 에이전트에 번역 요청하세요. / Ask your AI assistant to translate entries.)*
 
-**기준일 (as of): 2026-10-22**
+**기준일 (as of): 2026-10-23**
 
 ---
+
+## 2026-10-23
+- **저장소 위생 정비 7차 — What's New 롤링 창 정리 + 죽은 링크 교정 (CSN 70424)** — 기준일이 하루 지나면서 7일 창을 벗어난 `2026-10-15` 섹션 2건을 [HISTORY.md](./HISTORY.md) 로 이관했습니다. 저장소 전체 마크다운 상대링크를 스캔해 실제로 없는 파일을 가리키는 링크 1건(`ANTIGRAVITY_USAGE_GUIDE.md` → `GIIP_DEV_AGENT_FRAMEWORK.md`)을 실재하는 문서로 교체했습니다. 충돌 PR·실패 CI·orphan stash·재검증 대상 코멘트는 모두 0건이었고 giip 이슈 쓰기는 하지 않았습니다. → [작업 기록](../.agent/work_history/20261023_033541_csn70424_repo-maintenance.md)
 
 ## 2026-10-22
 - **저장소 위생 정비 6차 — 머지 완료 후 잔존 브랜치 삭제 (CSN 70424)** — 직전 실행이 재생성해 둔 `fix/giip-3535-gitguardian-config` 와 `feat/is3905-privatekb-client` 원격 브랜치 2건과 로컬 브랜치 1건을, PR MERGED 상태와 blob 해시 동일성(내용 무손실)을 확인한 뒤 삭제했습니다. 충돌 PR·실패 CI·orphan stash 는 0건이었고 최근 코멘트(2시간 창)도 0건이라 이슈 쓰기는 하지 않았습니다. → [작업 기록](../.agent/work_history/20261022_233622_csn70424_repo-maintenance.md)
@@ -60,10 +63,6 @@
 - **게이트웨이 HTTP 4xx/5xx 원인 노출 + alert/review 행에 라우팅 이유(why) 인라인 표시** — → [실행 스크립트](../scripts/secwatch/secevt_run.py)
 - **Origin 다운로드 명령(복사) + 컬럼 Help 페이지 + 데이터 윈도우·보존 사양 문서화** — → [운영 문서](./60-operations/secwatch-agent.md)
 - **docker 재생성 대응 — bootstrap 이 claude 를 dev 소유 네이티브로 + monitor 폴링 1분** — → [부트스트랩](../scripts/bootstrap-instance.sh)
-
-## 2026-10-15
-- **보고형 이슈 완료 게이트 — 마커 왕복 대신 의뢰↔결과 대조로 자동 DONE** — → [게이트 대조 라이브러리](../scripts/gissue/gissue-gate-tally-lib.ps1)
-- **git safe.directory 전역 등록 — 재기동 시 dubious ownership 루프 방지** — → [엔트리포인트](../docker/entrypoint.sh)
 
 ---
 *이 페이지는 [규칙 36 — What's New 유지](../.agent/rules/36_whats_new_maintenance.md)에 따라 갱신·정리됩니다.*
