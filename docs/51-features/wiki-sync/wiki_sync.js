@@ -63,11 +63,20 @@ function updateWikiPage(wikiRelPath, claims) {
         }
     }
 
+    // 링크는 wiki 페이지 기준 **상대경로**로 만든다.
+    // 이전 구현(`file:///.agent/knowledge/notes/<file>`)은 파일시스템 루트 기준 절대경로 + 없는
+    // `file://` 스킴이라 모든 링크가 죽어 있었다(2026-10-23 실측 — wiki/entities, wiki/concepts 전량).
+    const wikiDir = path.dirname(wikiPath);
+    const noteLink = file => path.relative(wikiDir, path.join(KNOWLEDGE_DIR, file)).split(path.sep).join('/');
+
     const rows = Array.from(claims).sort((a, b) => a.id.localeCompare(b.id))
-        .map(c => `| ${c.id} | ${c.summary} | [${c.file}](file:///.agent/knowledge/notes/${c.file}) |`);
+        .map(c => `| ${c.id} | ${c.summary} | [${c.file}](${noteLink(c.file)}) |`);
     
     const tableContent = rows.join('\n');
-    const fullTablePattern = new RegExp(`${header.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}.*?\\| :--- \\| :--- \\|\\n(.*?)(?=\\n\\n##|\\n\\nSource:|$)`, 's');
+    // separator 행은 실제 표 헤더와 같은 3열(| :--- | :--- | :--- |)이어야 하고,
+    // 줄바꿈은 CRLF 도 허용해야 한다(기존 wiki 페이지가 CRLF 로 커밋돼 있다 — 정규식이
+    // `\n` 만 요구하면 표 치환이 조용히 실패해 페이지가 통째로 stale 로 남는다).
+    const fullTablePattern = new RegExp(`${header.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}.*?\\| :--- \\| :--- \\| :--- \\|[ \\t]*\\r?\\n(.*?)(?=\\r?\\n\\r?\\n##|\\r?\\n\\r?\\nSource:|$)`, 's');
     const newContent = content.replace(fullTablePattern, `${header}\n\n${tableHeader}\n${tableContent}`);
     
     fs.writeFileSync(wikiPath, newContent, 'utf8');

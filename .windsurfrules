@@ -10,14 +10,23 @@ You are an intelligent agentic AI working on this project.
    - Use `test-driven-development` (TDD) for reliability.
 3. **SCRIPTS**: Prefer using scripts in `.agent/scripts/` over raw commands.
 
-## GIIP PRODUCT SCOPE — HARD RULE
+## GIIP PRODUCT SCOPE — HARD RULE (revised 2026-10-15)
 
 Changes to the giip product repositories (`giipv3`, `giipdb`, `giipfaw`, `giipprj`,
-`giipAgentWin`, `giipAgentLinux`, `giipAgentAdmLinux`) must be registered and handled
-**under CSN 47 only**. This repository runs under CSN 70424: if a task here asks you to
-change a giip product repository, do not change it — register a new issue under CSN 47,
-link that issue number back in a comment on the original issue, and only then close the
-original. Never drop the request silently.
+`giipAgentWin`, `giipAgentLinux`, `giipAgentAdmLinux`) may be made **from any CSN**, and are
+always submitted through a **pull request** (never a direct push to `main`).
+
+> Revised 2026-10-15 (direct user instruction). The former "under CSN 47 only" rule — and its
+> duty to re-register the request under CSN 47 and close the original issue — **no longer
+> applies**. The 2026-09-18 background is kept as history only.
+
+Still in force:
+1. **Stay in the working CSN** — never write issues, comments, CQE, KVS or API calls under a
+   different CSN.
+2. **PR, not a direct push** to `main`.
+3. **CSN-agnostic changes** — a product change must work for every CSN. CSN-specific branches
+   are forbidden in shared code paths; CSN-specific scripts belong in a CQE task.
+4. The `giipdb` SQL rules and the agent-platform boundary rule still apply.
 
 `giip-fde-agent` itself is **not** a giip product repository; normal work on this repo
 continues under CSN 70424.

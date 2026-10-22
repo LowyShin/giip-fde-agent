@@ -383,9 +383,9 @@ function Get-GissueCsnLangFromApi($n, $sk) {
 }
 
 # [giip #2087/#2384] 이 스케줄러 자신의 heartbeat / 실행 이력 발행 설정.
-# lowyworkenv 운영본은 이 PC 전용 절대경로(custsvrs\lowy-dp01\giipAgent.cfg)와 lssn 71291 을 하드코딩
+# lowyworkenv 운영본은 이 PC 전용 절대경로(<고객 PC 절대경로>\giipAgent.cfg)와 lssn <lssn> 을 하드코딩
 # 했지만, 이 레포는 배포마다 다르므로 csn-projects.json 최상위 `heartbeat` 블록에서 읽는다:
-#   "heartbeat": { "lssn": "71291", "hostname": "<tLSvr 에 등록된 hostname>", "skFile": "<giipAgent.cfg 경로>" }
+#   "heartbeat": { "lssn": "<lssn>", "hostname": "<tLSvr 에 등록된 hostname>", "skFile": "<giipAgent.cfg 경로>" }
 # 블록이 없으면 조용히 건너뛴다(스케줄러 본연 동작에는 전혀 영향 없음).
 function Get-GissueHeartbeatConfig($mapRoot) {
     try {

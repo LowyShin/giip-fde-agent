@@ -14,7 +14,7 @@ src 값은 producer 의 SRC_FACTOR 매핑으로 4개 factor 에 분배된다(사
 사용:
   python3 secevt_sample.py                         # 라벨 포함 배열 stdout
   python3 secevt_sample.py --no-label              # 'label' 필드 제거(실전 입력 형태)
-  python3 secevt_sample.py | python3 secevt_agent.py --lssn 72784 --stdin --dry-run
+  python3 secevt_sample.py | python3 secevt_agent.py --lssn <lssn> --stdin --dry-run
   python3 secevt_sample.py --only attack           # 공격 샘플만
 
 각 이벤트 필드는 사양서 §5/§17 의 kValue 입력 스키마와 동일하다(단 'label' 은 평가용 메타).

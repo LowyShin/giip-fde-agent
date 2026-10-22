@@ -160,7 +160,7 @@ cp scripts/secwatch/secwatch.sources.example.json <설치경로>/secwatch.source
 ```
 ```json
 {
-  "lssn": 72784,
+  "lssn": <lssn>,
   "sources": [
     { "source": "aurora_audit", "file": "/var/log/audit/server_audit.log",
       "system": "prd-cmsdb", "since_offset": "/var/lib/giip/secwatch/aurora.offset" },

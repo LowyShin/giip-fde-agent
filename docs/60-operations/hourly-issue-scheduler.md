@@ -563,7 +563,7 @@ remote로만 연결된, 완전히 독립적인 워킹트리).
 | `SLACKBOT_AUTO_RESTART.md` | 같은 내용이 이 레포의 `./aux-hourly-schedulers.md`(slackbot 재시작 스케줄러 절)로 재작성돼 있습니다. |
 | `csn-projects.json` | 시크릿성 로컬 설정(CSN·절대경로). `csn-projects.json.example` 로 대체되며 배포마다 직접 채웁니다(§13 2단계). |
 | `_scan_tp.cjs` (17줄) | 하드코딩된 isn 5개(`1966,1968,1971,1972,2040`)를 `/tmp/g70424/c_*.json` 에서 읽는 1회용 조사 스크립트. 재사용 경로 없음. |
-| `extract_sk70427.ps1` (2줄) | csn 70427 의 SK 1건을 콘솔에 덤프하는 2줄짜리 일회성 스크립트. 시크릿을 표준출력으로 내보내므로 이식 대상이 아닙니다(`.agent/rules/49_no_plaintext_credential_persist.md`). |
+| `extract_sk<csn>.ps1` (2줄) | 특정 csn 의 SK 1건을 콘솔에 덤프하는 2줄짜리 일회성 스크립트. 시크릿을 표준출력으로 내보내므로 이식 대상이 아닙니다(`.agent/rules/49_no_plaintext_credential_persist.md`). |
 | `verify-1665-oneshot.ps1` (186줄) | 헤더에 "giip #1671 단발성(1회) 검증"이라 명시돼 있고, 실행 끝에 자기 태스크를 `Unregister-ScheduledTask` 로 지웁니다. 2026-08-29 14:07 실행 1회로 역할이 끝났습니다. |
 | `review-done-audit.ps1.bak_1570_20260828094004` | 파일명 그대로 2026-08-28 편집 백업본. |
 | `test-cd-worktree-hook.ps1` (190줄) | `.claude/hooks/check-ps1-parse.sh`(원본 PC 의 훅 배치)를 대상으로 하는 회귀 테스트라, 그 훅이 없는 배포에서는 대상 자체가 없습니다. |

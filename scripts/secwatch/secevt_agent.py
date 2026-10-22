@@ -10,10 +10,10 @@ secevt_agent.py — 보안점검 에이전트 ②(고객 수집 PC/서버). 리�
 정본 설계: giipdb/docs/30_Specs/SPEC_JEV_SQLI_DETECTION.md §4·§17. 관련 giip #3833.
 
 사용:
-  echo '<event json>' | python3 secevt_agent.py --lssn 72784 --stdin
-  python3 secevt_agent.py --lssn 72784 --event-file ev.json
-  python3 secevt_sample.py --no-label | python3 secevt_agent.py --lssn 72784 --stdin --dry-run
-  python3 secevt_agent.py --lssn 72784 --event-file ev.json --all   # 비후보까지 전송(기본은 후보만)
+  echo '<event json>' | python3 secevt_agent.py --lssn <lssn> --stdin
+  python3 secevt_agent.py --lssn <lssn> --event-file ev.json
+  python3 secevt_sample.py --no-label | python3 secevt_agent.py --lssn <lssn> --stdin --dry-run
+  python3 secevt_agent.py --lssn <lssn> --event-file ev.json --all   # 비후보까지 전송(기본은 후보만)
 
 인증(sk)·lssn 해석(자동, 사용자에게 묻지 않음):
   sk   : env GIIP_SK → 상위 giipAgent.cfg|.cnf 'sk='   (Jev 키 아님 — giip 에이전트 키)

@@ -8,34 +8,42 @@ This file defines the global rules and behaviors for the Agentic system. To impr
 
 The agent's behavior is governed by the following modular rule files in `.agent/rules/`:
 
-1.  **[Core Principles](file:///.agent/rules/00_core_principles.md)**: Fundamental rules (No raw SQL, Evidence First, Support).
-2.  **[Karpathy Guidelines](file:///.agent/rules/10_karpathy_guidelines.md)**: Behavioral guidelines for robust coding.
-3.  **[Structured Commit Protocol](file:///.agent/rules/11_structured_commit.md)**: Standardized git commit messages.
-4.  **[Workflow Guidelines](file:///.agent/rules/15_workflow_guidelines.md)**: Guidelines for TDD, Trace-first, and K-Layer.
-5.  **[Bkit Principles](file:///.agent/rules/20_bkit_core_principles.md)**: Bkit-specific core values.
-6.  **[PDCA Workflow](file:///.agent/rules/21_pdca_workflow.md)**: Detailed PDCA cycle steps.
-7.  **[Documentation Standards](file:///.agent/rules/22_documentation_standards.md)**: Folder structure and SoR priority.
-8.  **[Level System](file:///.agent/rules/23_level_system.md)**: Starter, Dynamic, and Enterprise levels.
-9.  **[Available Skills](file:///.agent/rules/24_available_skills.md)**: Command reference for PDCA, Gstack, etc.
-10. **[Trigger Keywords](file:///.agent/rules/25_trigger_keywords.md)**: Multi-language keyword mappings.
-11. **[Request Comprehension](file:///.agent/rules/32_request_comprehension.md)**: Request reinterpretation and ambiguity handling.
-12. **[Artifact Hygiene](file:///.agent/rules/33_artifact_hygiene.md)**: SoR cleanup, duplicate removal, and iteration learning records.
-13. **[Adversarial Review](file:///.agent/rules/34_adversarial_review.md)**: Opposing-view design checks and long-task resume protocol.
+1.  **[Core Principles](.agent/rules/00_core_principles.md)**: Fundamental rules (No raw SQL, Evidence First, Support).
+2.  **[Karpathy Guidelines](.agent/rules/10_karpathy_guidelines.md)**: Behavioral guidelines for robust coding.
+3.  **[Structured Commit Protocol](.agent/rules/11_structured_commit.md)**: Standardized git commit messages.
+4.  **[Workflow Guidelines](.agent/rules/15_workflow_guidelines.md)**: Guidelines for TDD, Trace-first, and K-Layer.
+5.  **[Bkit Principles](.agent/rules/20_bkit_core_principles.md)**: Bkit-specific core values.
+6.  **[PDCA Workflow](.agent/rules/21_pdca_workflow.md)**: Detailed PDCA cycle steps.
+7.  **[Documentation Standards](.agent/rules/22_documentation_standards.md)**: Folder structure and SoR priority.
+8.  **[Level System](.agent/rules/23_level_system.md)**: Starter, Dynamic, and Enterprise levels.
+9.  **[Available Skills](.agent/rules/24_available_skills.md)**: Command reference for PDCA, Gstack, etc.
+10. **[Trigger Keywords](.agent/rules/25_trigger_keywords.md)**: Multi-language keyword mappings.
+11. **[Request Comprehension](.agent/rules/32_request_comprehension.md)**: Request reinterpretation and ambiguity handling.
+12. **[Artifact Hygiene](.agent/rules/33_artifact_hygiene.md)**: SoR cleanup, duplicate removal, and iteration learning records.
+13. **[Adversarial Review](.agent/rules/34_adversarial_review.md)**: Opposing-view design checks and long-task resume protocol.
 
 ### Additional Operational Rules
 
-- **[Repo URL in Report](file:///.agent/rules/37_repo_url_in_report.md)**: Mandatory remote URLs in completion reports.
-- **[Edit Approval Policy](file:///.agent/rules/38_edit_approval_policy.md)**: Approval boundaries by file type.
-- **[Commit & Push per Task](file:///.agent/rules/35_commit_push_per_task.md)**: Mandatory task-unit commit/push discipline.
-- **[What's New Maintenance](file:///.agent/rules/36_whats_new_maintenance.md)**: Rolling 7-day update maintenance rule.
-- **[Conduct Toward Customers](file:///.agent/rules/39_conduct_toward_customers.md)**: Admit-fault-first, never unilaterally end the conversation, always courteous/professional, no unfounded AI rights claims — mandatory conduct standard for this front-line customer-facing agent.
-- **[Generic Agent — No Customer Info](file:///.agent/rules/54_generic_agent_no_customer_info.md)**: this repo is PUBLIC and generic; no customer names, CSN numbers or customer environment data. Entry: `AI_MUST_READ.md`.
-- **[Information Lookup Order](file:///.agent/rules/55_information_lookup_order_and_feedback.md)**: tPrivateKB -> specs -> code; tPrivateKB only via `scripts/privatekb/privatekb.py`; feed back missing knowledge to tPrivateKB.
-- **[GIIP Product Scope — HARD RULE](file:///.agent/rules/51_giip_product_changes_csn47_only.md)**: giip product repositories are changed under CSN 47 only; `giip-fde-agent` itself is not a product repo. See the HARD RULE section below.
+- **[Repo URL in Report](.agent/rules/37_repo_url_in_report.md)**: Mandatory remote URLs in completion reports.
+- **[Edit Approval Policy](.agent/rules/38_edit_approval_policy.md)**: Approval boundaries by file type.
+- **[Commit & Push per Task](.agent/rules/35_commit_push_per_task.md)**: Mandatory task-unit commit/push discipline.
+- **[What's New Maintenance](.agent/rules/36_whats_new_maintenance.md)**: Rolling 7-day update maintenance rule.
+- **[Conduct Toward Customers](.agent/rules/39_conduct_toward_customers.md)**: Admit-fault-first, never unilaterally end the conversation, always courteous/professional, no unfounded AI rights claims — mandatory conduct standard for this front-line customer-facing agent.
+- **[Generic Agent — No Customer Info](.agent/rules/54_generic_agent_no_customer_info.md)**: this repo is PUBLIC and generic; no customer names, CSN numbers or customer environment data. Entry: `AI_MUST_READ.md`.
+- **[Information Lookup Order](.agent/rules/55_information_lookup_order_and_feedback.md)**: tPrivateKB -> specs -> code; tPrivateKB only via `scripts/privatekb/privatekb.py`; feed back missing knowledge to tPrivateKB.
+- **[GIIP Product Scope — HARD RULE](.agent/rules/51_giip_product_changes_csn47_only.md)**: giip product repositories may be changed from any CSN and are submitted through a pull request (revised 2026-10-15); `giip-fde-agent` itself is not a product repo. See the HARD RULE section below.
 
-## 🚨 GIIP Product Scope — HARD RULE
+## 🚨 GIIP Product Scope — HARD RULE (revised 2026-10-15)
 
-Changes to the giip product repositories (`giipv3`, `giipdb`, `giipfaw`, `giipprj`, `giipAgentWin`, `giipAgentLinux`, `giipAgentAdmLinux`) must be registered and handled **under CSN 47 only**. This repository runs under CSN 70424: if a task here asks you to change a giip product repository, do not change it — register a new issue under CSN 47, link that issue number back in a comment on the original issue, and only then close the original. Never drop the request silently.
+Changes to the giip product repositories (`giipv3`, `giipdb`, `giipfaw`, `giipprj`, `giipAgentWin`, `giipAgentLinux`, `giipAgentAdmLinux`) may be made **from any CSN**, and are always submitted through a **pull request** (never a direct push to `main`).
+
+> Revised 2026-10-15 (direct user instruction). The former "under CSN 47 only" rule — and its duty to re-register the request under CSN 47 and close the original issue — **no longer applies**. The 2026-09-18 background is kept as history only.
+
+Still in force:
+1. **Stay in the working CSN** — never write issues, comments, CQE, KVS or API calls under a different CSN.
+2. **PR, not a direct push** to `main`.
+3. **CSN-agnostic changes** — a product change must work for every CSN. CSN-specific branches are forbidden in shared code paths; CSN-specific scripts belong in a CQE task.
+4. The `giipdb` SQL rules and the agent-platform boundary rule still apply.
 
 `giip-fde-agent` itself is **not** a giip product repository; normal work on this repo continues under CSN 70424.
 
@@ -43,22 +51,22 @@ Changes to the giip product repositories (`giipv3`, `giipdb`, `giipfaw`, `giippr
 
 ## ⚛️ Technical Best Practices
 
-- **Frontend**: [Vercel Engineering Best Practices](file:///.agent/rules/01_eliminating_waterfalls.md) (01-08).
-- **Security**: [CSO Security Audits](file:///.agent/rules/24_available_skills.md#🛡️-gstack-skills-v150).
+- **Frontend**: [Vercel Engineering Best Practices](.agent/rules/01_eliminating_waterfalls.md) (01-08).
+- **Security**: [CSO Security Audits](.agent/rules/24_available_skills.md#🛡️-gstack-skills-v150).
 
 ## 📊 Lifecycle & Monitoring
 
-- **Task Sizing**: [Task Size Rules](file:///.agent/rules/26_task_size_rules.md).
-- **Iteration**: [Check-Act Iteration Loop](file:///.agent/rules/27_check_act_iteration.md).
-- **Reporting**: [Response Report Rule](file:///.agent/rules/28_response_report_rule.md).
-- **Tool Usage & Verification**: [Tool Usage & Verification](file:///.agent/rules/29_tool_usage_and_verification.md).
-- **Response Style**: [Response Style](file:///.agent/rules/30_response_style.md).
-- **External Content Safety**: [External Content Safety](file:///.agent/rules/31_external_content_safety.md).
+- **Task Sizing**: [Task Size Rules](.agent/rules/26_task_size_rules.md).
+- **Iteration**: [Check-Act Iteration Loop](.agent/rules/27_check_act_iteration.md).
+- **Reporting**: [Response Report Rule](.agent/rules/28_response_report_rule.md).
+- **Tool Usage & Verification**: [Tool Usage & Verification](.agent/rules/29_tool_usage_and_verification.md).
+- **Response Style**: [Response Style](.agent/rules/30_response_style.md).
+- **External Content Safety**: [External Content Safety](.agent/rules/31_external_content_safety.md).
 
 ## 📝 Work History
 
 All development history and task logs are now maintained in:
-👉 **[HISTORY.md](file:///docs/HISTORY.md)**
+👉 **[HISTORY.md](docs/HISTORY.md)**
 
 ---
 
