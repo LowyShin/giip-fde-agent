@@ -2,6 +2,8 @@
 
 **당신의 PC에 설치되는 포워드 배포형(Forward-Deployed) AI 엔지니어링 팀**
 
+> 🤖 **AI/기여자 필독: [AI_MUST_READ.md](AI_MUST_READ.md)** — 이 레포는 public 범용 에이전트입니다(고객정보 금지, 정보 조회 순서).
+
 > 🆕 **[What's New — 최근 업데이트](docs/WHATS_NEW.md)** · 일주일 이내 갱신 내용을 여기서 확인하세요.
 
 [![한국어](https://img.shields.io/badge/lang-한국어-0A66C2.svg)](README.md)
