@@ -243,7 +243,9 @@ function scanSkillsForForkConfig() {
         if (fs.existsSync(skillMdPath)) {
           const content = fs.readFileSync(skillMdPath, 'utf8');
           // Check for context: fork in frontmatter
-          const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
+          // CRLF 허용: Windows 체크아웃 시 LF 전용 정규식은 frontmatter 를 놓친다
+          // (`.agent/lib/import-resolver.js` · `.agent/lib/skill-orchestrator.js` 와 동일 관례)
+          const frontmatterMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
           if (frontmatterMatch) {
             const frontmatter = frontmatterMatch[1];
             if (frontmatter.includes('context: fork') || frontmatter.includes('context:fork')) {

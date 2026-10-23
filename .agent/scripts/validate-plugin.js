@@ -66,14 +66,16 @@ function warn(message) {
  * @returns {Object|null} Parsed frontmatter or null
  */
 function parseFrontmatter(content) {
-  const match = content.match(/^---\n([\s\S]*?)\n---/);
+  // CRLF 허용: Windows 체크아웃 시 `---` 뒤 줄바꿈이 \r\n 이면 LF 전용 정규식은
+  // frontmatter 를 통째로 놓친다(`.agent/lib/import-resolver.js` 와 동일한 관례).
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!match) return null;
 
   const yaml = match[1];
   const result = {};
 
   // Simple YAML parsing (key: value pairs)
-  const lines = yaml.split('\n');
+  const lines = yaml.split(/\r?\n/);
   let currentKey = null;
   let currentValue = '';
   let inMultiline = false;
