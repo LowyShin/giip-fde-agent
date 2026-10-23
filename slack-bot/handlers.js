@@ -7,6 +7,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const config = require('./config');
+const { classifyMentions } = require('./mention-engagement');
 const { BASE_DIR, AGENT_DIR, TASK_STATE_FILE, HISTORY_FILE, getAgentDir, parseProjectPrefix } = config;
 const { loadJSON, saveJSON } = require('./state');
 const { postMessage, postLong, fetchThreadTranscript, resolveUserName, slackGet } = require('./slack-api');
@@ -1569,19 +1570,13 @@ function isActiveTaskThread(channelId, threadTs) {
 // ── メッセージ1件を処理 ───────────────────────────────────────────────────────
 async function processMessage({ channelId, msg, isDM, conversations, threadTs }) {
   const effectiveThreadTs = threadTs || msg.thread_ts || null;
-  const mentionsBot = config.getBotUserId() && msg.text.includes(`<@${config.getBotUserId()}>`);
-  // bot-bot 대화는 OTHER_BOT_IDS allowlist 로만 열린다 —
-  // 종전의 /<@[A-Z0-9]+>/ 판정은 Slack 멘션 토큰이 사람과 봇에서 같은 형식이라
-  // 동료를 멘션한 일반 대화까지 "다른 봇 멘션"으로 인정해, 봇이 무관한 메시지에
-  // 끼어들어 태스크를 실행할 수 있었다. 사양: README.md "When the bot responds
-  // (mention policy)" — 자기 앞 멘션은 app_mention 이 처리하므로 !mentionsBot 유지.
-  const mentionsOtherBot = !mentionsBot && config.hasOtherBotMention(msg.text);
-  // giip 4045 3절 결함 B: 활성 태스크 스레드 안에서 사람이 "다른 사람"을 명시적으로
-  // 멘션해 말을 거는 답글까지 isTaskReply(활성 스레드 자동 개입)로 주워가던 버그 —
-  // 봇 자신/등록된 다른 봇이 멘션되지 않았는데 다른 사람이 명시적으로 멘션됐다면
-  // 그 메시지는 그 사람에게 보내는 것으로 보고 자동 개입을 억제한다.
-  const mentionsOtherHuman = !mentionsBot && !mentionsOtherBot && /<@[A-Z0-9]+>/.test(msg.text);
-  const isTaskReply = !mentionsOtherHuman && isActiveTaskThread(channelId, effectiveThreadTs);
+  // 멘션 판정(봇/다른 봇 allowlist/다른 사람 멘션 가드/활성 스레드 후속)은 순수 함수로 분리 — mention-engagement.js
+  // (bot-bot 대화는 OTHER_BOT_IDS allowlist 로만 열린다. 사양: README.md "When the bot responds (mention policy)")
+  const { mentionsBot, mentionsOtherBot, isTaskReply } = classifyMentions(msg.text, {
+    botUserId: config.getBotUserId(),
+    hasOtherBotMention: config.hasOtherBotMention,
+    isActiveTaskThread: () => isActiveTaskThread(channelId, effectiveThreadTs),
+  });
   // giip-729: 채널에서는 "명시 멘션 + 활성 태스크 스레드"만 응답한다.
   // 과거의 isBotEngagedThread(7일간 봇이 한 번이라도 말한 스레드) 자동응답은
   // 봇이 참여했던 스레드의 사람들끼리의 일반 대화(무멘션)까지 개입하게 만들어 제거.
