@@ -1,3 +1,7 @@
+---
+name: premium-ui-craft
+description: Design luxury-grade, high-performance web interfaces — refined spacing and typography, glassmorphism, mandatory light/dark/system theme support, micro-interactions and smooth 60fps animation, and Lighthouse targets above 90 for performance and accessibility. Use when building front-end components, landing pages, or dashboards that need a premium visual finish.
+---
 # Skill: Premium UI Craft
 
 This skill focuses on creating luxury-grade, high-performance web interfaces that go beyond basic functionality to provide a "wow" factor through sophisticated design and micro-interactions.

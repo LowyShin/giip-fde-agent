@@ -1,3 +1,7 @@
+---
+name: workflow-mapping
+description: Map every branch of a system's execution paths before implementation — entry points, state transitions, workers, routes, and migrations, recorded as WORKFLOW-<name>.md with the happy path, every branch, payload/response contracts, and a cleanup inventory. Use before implementing a new feature or API, refactoring unclear logic, or designing system-to-system integrations.
+---
 # Skill: Workflow Mapping
 
 This skill provides the methodology for exhaustive system path discovery and specification. It ensures that before implementation, every possible branch is accounted for.

@@ -1,3 +1,7 @@
+---
+name: giip-fde-agent-project
+description: Initialize and protect this repository's context before analysis, implementation, review, documentation, role/rule/skill changes, or repository-backed planning. Use when starting substantive work here so that AGENTS.md, .agent/rules/, .agent/roles/, and .agent/skills/ are read first and edits stay inside the repository.
+---
 # Skill: giip-fde-agent-project
 
 Use this skill to initialize and protect repository context for work performed in this project.
