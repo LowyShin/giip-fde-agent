@@ -46,6 +46,15 @@ giip FDE Box 将 giip 的 FDE 能力（AI 驱动的全周期开发与企业级�
 
 ---
 
+## 🔗 外部参考链接汇总 (External References)
+
+> 本智能体参考或集成的**外部 URL、仓库和工具**汇总于此。
+>
+> - 📚 **[外部参考链接列表 (links.md)](links.md)** — 智能体相关外部链接全集 (含 Karpathy 的 LLM Wiki gist；列表为韩语)
+> - 📋 **[外部 AI 工具与仓库索引](docs/50-technical/ai-repositories-index_en.md)** (英文版；另有 [KO](docs/50-technical/ai-repositories-index.md) | [JP](docs/50-technical/ai-repositories-index_ja.md))
+
+---
+
 ## 💻 在我的 PC 上安装 FDE Agent —— 先把 Slack 机器人跑起来
 
 `giip-fde-agent` 是一个 **public（公开）仓库**。因此请不要直接在该仓库文件夹内工作，而是

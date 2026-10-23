@@ -40,6 +40,15 @@
 
 ---
 
+## 🔗 参照外部リンク集 (External References)
+
+> このエージェントが参照・連携する**外部URL・リポジトリ・ツール**を一か所にまとめました。
+>
+> - 📚 **[参照外部リンク一覧 (links.md)](links.md)** — エージェント関連の外部リンク全体 (Karpathy の LLM Wiki gist を含む。一覧は韓国語で記載)
+> - 📋 **[外部AIツール・リポジトリ一覧](docs/50-technical/ai-repositories-index_ja.md)** ([KO](docs/50-technical/ai-repositories-index.md) | [EN](docs/50-technical/ai-repositories-index_en.md))
+
+---
+
 ## 💻 自分のPCに FDE Agent をインストールする — まず Slack ボットを起動する
 
 `giip-fde-agent` は **public リポジトリ**です。したがってこのリポジトリのフォルダ内で直接作業するのではなく、

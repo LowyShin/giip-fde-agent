@@ -7,6 +7,9 @@
 ### 📋 [외부 AI 도구 및 레포지토리 목록](./docs/50-technical/ai-repositories-index.md) ([EN](./docs/50-technical/ai-repositories-index_en.md) | [JP](./docs/50-technical/ai-repositories-index_ja.md))
 - **설명**: 프로젝트와 연동 가능한 외부 유용한 AI 도구 및 레포지토리를 한눈에 볼 수 있는 통합 리스트입니다.
 
+### [LLM Wiki (Karpathy Gist)](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) ([분석 리포트](./docs/70-LowyOpinion/capacydiagram.md))
+- **설명**: Andrej Karpathy가 제안한 AI 에이전트 기반의 지속적인 지식 축적 및 위키 관리 패턴(K-Layer의 원형)입니다.
+
 ### [openclaw/clawsweeper](https://github.com/openclaw/clawsweeper) ([상세 소개](./docs/50-technical/clawsweeper-intro.md) | [EN](./docs/50-technical/clawsweeper-intro_en.md) | [JP](./docs/50-technical/clawsweeper-intro_ja.md))
 - **설명**: AI를 이용해 대규모 GitHub 레포지토리의 이슈와 PR을 자동으로 분석하고 정리하는 유지관리 봇입니다.
 

@@ -40,6 +40,15 @@ This agent is the executor of the [**giip FDE Box**](https://giip.littleworld.ne
 
 ---
 
+## 🔗 External References
+
+> External URLs, repos, and tools this agent references or integrates with, collected in one place.
+>
+> - 📚 **[External reference link list (links.md)](links.md)** — all agent-related external links (including Karpathy's LLM Wiki gist). The list is written in Korean.
+> - 📋 **[External AI tools & repositories index](docs/50-technical/ai-repositories-index_en.md)** ([KO](docs/50-technical/ai-repositories-index.md) | [JP](docs/50-technical/ai-repositories-index_ja.md))
+
+---
+
 ## 💻 Install the FDE Agent onto your PC — Bring up the Slack bot first
 
 `giip-fde-agent` is a **public repository**. So instead of working inside this repo folder directly,
