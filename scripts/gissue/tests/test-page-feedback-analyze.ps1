@@ -249,7 +249,22 @@ if (-not $pfaEngine) {
     Write-Output "FAILED: $fail"
     exit 1
 }
-$out = & $pfaEngine -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $ScriptPath -ConfigFile (Join-Path $tmp 'a.json') 2>&1
+# 자식 프로세스 stdout 을 UTF-8 로 고정한다.
+# 콘솔 코드페이지가 cp932(shift_jis) 면 자식의 한글 출력("[SKIP] 비활성")이 '?' 로 깨져
+# 아래 문자열 비교가 성립하지 않는다 — 콘솔 코드페이지에 따라 테스트 결과가 달라지는 결함.
+# 경로 인자는 환경변수로 넘긴다(공백·따옴표 포함 경로를 셸 인용에 기대지 않고).
+$env:GISSUE_PFA_SCRIPT = $ScriptPath
+$env:GISSUE_PFA_CONFIG = (Join-Path $tmp 'a.json')
+$pfaPrevOutEnc = [Console]::OutputEncoding
+try {
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    $out = & $pfaEngine -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command `
+        '[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; & $env:GISSUE_PFA_SCRIPT -ConfigFile $env:GISSUE_PFA_CONFIG' 2>&1
+} finally {
+    [Console]::OutputEncoding = $pfaPrevOutEnc
+    Remove-Item Env:\GISSUE_PFA_SCRIPT -ErrorAction SilentlyContinue
+    Remove-Item Env:\GISSUE_PFA_CONFIG -ErrorAction SilentlyContinue
+}
 Check 'g8 비활성 실행은 "[SKIP] 비활성" 한 줄만 출력하고 종료 코드 0' (($LASTEXITCODE -eq 0) -and (@($out).Count -eq 1) -and ("$($out | Select-Object -First 1)" -eq '[SKIP] 비활성')) ("$LASTEXITCODE | $out")
 Remove-Item -LiteralPath $tmp -Recurse -Force
 
