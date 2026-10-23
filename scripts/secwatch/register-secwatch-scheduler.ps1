@@ -1,4 +1,4 @@
-<#
+﻿<#
 register-secwatch-scheduler.ps1
 secwatch 보안점검 스윕(secevt_run.py)을 Windows 작업스케줄러에 N분 주기로 등록/해제/확인한다.
 표준 관례: scripts/register-hourly-issue-scheduler.ps1 과 동일한 register-*.ps1 패턴.
