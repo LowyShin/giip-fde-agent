@@ -45,6 +45,15 @@
 
 ---
 
+## 🔗 참조 외부 링크 모음 (External References)
+
+> 이 에이전트가 참고하거나 연동하는 **외부 URL·레포·도구 목록**을 한곳에 모았습니다.
+>
+> - 📚 **[참조 외부 링크 리스트 (links.md)](links.md)** — 에이전트 관련 외부 링크 전체 (예: Karpathy LLM Wiki gist 포함)
+> - 📋 **[외부 AI 도구·레포지토리 목록](docs/50-technical/ai-repositories-index.md)** ([EN](docs/50-technical/ai-repositories-index_en.md) | [JP](docs/50-technical/ai-repositories-index_ja.md))
+
+---
+
 ## 💻 내 PC에 FDE Agent 설치하기 — Slack 봇부터 띄우기
 
 `giip-fde-agent`는 **public 레포지토리**입니다. 따라서 이 레포 폴더 안에서 바로 작업하지 말고,
