@@ -1,0 +1,60 @@
+name: Repo Gates
+
+# 이 워크플로의 존재 이유 (2026-10-24 CSN 70424 저장소 정비 세션 실측):
+#   이 저장소에는 정본 게이트(check-ps1-parse.ps1)와 회귀 테스트(test-*.ps1 20건 /
+#   test-*.mjs 4건)가 이미 있었지만 **CI 에 결선돼 있지 않았다.**
+#   그 결과 2026-10-24 이전 정비 세션이 실측한 결함들(pwsh 하드코딩 / 셸 경유 커밋 본문
+#   소실 / /tmp 하드코딩)이 **실패한 채 main 에 유입된 뒤에야** 사람이 수동으로 돌려
+#   발견했다. → "이 게이트가 없으면 다음 결함은 main 에 유입된 채 발견되지 않는다."
+#
+# 판정 로직은 **YAML 에 복붙하지 않는다**(rule 48 single_source_safety_predicate).
+#   로컬에서 사람이 돌리는 명령과 CI 가 돌리는 명령이 **똑같은 코드**여야
+#   "워크트리에서 green ≠ main 에서 green"(KNOW-005) 계열 사고가 재발하지 않는다.
+#   → 유일한 진입점: scripts/gissue/run-repo-gates.ps1
+#
+# 러너는 Windows PowerShell 5.1 기준이다(이 저장소/PC 에 pwsh 가 없다).
+#   → workflow 에서 `pwsh` 를 부르면 command not found 로 아무 일도 하지 않고 끝난다.
+#   모든 호출은 `powershell -NoProfile -ExecutionPolicy Bypass -File` 로 통일한다.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# [2026-10-24 CI 결선] 러너에는 **전역 git user 설정이 없다**(전역 user.name/user.email 이
+#   비어 있으면 커밋이 실패한다). 회귀 테스트 중 임시 저장소에 커밋하는 테스트가 있어서,
+#   커밋이 조용히 실패하면 테스트가 "환경 검사" 로 뒤집힌다.
+#   → 워크플로 한 곳(workflow 레벨 env)에서만 지정한다. job 별로 복붙하지 않는다.
+env:
+  GIT_AUTHOR_NAME: gissue-ci
+  GIT_AUTHOR_EMAIL: gissue-ci@users.noreply.github.com
+  GIT_COMMITTER_NAME: gissue-ci
+  GIT_COMMITTER_EMAIL: gissue-ci@users.noreply.github.com
+
+jobs:
+  ps1-gates:
+    name: PS1 gates (정본 게이트 + ps1 회귀 테스트)
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Run repo gates (ps1)
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gissue/run-repo-gates.ps1
+
+  mjs-gates:
+    name: MJS gates (정본 게이트 + mjs 회귀 테스트)
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Run repo gates (mjs)
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gissue/run-repo-gates.ps1 -SkipPs1Tests

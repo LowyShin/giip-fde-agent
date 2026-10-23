@@ -36,6 +36,9 @@
 2. **게이트가 CI 에 없으면** 회귀 테스트는 사람이 수동으로 돌릴 때만 발견된다.
    이 저장소는 `.github/workflows/` 에 `windows-hook-doctor.yml` 만 있고
    `check-ps1-parse.ps1` 과 회귀 테스트는 **CI 에 물려 있지 않다**.
+   → **2026-10-24 조치**: [KNOW-006](KNOW-006_repo_gates_not_wired_to_ci.md) —
+   단일 진입점 `scripts/gissue/run-repo-gates.ps1` + CI 워크플로 `.github/workflows/repo-gates.yml`
+   로 결선했다. 자동화 축의 재발 방지는 KNOW-006, 환경(코드페이지) 축은 이 노트가 맡는다.
 3. 자식 출력을 **텍스트로 비교하는 테스트는** 인코딩을 명시하지 않으면
    **그 PC 의 코드페이지가 테스트의 합격 기준**이 된다 — 테스트가 "환경 검사"가 된다.
 

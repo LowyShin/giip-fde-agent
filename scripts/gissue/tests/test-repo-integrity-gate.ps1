@@ -43,7 +43,14 @@ function Remove-TestTree([string]$Path) {
     [System.IO.Directory]::Delete($Path, $true)
 }
 
-$Root = Join-Path $env:TEMP "gissue-integrity-gate-test-$PID"
+# [2026-10-24 CI 결선] 임시 루트를 **전체 경로(long form)** 로 고정한다.
+#   $env:TEMP 가 8.3 단축 경로(예: C:\Users\RUNNER~1)면, 엔진이 잔해 경로를 전체 경로로
+#   해석한 값과 ScanRoot 문자열이 어긋나 "ScanRoot 밖 경로 — 삭제 거부" 로manual review 로
+#   넘어가고, 삭제 후 HEAD 이동까지 일어나지 않아 D-0/D-2/D-3/D-4 가 연쇄 실패한다
+#   (실측: GitHub windows-latest 러너에서 D-0/D-2/D-3/D-4 4건 실패).
+#   Get-Item 의 FullName 은 8.3 단축 이름을 전체 경로로 풀어 준다(Resolve-Path 는 안 한다).
+$tempRootLong = (Get-Item -LiteralPath $env:TEMP).FullName
+$Root = Join-Path $tempRootLong "gissue-integrity-gate-test-$PID"
 Remove-TestTree $Root
 New-Item -ItemType Directory -Path $Root -Force | Out-Null
 
