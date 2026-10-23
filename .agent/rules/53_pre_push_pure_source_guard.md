@@ -1,6 +1,6 @@
 # 53. 고객 웹 레포 push 전 순수 소스 가드 테스트 강제
 
-> **HARD RULE** — 고객 웹 레포(Django 앱: `vgt-smart-order-system`, `vgt-smart-stock` 등)에
+> **HARD RULE** — 고객 웹 레포(서버사이드 렌더링 웹 애플리케이션 등)에
 > 커밋을 push 하기 **직전에**, 그 레포의 순수 소스 가드 테스트를 반드시 실행하고 **FAIL 이면
 > push 하지 않는다.**
 > 근거 giip: #3773(= #3748 복수행 `{# #}` 코멘트 누출 재발 4회차).
@@ -52,7 +52,7 @@ GitHub 토큰에 `workflow` scope 를 요구하며, 무인 세션 토큰에는 �
 - 임의 템플릿에 복수행 `{# 1행\n 2행 #}` 를 심은 상태 → 스크립트 exit 1, offender 의 `경로:행`
   출력, 제거하면 다시 exit 0.
 
-(giip-3773 에서 `vgt-smart-order-system` 체크아웃에 대해 위 3단계를 실측: clean=12 tests OK
+(giip-3773 에서 해당 고객 웹 레포 체크아웃에 대해 위 3단계를 실측: clean=12 tests OK
 exit 0 / 심음=FAILED exit 1 / 제거=OK exit 0.)
 
 ## 관련 규칙

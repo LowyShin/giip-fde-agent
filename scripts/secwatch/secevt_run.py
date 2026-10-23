@@ -16,7 +16,7 @@ secevt_run.py — secwatch 1회 스윕 진입점(스케줄러가 부른다). 리
 설정 자동탐색 순서: --config → env SECWATCH_CONFIG → giipAgent.cfg|.cnf 와 같은 폴더의
   secwatch.sources.json → 이 스크립트 폴더의 secwatch.sources.json.
 설정 스키마(secwatch.sources.example.json 참고):
-  { "lssn": 72784,
+  { "lssn": <lssn>,
     "sources": [ { "source":"aurora_audit", "file":"/var/log/audit/server_audit.log",
                    "system":"prd-cmsdb", "since_offset":"/var/lib/giip/secwatch/aurora.offset" } ] }
   lssn 생략 시 env GIIP_LSSN / giipAgent.cfg 의 lssn 사용. sk 는 secevt_agent 와 동일 규칙(키 없음).

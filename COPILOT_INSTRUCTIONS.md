@@ -11,8 +11,12 @@ You are working on the 'antigravity-agent' project.
    - Skills are in `.agent/skills/`.
    - Scripts are in `.agent/scripts/`.
 
-## 🚨 GIIP PRODUCT SCOPE — HARD RULE 🚨
-Changes to the giip product repositories (`giipv3`, `giipdb`, `giipfaw`, `giipprj`, `giipAgentWin`, `giipAgentLinux`, `giipAgentAdmLinux`) must be registered and handled **under CSN 47 only**. This repository runs under CSN 70424: if a task here asks you to change a giip product repository, do not change it — register a new issue under CSN 47, link that issue number back in a comment on the original issue, and only then close the original. Never drop the request silently.
+## 🚨 GIIP PRODUCT SCOPE — HARD RULE 🚨 (revised 2026-10-15)
+Changes to the giip product repositories (`giipv3`, `giipdb`, `giipfaw`, `giipprj`, `giipAgentWin`, `giipAgentLinux`, `giipAgentAdmLinux`) may be made **from any CSN**, and are always submitted through a **pull request** (never a direct push to `main`).
+
+> Revised 2026-10-15 (direct user instruction). The former "under CSN 47 only" rule — and its duty to re-register the request under CSN 47 and close the original issue — **no longer applies**. The 2026-09-18 background is kept as history only.
+
+Still in force: stay in the working CSN (no issue/comment/CQE/KVS/API writes under a different CSN) · PR, not a direct push to `main` · CSN-agnostic changes (no CSN-specific branches in shared code; CSN-specific scripts belong in a CQE) · the `giipdb` SQL rules and the agent-platform boundary rule.
 
 `giip-fde-agent` itself is **not** a giip product repository; normal work on this repo continues under CSN 70424.
 

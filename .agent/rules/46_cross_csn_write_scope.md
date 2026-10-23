@@ -35,6 +35,7 @@ CSN 필터 강제가 있었지만, **쓰기 직전에 "이 isn 이 실제로 의
 - [`00_project_repository_scope.md`](00_project_repository_scope.md) — 같은 취지의 레포 스코프 규칙.
 - [`51_giip_product_changes_csn47_only.md`](51_giip_product_changes_csn47_only.md) — **46 은 이슈 쓰기
   스코프**(어느 CSN 의 이슈에 코멘트·상태전이·이슈생성을 할 수 있는가), **51 은 코드 변경 대상 레포
-  스코프**(어느 레포에 커밋·PR 을 낼 수 있는가). giip 제품 레포 변경은 CSN 47 로만 한다.
+  스코프**(어느 레포에 커밋·PR 을 낼 수 있는가). giip 제품 레포 변경은 어떤 CSN 에서든 가능하며
+  **PR 로** 올린다(개정 2026-10-15).
 - `docs/60-operations/hourly-issue-scheduler.md` §4 — CSN 교차오염 방지 게이트가 도구에 내장돼 있다는 설명.
 - [`41_issue_session_safety_index.md`](41_issue_session_safety_index.md) — 이 규칙군 색인.

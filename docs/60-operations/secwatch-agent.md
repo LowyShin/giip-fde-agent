@@ -43,7 +43,7 @@ payload 가 출력되고 4개 타입(`secevt_batch_audit/waf/cf/signal`)으로 �
 ## 4. 설정 (secwatch.sources.json)
 
 ```json
-{ "lssn": 72784,
+{ "lssn": <lssn>,
   "sources": [
     { "source":"aurora_audit", "file":"/var/log/audit/server_audit.log",
       "system":"prd-cmsdb", "since_offset":"/var/lib/giip/secwatch/aurora.offset" },

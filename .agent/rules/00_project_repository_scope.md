@@ -34,5 +34,6 @@ Never perform work against a different repository merely because it appeared in 
 
 This rule decides **which repository is the canonical source of truth for this project**;
 [`51_giip_product_changes_csn47_only.md`](51_giip_product_changes_csn47_only.md) decides
-**which repositories this session is allowed to change** (giip product repositories are
-CSN 47 only; `giip-fde-agent` itself is not a giip product repository).
+**which repositories this session is allowed to change** (giip product repositories may be
+changed from any CSN and are submitted through a PR — revised 2026-10-15; `giip-fde-agent`
+itself is not a giip product repository).

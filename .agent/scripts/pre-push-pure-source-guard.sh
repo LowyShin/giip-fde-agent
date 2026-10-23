@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 # pre-push-pure-source-guard.sh
 #
-# 고객 웹 레포(vgt-smart-order-system 등 Django 앱)를 push 하기 "전에" 실행하는
+# 고객 웹 레포(서버사이드 렌더링 웹 애플리케이션 등)를 push 하기 "전에" 실행하는
 # 순수 소스 가드 테스트 러너. FAIL 이면 non-zero 로 종료해 호출부가 push 를 중단하게 한다.
 #
 # 배경(giip-3773 / giip-3748): tests_template_comment_syntax 같은 가드 테스트는
