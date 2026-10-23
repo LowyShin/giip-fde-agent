@@ -1,4 +1,4 @@
-# test-scope-gate-multi-pr.ps1 — scope-gate 의 "여러 PR 합산 판정" 회귀 테스트 (giip #3833)
+﻿# test-scope-gate-multi-pr.ps1 — scope-gate 의 "여러 PR 합산 판정" 회귀 테스트 (giip #3833)
 #
 # 왜 필요한가 (2026-10-18~19 실사고):
 #   한 이슈를 여러 PR 로 구현하면(특히 giipdb/giipfaw/giipv3/giip-fde-agent 를 넘나드는 변경)

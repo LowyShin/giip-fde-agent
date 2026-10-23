@@ -1,4 +1,4 @@
-# review-merged-presweep.ps1 — REVIEW 이슈의 병합완료 자동 DONE 사전처리 (giip #3556)
+﻿# review-merged-presweep.ps1 — REVIEW 이슈의 병합완료 자동 DONE 사전처리 (giip #3556)
 #
 # 목적: REVIEW 상태 이슈 중 "대응 PR이 모두 병합됨 + 사람의 직접 확인이 필요한
 #       미해결 신호 없음" 조건을 LLM 호출 없이 결정적으로 판정해, 그 건을 큐가

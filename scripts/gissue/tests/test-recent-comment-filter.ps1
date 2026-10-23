@@ -1,4 +1,4 @@
-# test-recent-comment-filter.ps1 — "최근 코멘트됨" 판정의 회귀 테스트 (giip #3802)
+﻿# test-recent-comment-filter.ps1 — "최근 코멘트됨" 판정의 회귀 테스트 (giip #3802)
 #
 # 왜 필요한가 (실사고):
 #   review-done-audit.ps1 은 이 판정을 위해 이슈마다 Get-IssueComments 를 불렀다

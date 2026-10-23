@@ -1,4 +1,4 @@
-# test-reaper-node-orphan-fingerprint.ps1 — node 고아 지문 판정 회귀 테스트 (giip #2673)
+﻿# test-reaper-node-orphan-fingerprint.ps1 — node 고아 지문 판정 회귀 테스트 (giip #2673)
 #
 # 왜 필요한가:
 #   Phase 0 reaper 는 원래 claude.exe 에서만 회수 후보를 열거했다. claude 가 먼저 죽고 node
