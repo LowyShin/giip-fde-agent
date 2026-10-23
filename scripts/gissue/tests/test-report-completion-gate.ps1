@@ -11,7 +11,7 @@
 # 네트워크/SK/claude 불필요 — 순수 함수에 합성 입력을 직접 먹인다.
 #
 # 실행:
-#   pwsh -NoProfile -File scripts/gissue/tests/test-report-completion-gate.ps1
+#   powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gissue/tests/test-report-completion-gate.ps1
 # 종료코드: 0 = 전건 PASS, 1 = 1건 이상 FAIL
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8

@@ -85,21 +85,30 @@ function Assert-ScheduledTaskTarget {
             $problems += "파싱 검사기 없음: $parser"
         } else {
             # Windows PowerShell 로 고정 호출(검사기 자체가 5.1 파서 기준으로 검증됨).
+            # 엔진 후보를 못 찾으면 예외로 죽지 말고 등록 거부 사유로 남긴다 —
+            # `Get-Command pwsh` 는 PowerShell 7 이 없는 PC 에서 CommandNotFoundException 을 던진다.
             $engine = (Get-Command powershell -ErrorAction SilentlyContinue).Source
-            if (-not $engine) { $engine = (Get-Command pwsh).Source }
+            if (-not $engine) { $engine = (Get-Command pwsh -ErrorAction SilentlyContinue).Source }
+            if (-not $engine) {
+                Write-Output "[TASK-GUARD][2/3][FAIL] 실행 엔진(powershell/pwsh)을 찾을 수 없음 — 등록 거부"
+                $problems += "실행 엔진 없음(powershell/pwsh 모두 없음)"
+                $engine = $null
+            }
             # `-Path` 명시 호출을 유지한다. giip #2431 시점에는 위치 인자가 아예 바인딩되지 않아
             # ("사용법" 출력 + exit 2) `-Path` 가 유일하게 동작하는 형태였고, giip #2436 에서 위치 인자
             # 바인딩이 고쳐진 뒤에도 `-Path` 는 여전히 올바른(그리고 의도가 명확한) 호출 형태다.
             # 참고: 대상 부재는 위 게이트 1 에서 이미 걸러지지만, 검사기 자체도 giip #2436 부터
             #       "지정한 파일 없음" 을 exit 1 로 차단한다(예전에는 [SKIP] 후 exit 0 통과였다).
-            $parseOut = & $engine -NoProfile -ExecutionPolicy Bypass -File $parser -Path $fullTarget
-            $parseRc = $LASTEXITCODE
-            foreach ($line in $parseOut) { Write-Output "    $line" }
-            if ($parseRc -eq 0) {
-                Write-Output "[TASK-GUARD][2/3][OK]   파싱 통과"
-            } else {
-                Write-Output "[TASK-GUARD][2/3][FAIL] 파싱 검사 실패(exit $parseRc) — 등록 거부"
-                $problems += "파싱 검사 실패(exit $parseRc): $fullTarget"
+            if ($engine) {
+                $parseOut = & $engine -NoProfile -ExecutionPolicy Bypass -File $parser -Path $fullTarget
+                $parseRc = $LASTEXITCODE
+                foreach ($line in $parseOut) { Write-Output "    $line" }
+                if ($parseRc -eq 0) {
+                    Write-Output "[TASK-GUARD][2/3][OK]   파싱 통과"
+                } else {
+                    Write-Output "[TASK-GUARD][2/3][FAIL] 파싱 검사 실패(exit $parseRc) — 등록 거부"
+                    $problems += "파싱 검사 실패(exit $parseRc): $fullTarget"
+                }
             }
         }
     }

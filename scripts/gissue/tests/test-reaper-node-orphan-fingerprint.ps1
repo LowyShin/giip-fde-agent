@@ -15,7 +15,7 @@
 #   정상 claude CLI(…\npm\node_modules\@anthropic-ai\claude-code\cli.js)까지 제외돼
 #   회수 대상이 사라지는 버그였다. 넓은 조각을 제외 지문에 넣지 말 것.
 #
-# 실행: pwsh -File scripts/gissue/tests/test-reaper-node-orphan-fingerprint.ps1
+# 실행: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gissue/tests/test-reaper-node-orphan-fingerprint.ps1
 #
 # 주의: run-gissue-claude.ps1 을 dot-source 하면 스케줄러 본체가 실행된다. 그래서 이 테스트는
 #   파일에서 두 정규식 줄만 읽어 평가한다(아래 Get-Content + 정규식 추출).
