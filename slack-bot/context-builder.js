@@ -118,12 +118,16 @@ function resetCaches() { _headCache.clear(); _bodyCache.clear(); }
  */
 function buildContextCatalog(baseDir, workspaceDir = baseDir) {
   const out = [];
-  const addFile = (type, absPath) => {
+  // root: absPath 가 실제로 어느 디렉터리 밑에서 발견됐는지(baseDir 또는 workspaceDir).
+  // 항상 baseDir 기준으로만 상대경로를 계산하면, workspaceDir 쪽에서 찾은 파일은
+  // "../<workspaceDir 이름>/..." 같은 프로젝트 범위 밖 경로가 되어 readSelectedContext
+  // 의 가드레일(".." 차단)에 걸린다(baseDir 에 .agent/rules 등이 없는 모든 프로젝트에서 재현).
+  const addFile = (type, absPath, root) => {
     const meta = getMeta(absPath, path.basename(absPath, '.md'));
     if (!meta) return;
     out.push({
       type,
-      path: path.relative(baseDir, absPath).replace(/\\/g, '/'),
+      path: path.relative(root, absPath).replace(/\\/g, '/'),
       abs: absPath,
       name: meta.name,
       desc: meta.description,
@@ -134,20 +138,22 @@ function buildContextCatalog(baseDir, workspaceDir = baseDir) {
 
   for (const [type, sub] of [['role', 'roles'], ['rule', 'rules']]) {
     let dir = path.join(baseDir, '.agent', sub);
-    try { if (!fs.readdirSync(dir).some(f => f.endsWith('.md'))) dir = path.join(workspaceDir, '.agent', sub); }
-    catch { dir = path.join(workspaceDir, '.agent', sub); }
-    try { fs.readdirSync(dir).filter(f => f.endsWith('.md')).forEach(f => addFile(type, path.join(dir, f))); } catch {}
+    let root = baseDir;
+    try { if (!fs.readdirSync(dir).some(f => f.endsWith('.md'))) { dir = path.join(workspaceDir, '.agent', sub); root = workspaceDir; } }
+    catch { dir = path.join(workspaceDir, '.agent', sub); root = workspaceDir; }
+    try { fs.readdirSync(dir).filter(f => f.endsWith('.md')).forEach(f => addFile(type, path.join(dir, f), root)); } catch {}
   }
 
   let skillsDir = path.join(baseDir, '.agent', 'skills');
-  if (!fs.existsSync(skillsDir)) skillsDir = path.join(workspaceDir, '.agent', 'skills');
+  let skillsRoot = baseDir;
+  if (!fs.existsSync(skillsDir)) { skillsDir = path.join(workspaceDir, '.agent', 'skills'); skillsRoot = workspaceDir; }
   try {
     for (const e of fs.readdirSync(skillsDir, { withFileTypes: true })) {
       if (e.isDirectory()) {
         const sk = path.join(skillsDir, e.name, 'SKILL.md');
-        if (fs.existsSync(sk)) addFile('skill', sk);
+        if (fs.existsSync(sk)) addFile('skill', sk, skillsRoot);
       } else if (e.name.endsWith('.md')) {
-        addFile('skill', path.join(skillsDir, e.name));
+        addFile('skill', path.join(skillsDir, e.name), skillsRoot);
       }
     }
   } catch {}
