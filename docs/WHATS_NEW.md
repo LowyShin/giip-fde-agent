@@ -6,9 +6,13 @@
 >
 > *(EN/JP 독자는 각 항목을 AI 에이전트에 번역 요청하세요. / Ask your AI assistant to translate entries.)*
 
-**기준일 (as of): 2026-10-23**
+**기준일 (as of): 2026-10-24**
 
 ---
+
+## 2026-10-24
+- **프런트매터 누락 스킬 4건 보정 — 스킬 검증 82/82 통과 (CSN 70424)** — 검증기가 "프런트매터 없음"으로 보고하던 스킬 4건(`agent-lightning`·`giip-fde-agent-project`·`premium-ui-craft`·`workflow-mapping`)에 `name`·`description` 프런트매터를 추가했습니다. 직전 세션(PR #230)이 정규식의 CRLF 결함은 고쳤지만 "원래 프런트매터가 아예 없는 4건"은 후속으로 남겨 둔 것이고, 그 후속을 이번에 처리했습니다. 스킬 본문은 한 줄도 바꾸지 않았습니다. 검증 결과가 **Skills 78/82 · Errors 9** → **Skills 82/82 · Errors 5** 로 개선됐습니다(잔여 5건은 `plugin.json`·`agents/`·`commands/` 등 bkit 플러그인 번들 구조 요건 — 이 저장소의 `.agent/` 는 플러그인 번들이 아니라 에이전트 프레임워크라 해당 요건 자체가 성립하지 않음). → [검증 스크립트](../.agent/scripts/validate-plugin.js) · [작업 기록](../.agent/work_history/20261024_003000_csn70424_repo-maintenance.md)
+- **저장소 위생 정비 15차 — 정리 대상 없음 확인 + 스킬 프런트매터 후속 처리 (CSN 70424)** — 충돌 PR·실패 CI·orphan stash 모두 **0건**이었고, 최근 코멘트 재검증 창(2시간)도 **0건**이라 정정 코멘트·상태 전이는 하지 않았습니다(giip 이슈 쓰기 0건). `git fetch --prune` 후 **잔여 원격 브랜치 0건**, 공유 체크아웃 clean·미커밋 잔재 0건을 재확인했습니다. nested 저장소(`bkit` 서브모듈)의 PR #160 은 여전히 충돌 없이 CI 2건 pass 였습니다. What's New 롤링 7일 창이 넘어 `2026-10-16` 섹션 8건을 [HISTORY.md](./HISTORY.md) 로 이관했습니다(규칙 36). → [작업 기록](../.agent/work_history/20261024_003000_csn70424_repo-maintenance.md)
 
 ## 2026-10-23
 - **프런트매터 CRLF 파싱 결함 수정 — 검증기 오탐 33건 제거 (CSN 70424)** — 이 저장소의 자체 검증 스크립트(`validate-plugin.js`)가 Windows 체크아웃(CRLF)에서는 정상 스킬 33건을 "프런트매터 없음"으로 오진해 **Skills 45/82 · Errors 42** 로 보고하던 결함을 고쳤습니다. 정규식이 LF 전용(`/^---\n.../`)이라 `\r\n` 파일을 매칭하지 못한 것이 원인이었고, 같은 저장소의 `import-resolver.js`·`skill-orchestrator.js` 가 이미 쓰던 CRLF 허용 패턴(`/^---\r?\n.../`)으로 정정해 **Skills 78/82 · Errors 9** 로 개선됐습니다(잔여 9건은 구조 요건 불일치 5건 + 프런트매터가 아예 없는 스킬 4건 — 후속으로 기록). 세션 시작 훅의 `context: fork` 스킬 탐색(`session-start.js`)도 같은 클래스의 잠재 결함이라 함께 정정했습니다. → [검증 스크립트](../.agent/scripts/validate-plugin.js) · [세션 시작 훅](../.agent/hooks/session-start.js) · [작업 기록](../.agent/work_history/20261023_201400_csn70424_repo-maintenance.md)
@@ -71,16 +75,6 @@
 - **monitor 에이전트 생존 배지(하트비트) 표시** — 판정 0건이어도 에이전트가 살아 있음을 배지로 보여줍니다. → [모니터](../scripts/secwatch/monitor.py)
 - **monitor.py 사용자 노출·소스 문자열 영어화** — → [모니터](../scripts/secwatch/monitor.py)
 - **monitor 웹 UI 25건 페이징 + 24시간 기본 윈도우** — → [모니터](../scripts/secwatch/monitor.py)
-
-## 2026-10-16
-- **간이 해킹 감시 모니터(monitor.py) 신설 + 보안점검 입력 4분류(secevt_batch_audit/waf/cf/signal)** — → [secwatch README](../scripts/secwatch/README.md)
-- **수집부·등록 스캐폴딩과 운영 문서 진입점 신설** — "새로 받아 secwatch 등록" 절차가 한 번에 완결되도록 만들었습니다. → [운영 문서](./60-operations/secwatch-agent.md)
-- **에이전트를 Jev 게이트웨이 전송 구조로 개편 + consumer 판정기 추가** — 키가 없는 수집 PC 구조로 전환했습니다. → [secwatch README](../scripts/secwatch/README.md)
-- **monitor 를 판정 결과(tKVSSecurityCheck) 조회로 전환 + collect 정리** — → [모니터](../scripts/secwatch/monitor.py)
-- **monitor 웹 UI 영어화 + 다국어 준비(i18n 구조)** — → [모니터](../scripts/secwatch/monitor.py)
-- **게이트웨이 HTTP 4xx/5xx 원인 노출 + alert/review 행에 라우팅 이유(why) 인라인 표시** — → [실행 스크립트](../scripts/secwatch/secevt_run.py)
-- **Origin 다운로드 명령(복사) + 컬럼 Help 페이지 + 데이터 윈도우·보존 사양 문서화** — → [운영 문서](./60-operations/secwatch-agent.md)
-- **docker 재생성 대응 — bootstrap 이 claude 를 dev 소유 네이티브로 + monitor 폴링 1분** — → [부트스트랩](../scripts/bootstrap-instance.sh)
 
 ---
 *이 페이지는 [규칙 36 — What's New 유지](../.agent/rules/36_whats_new_maintenance.md)에 따라 갱신·정리됩니다.*

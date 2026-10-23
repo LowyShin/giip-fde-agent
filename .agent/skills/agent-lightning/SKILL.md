@@ -1,3 +1,7 @@
+---
+name: agent-lightning
+description: Trace, optimize, and evaluate agent execution with Microsoft Agent Lightning — rollout decorators for tracing, prompt-template optimization driven by reward signals, and dashboard evaluation across multiple rollouts. Use when profiling or tuning an agent's prompt/tool-call behavior instead of editing the agent code by hand.
+---
 # Agent Lightning Skill
 
 Use Microsoft Agent Lightning to trace, optimize, and evaluate agent performance.
