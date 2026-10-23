@@ -17,7 +17,7 @@
 #   (B) 하위호환    : PR 이 1개 이하이거나 목록이 없으면 **종전 단일 PR 프롬프트** 그대로여야 한다
 #                     (게이트를 약화시키지 않는다 — 무관한 PR 하나로 완료 위조하는 것은 계속 막힌다).
 #
-# 실행: pwsh -File scripts/gissue/tests/test-scope-gate-multi-pr.ps1
+# 실행: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gissue/tests/test-scope-gate-multi-pr.ps1
 
 $ErrorActionPreference = 'Stop'
 $libPath = Join-Path (Split-Path -Parent $PSScriptRoot) 'gissue-audit-lib.ps1'

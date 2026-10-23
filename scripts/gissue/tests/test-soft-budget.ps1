@@ -1,5 +1,5 @@
 ﻿# [giip 3615] 소프트 예산 판정 단위 테스트
-# 실행: pwsh -NoProfile -File scripts/gissue/tests/test-soft-budget.ps1
+# 실행: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gissue/tests/test-soft-budget.ps1
 # 네트워크/파일 쓰기 없음. lib/soft-budget.ps1 의 순수 함수와, 러너 소스에서 판정 위치가 맞는지만 확인한다.
 $ErrorActionPreference = 'Stop'
 . (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '../lib/soft-budget.ps1')).Path

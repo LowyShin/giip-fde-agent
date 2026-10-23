@@ -15,7 +15,7 @@
 #   (B) 값이 없으면 폴백 — 코멘트를 조회해 정확히 판정한다(감사가 조용히 비지 않게).
 #   (C) 판정 자체가 맞다 — 창 경계, 파싱 실패, lastCommentDate 별칭.
 #
-# 실행: pwsh -File scripts/gissue/tests/test-recent-comment-filter.ps1
+# 실행: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gissue/tests/test-recent-comment-filter.ps1
 
 $ErrorActionPreference = 'Stop'
 $libPath = Join-Path (Split-Path -Parent $PSScriptRoot) 'gissue-audit-lib.ps1'

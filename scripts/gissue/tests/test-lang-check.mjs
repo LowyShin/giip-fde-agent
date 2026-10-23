@@ -5,7 +5,7 @@
  */
 
 import assert from 'assert';
-import { execSync } from 'child_process';
+import { execSync, execFileSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -601,7 +601,9 @@ test('checkGit: 본문 줄바꿈 있는 커밋도 정확히 1개 레코드 (결�
     const filePath = path.join(repoDir, 'test.txt');
     fs.writeFileSync(filePath, '초기\n');
     execSync('git add test.txt', { cwd: repoDir });
-    execSync('git commit -m "제목" -m "본문 첫째 줄\n본문 둘째 줄 中 있음"', { cwd: repoDir });
+    // 셸을 거치지 않고 인자 배열로 넘긴다. 셸 경유(execSync)에서는 실제 개행이 명령을 잘라
+    // "본문 둘째 줄 中 있음" 이 커밋에 저장되지 않고 → 검출이 조용히 0건이 된다(Windows 실측).
+    execFileSync('git', ['commit', '-m', '제목', '-m', '본문 첫째 줄\n본문 둘째 줄 中 있음'], { cwd: repoDir });
 
     const findings = checkGit(repoDir, { lang: 'ko' });
     const errors = findings.filter(f => f.error);
@@ -779,7 +781,7 @@ test('checkGit: 6개 커밋에서 정확히 3개 커밋 검출, 총 10건 (한�
     // 커밋 5: 본문 여러 줄인 깨끗한 커밋
     fs.writeFileSync(filePath, '다섯 번째\n');
     execSync('git add test.txt', { cwd: repoDir });
-    execSync('git commit -m "다섯 번째" -m "본문 첫째 줄\n본문 둘째 줄"', { cwd: repoDir });
+    execFileSync('git', ['commit', '-m', '다섯 번째', '-m', '본문 첫째 줄\n본문 둘째 줄'], { cwd: repoDir });
 
     // 커밋 6: 키릴이 든 diff (ключ = 4글자 키릴)
     fs.writeFileSync(filePath, 'ключ 추가\n');

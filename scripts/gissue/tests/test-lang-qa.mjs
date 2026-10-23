@@ -8,6 +8,7 @@ import assert from 'assert';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -128,7 +129,7 @@ test('analyze: excerpt는 첫 발견의 것', () => {
 //────────────────────────────────────────
 
 test('resolveSk: 올바른 csn이면 sk 반환', () => {
-  const tmpFile = path.join('/tmp', 'test-accounts-' + Date.now() + '.json');
+  const tmpFile = path.join(os.tmpdir(), 'test-accounts-' + Date.now() + '.json');
   const data = JSON.stringify({
     channels: [
       { csn: 47, sk: 'sk-test-47' },
@@ -147,7 +148,7 @@ test('resolveSk: 올바른 csn이면 sk 반환', () => {
 });
 
 test('resolveSk: 없는 csn이면 null', () => {
-  const tmpFile = path.join('/tmp', 'test-accounts-' + Date.now() + '.json');
+  const tmpFile = path.join(os.tmpdir(), 'test-accounts-' + Date.now() + '.json');
   const data = JSON.stringify({
     channels: [{ csn: 47, sk: 'sk-47' }],
   });
@@ -180,7 +181,7 @@ test('run: 문제 없음 → exit 0, post 호출 없음', async () => {
     exit: (code) => { exitCode = code; },
   };
 
-  const tmpAccounts = path.join('/tmp', 'test-accounts-clean-' + Date.now() + '.json');
+  const tmpAccounts = path.join(os.tmpdir(), 'test-accounts-clean-' + Date.now() + '.json');
   fs.writeFileSync(tmpAccounts, JSON.stringify({
     channels: [{ csn: 47, sk: 'sk-test-47' }],
   }));
@@ -227,7 +228,7 @@ test('run: 금지 문자 있음 + --post → post 1회, 본문 [LANG-QA] 로 시
     exit: (code) => { exitCode = code; },
   };
 
-  const tmpAccounts = path.join('/tmp', 'test-accounts-post-' + Date.now() + '.json');
+  const tmpAccounts = path.join(os.tmpdir(), 'test-accounts-post-' + Date.now() + '.json');
   fs.writeFileSync(tmpAccounts, JSON.stringify({
     channels: [{ csn: 47, sk: 'sk-OPENAI-SECRET-47-XXXX' }],
   }));
@@ -279,7 +280,7 @@ test('run: 이미 [LANG-QA] 코멘트가 있으면 post 0회', async () => {
     exit: (code) => { exitCode = code; },
   };
 
-  const tmpAccounts = path.join('/tmp', 'test-accounts-exist-' + Date.now() + '.json');
+  const tmpAccounts = path.join(os.tmpdir(), 'test-accounts-exist-' + Date.now() + '.json');
   fs.writeFileSync(tmpAccounts, JSON.stringify({
     channels: [{ csn: 47, sk: 'sk-test' }],
   }));
@@ -323,7 +324,7 @@ test('run: 코멘트 조회 실패여도 exit 4 (금지 문자 있음)', async (
     exit: (code) => { exitCode = code; },
   };
 
-  const tmpAccounts = path.join('/tmp', 'test-accounts-err-' + Date.now() + '.json');
+  const tmpAccounts = path.join(os.tmpdir(), 'test-accounts-err-' + Date.now() + '.json');
   fs.writeFileSync(tmpAccounts, JSON.stringify({
     channels: [{ csn: 47, sk: 'sk-test' }],
   }));

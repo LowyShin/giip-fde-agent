@@ -48,4 +48,8 @@
 
 ---
 > [!IMPORTANT]
-> 모든 스크립트는 **PowerShell 7 (pwsh)** 환경에서 실행하는 것을 권장합니다.
+> 이 저장소의 스크립트는 **Windows PowerShell 5.1 (`powershell`)** 을 기준으로 작성·검증되어 있습니다.
+> `powershell -NoProfile -ExecutionPolicy Bypass -File <경로>` 로 실행하세요.
+> PowerShell 7(`pwsh`)은 선택 사항이며, **설치되어 있다는 보장이 없습니다** —
+> `pwsh` 로 부르면 `command not found` 로 아무 일도 하지 않고 조용히 끝납니다(giip #2559).
+> Linux 컨테이너 배포(`docker/entrypoint.sh`)는 base 이미지에 `pwsh` 가 들어 있어 그쪽만 `pwsh` 를 씁니다.

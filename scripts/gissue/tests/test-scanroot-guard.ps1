@@ -1,6 +1,6 @@
 ﻿# worktree-safety.ps1 ScanRoot 가드 회귀 테스트 (giip 2668). 양방향: A = 차단되어야 함, B = 정상 기능은 유지되어야 함.
 # 실측 사고: -RemnantScan 에 라이브 레포 루트를 ScanRoot 로 주면 그 레포의 .git/.agent/wiki/scripts 가 삭제 후보 67건으로 잡혔다.
-# 실행: pwsh -NoProfile -File scripts/gissue/tests/test-scanroot-guard.ps1 [-SafetyScript <worktree-safety.ps1 경로>]
+# 실행: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gissue/tests/test-scanroot-guard.ps1 [-SafetyScript <worktree-safety.ps1 경로>]
 param([string]$SafetyScript)
 $ErrorActionPreference = 'Stop'
 if (-not $SafetyScript) { $SafetyScript = Join-Path $PSScriptRoot '../worktree-safety.ps1' }

@@ -1,4 +1,4 @@
-﻿# scheduler-state.ps1 순수 함수 단위 테스트(네트워크 없음). 실행: pwsh -File scripts/gissue/tests/test-scheduler-state.ps1
+﻿# scheduler-state.ps1 순수 함수 단위 테스트(네트워크 없음). 실행: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gissue/tests/test-scheduler-state.ps1
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '../lib/scheduler-state.ps1')
 function Assert-Eq($a, $b, $m) { if ($a -ne $b) { throw "FAIL $m : expected [$b] got [$a]" } }

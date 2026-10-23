@@ -3,7 +3,8 @@
 # 사양: giipdb docs/70_LowyOpinion/GIIP_PAGE_FEEDBACK_SPEC_KO.md 14.9 (판단 계약 14.6, 상태 흐름 14.4)
 # 이식 원본: giipfaw shared/PageFeedbackIssue.ps1 (프롬프트, 판정 JSON 계약, 한자/가나 후처리, 건별 격리, 재시도 기록)
 #
-# 실행: pwsh -NoProfile -NonInteractive -File scripts/gissue/page-feedback-analyze.ps1   (인자 없이 실행 가능, 로그는 stdout)
+# 실행: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gissue/page-feedback-analyze.ps1   (인자 없이 실행 가능, 로그는 stdout)
+#       (Linux 컨테이너 cron 은 `pwsh -NoProfile -NonInteractive` 로 호출한다 — docker/entrypoint.sh)
 #
 # 기본은 "비활성"이다. scripts/gissue/csn-projects.json 최상위에 아래 키가 있고 enabled 가 true 일 때만 동작한다.
 #   "pageFeedbackAnalyze": { "enabled": true, "dryRun": true, "batch": 5, "maxMinutes": 15 }

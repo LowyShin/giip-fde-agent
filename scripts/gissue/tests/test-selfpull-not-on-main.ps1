@@ -1,5 +1,5 @@
 ﻿# [giip #2696] NOT-ON-MAIN 감지 + 조건부 자동복귀 회귀 테스트
-# 실행: pwsh -NoProfile -File scripts/gissue/tests/test-selfpull-not-on-main.ps1
+# 실행: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gissue/tests/test-selfpull-not-on-main.ps1
 #   또는: powershell -NoProfile -File scripts/gissue/tests/test-selfpull-not-on-main.ps1
 param([string]$ScriptUnderTest)
 if (-not $ScriptUnderTest) { $ScriptUnderTest = Join-Path $PSScriptRoot '../run-gissue-claude.ps1' }

@@ -1,5 +1,5 @@
 ﻿# slack-bot 헬스체크 블록(Phase 0.5)의 판정 논리 단위 테스트. 가짜 pm2 로 호출 기록만 검사한다(실제 pm2/네트워크 없음).
-# 실행: pwsh -File scripts/gissue/tests/test-slackbot-health-gate.ps1
+# 실행: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gissue/tests/test-slackbot-health-gate.ps1
 $ErrorActionPreference = 'Stop'
 $src = Get-Content (Join-Path $PSScriptRoot '../run-gissue-claude.ps1') -Raw -Encoding UTF8
 $a = $src.IndexOf('$SlackBotStaleMin = 25'); $b = $src.IndexOf('# ── Phase 1:')

@@ -1,5 +1,5 @@
 ﻿# [giip 3617] page-feedback-analyze.ps1 단위 테스트 (네트워크, 실제 claude 호출, DB 기록 없음 - 외부 호출은 전부 모킹)
-# 실행: pwsh -NoProfile -File scripts/gissue/tests/test-page-feedback-analyze.ps1
+# 실행: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gissue/tests/test-page-feedback-analyze.ps1
 $ErrorActionPreference = 'Stop'
 $ScriptPath = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '../page-feedback-analyze.ps1')).Path
 . $ScriptPath
@@ -239,7 +239,17 @@ $s = Get-PfaSettings (Write-Cfg 'e.json' '{"pageFeedbackAnalyze":{"enabled":true
 Check 'g6 enabled=true 만 켜면 dryRun 은 기본 true(안전)' ($s.Enabled -and $s.DryRun) ''
 $s = Get-PfaSettings (Write-Cfg 'f.json' '{"pageFeedbackAnalyze":{"enabled":true,"dryRun":false,"batch":50,"maxMinutes":7}}')
 Check 'g7 dryRun=false 명시 시 실제 기록, 배치 상한 20' ($s.Enabled -and -not $s.DryRun -and $s.Batch -eq 20 -and $s.MaxMinutes -eq 7) ''
-$out = & pwsh -NoProfile -NonInteractive -File $ScriptPath -ConfigFile (Join-Path $tmp 'a.json') 2>&1
+# 실행 엔진 해석: Windows PowerShell 5.1 우선, 없을 때만 pwsh.
+# `pwsh` 를 하드코딩하면 PowerShell 7 이 없는 PC 에서 이 테스트가 'pwsh 를 찾을 수 없다' 로
+# 죽는다(giip #2559 — pwsh 로 부르면 command not found 로 아무 일도 하지 않고 끝난다).
+$pfaEngine = (Get-Command powershell -ErrorAction SilentlyContinue).Source
+if (-not $pfaEngine) { $pfaEngine = (Get-Command pwsh -ErrorAction SilentlyContinue).Source }
+if (-not $pfaEngine) {
+    Write-Output '[FAIL] g8 실행 엔진(powershell/pwsh)을 찾을 수 없음 — 테스트를 실행할 수 없음'
+    Write-Output "FAILED: $fail"
+    exit 1
+}
+$out = & $pfaEngine -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $ScriptPath -ConfigFile (Join-Path $tmp 'a.json') 2>&1
 Check 'g8 비활성 실행은 "[SKIP] 비활성" 한 줄만 출력하고 종료 코드 0' (($LASTEXITCODE -eq 0) -and (@($out).Count -eq 1) -and ("$($out | Select-Object -First 1)" -eq '[SKIP] 비활성')) ("$LASTEXITCODE | $out")
 Remove-Item -LiteralPath $tmp -Recurse -Force
 
