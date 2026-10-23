@@ -6,6 +6,7 @@ AI 네이티브 조직 운영을 위한 핵심 문서 모음입니다.
 - 장애/롤백 플레이북: `./incident-rollback-playbook.md`
 - 매시 이슈 처리 스케줄러 표준 스펙: `./hourly-issue-scheduler.md`
 - Docker 인스턴스 세팅 룰 (정본, 단일 파일): `./docker-instance-setup-rules.md`
+- 서비스 계정 git 1회성 셋업 (git 작성자 + HTTPS push 자격증명 `gh auth setup-git`): `./service-account-git-setup.md`
 - Docker 인스턴스 dev 사용자·sudo 권한 (docker-bypass / setup-dev-sudo): `./docker-dev-user-and-sudo.md`
 - secwatch 보안점검 에이전트 설치·등록·운영: `./secwatch-agent.md`
 - secwatch — 지시받은 보안 로그 항목을 AI 가 상시감시에 편입(AI 실행용 지시서): `./secwatch-ai-onboarding.md`

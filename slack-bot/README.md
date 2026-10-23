@@ -130,6 +130,17 @@ Slack 의 멘션 토큰 `<@U...>` 는 **사람과 봇이 같은 형식**이다. 
 
 "기본값은 아무에게도 반응하지 않는다" 를 택한 근거는 **오탐의 비용이 비대칭**이기 때문이다. 반응하지 않아 놓치는 것은 사람이 다시 멘션하면 끝나지만, 끼어들어 실행한 태스크는 커밋·push 까지 갈 수 있다.
 
+#### 다른 사람을 멘션한 메시지는 활성 스레드 자동 개입 대상이 아니다
+
+활성 태스크(pending/running) 스레드의 후속 입력은 멘션 없이도 처리되지만, 봇/등록된 다른 봇이 아닌 **다른 사람을 명시적으로 멘션한** 메시지는 그 사람에게 보내는 것으로 보고 개입하지 않는다(giip 4045 결함 B). 판정은 순수 함수 `mention-engagement.js` 의 `classifyMentions()` 이며 `handlers.js` `processMessage()` 가 호출한다.
+
+#### 회귀 테스트
+
+```bash
+node slack-bot/tools/test-mention-engagement.js   # 멘션 판정 (결함 B)
+node slack-bot/tools/test-context-catalog.js       # 컨텍스트 카탈로그 루트별 상대경로 (결함 A)
+```
+
 ### Channel mentions
 
 ```
