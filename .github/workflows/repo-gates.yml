@@ -24,6 +24,16 @@ on:
 permissions:
   contents: read
 
+# [2026-10-24 CI 결선] 러너에는 **전역 git user 설정이 없다**(전역 user.name/user.email 이
+#   비어 있으면 커밋이 실패한다). 회귀 테스트 중 임시 저장소에 커밋하는 테스트가 있어서,
+#   커밋이 조용히 실패하면 테스트가 "환경 검사" 로 뒤집힌다.
+#   → 워크플로 한 곳(workflow 레벨 env)에서만 지정한다. job 별로 복붙하지 않는다.
+env:
+  GIT_AUTHOR_NAME: gissue-ci
+  GIT_AUTHOR_EMAIL: gissue-ci@users.noreply.github.com
+  GIT_COMMITTER_NAME: gissue-ci
+  GIT_COMMITTER_EMAIL: gissue-ci@users.noreply.github.com
+
 jobs:
   ps1-gates:
     name: PS1 gates (정본 게이트 + ps1 회귀 테스트)

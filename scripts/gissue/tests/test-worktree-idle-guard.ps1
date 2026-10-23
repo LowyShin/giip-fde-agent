@@ -75,7 +75,13 @@ Assert-True ($v.Idle) 'A-5 MinIdleMinutes=0 이면 가드 비활성' "Reason=$($
 Write-Output ''
 Write-Output 'B. 엔진(Invoke-GissueWorktreeCleanupForRepo -DryRun) 양방향'
 
-$root = Join-Path $env:TEMP ("gissue-idle-guard-test-$PID")
+# [2026-10-24 CI 결선] 임시 루트를 **전체 경로(long form)** 로 고정한다.
+#   $env:TEMP 가 8.3 단축 경로(예: C:\Users\RUNNER~1)면, 엔진이 자식 경로를 전체 경로로
+#   해석한 값과 이 테스트가 비교하는 문자열이 어긋나 "로그에 등장하지 않음" 으로 오판한다
+#   (실측: GitHub windows-latest 러너에서 B-1b/B-1c/B-1d/B-2 4건 실패).
+#   Get-Item 의 FullName 은 8.3 단축 이름을 전체 경로로 풀어 준다(Resolve-Path 는 안 한다).
+$tempRootLong = (Get-Item -LiteralPath $env:TEMP).FullName
+$root = Join-Path $tempRootLong ("gissue-idle-guard-test-$PID")
 if (Test-Path -LiteralPath $root) { Remove-Item -LiteralPath $root -Recurse -Force -Confirm:$false }
 New-Item -ItemType Directory -Path $root -Force | Out-Null
 $repo = Join-Path $root 'repo'

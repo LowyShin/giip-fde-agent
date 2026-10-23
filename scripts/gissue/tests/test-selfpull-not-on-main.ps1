@@ -58,6 +58,13 @@ function New-Repo($base) {
     $r = Join-Path $base 'repo.git'
     New-Item -ItemType Directory -Path $r -Force | Out-Null
     & git -C $r init --initial-branch=main 2>$null | Out-Null
+    # [2026-10-24 CI 결선] 이 테스트는 **개발자 PC 의 전역 git 설정을 가정하면 안 된다.**
+    #   GitHub windows-latest 러너에는 전역 user.name/user.email 이 없어 커밋이 실패하고,
+    #   그 결과 upstream·ancestor 판정이 전부 뒤집혀 B1/C1/C3/D1/D2/D3 이 연쇄 실패했다
+    #   (실측: 로컬에서 전역 설정을 비운 GIT_CONFIG_GLOBAL 로 재현 → 동일 6건 실패).
+    #   → 임시 저장소에 **로컬** identity 를 명시한다(전역 설정에 의존하지 않게).
+    & git -C $r config user.email 'gissue-selftest@example.invalid' 2>$null | Out-Null
+    & git -C $r config user.name  'gissue selftest'                  2>$null | Out-Null
     $null = Set-Content -LiteralPath (Join-Path $r 'README.md') -Value "test"
     & git -C $r add README.md; & git -C $r commit -m "init" 2>$null | Out-Null
     # origin 시뮬레이션: 실제 bare 저장소를 만들어 remote 로 쓴다.
