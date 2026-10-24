@@ -73,3 +73,8 @@ This file tracks the history of tasks and changes performed by the GIIP Agent sy
 - 20261016: What's New 롤링 7일 창 만료로 HISTORY 이관 — 게이트웨이 HTTP 4xx/5xx 원인 노출 + alert/review 행에 라우팅 이유(why) 인라인 표시. → [실행 스크립트](../scripts/secwatch/secevt_run.py)
 - 20261016: What's New 롤링 7일 창 만료로 HISTORY 이관 — Origin 다운로드 명령(복사) + 컬럼 Help 페이지 + 데이터 윈도우·보존 사양 문서화. → [운영 문서](./60-operations/secwatch-agent.md)
 - 20261016: What's New 롤링 7일 창 만료로 HISTORY 이관 — docker 재생성 대응 (bootstrap 이 claude 를 dev 소유 네이티브로 + monitor 폴링 1분). → [부트스트랩](../scripts/bootstrap-instance.sh)
+- 20261017: What's New 롤링 7일 창 만료로 HISTORY 이관 — cp932 이중전송 버그 수정 + 탐지규칙·초출(novel)·생존신호 추가. → [secwatch README](../scripts/secwatch/README.md)
+- 20261017: What's New 롤링 7일 창 만료로 HISTORY 이관 — monitor 가 giipdb 저장 커맨드(kscOriginCmd)를 우선 사용. → [모니터](../scripts/secwatch/monitor.py)
+- 20261017: What's New 롤링 7일 창 만료로 HISTORY 이관 — monitor 에이전트 생존 배지(하트비트) 표시 — 판정 0건이어도 에이전트가 살아 있음을 배지로 보여줍니다. → [모니터](../scripts/secwatch/monitor.py)
+- 20261017: What's New 롤링 7일 창 만료로 HISTORY 이관 — monitor.py 사용자 노출·소스 문자열 영어화. → [모니터](../scripts/secwatch/monitor.py)
+- 20261017: What's New 롤링 7일 창 만료로 HISTORY 이관 — monitor 웹 UI 25건 페이징 + 24시간 기본 윈도우. → [모니터](../scripts/secwatch/monitor.py)
