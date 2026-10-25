@@ -13,7 +13,9 @@
   `55_information_lookup_order_and_feedback.md` · `61_klayer_registration_must_be_committed.md` ·
   `72_klayer_in_project_tkb_via_sk.md` · `PROTOCOL_PROGRESS_COMMENT.md`
 - 작업 브랜치: `chore/csn70424-maint47-post-20261025-1955` (origin/main `250f908` 에서 분기)
-- 이 사후 기록의 PR: **#297** (머지 결과는 아래 "사후 기록 PR 결과" 절 참조).
+- 이 사후 기록의 PR: **#297** — 이 파일을 담은 PR.
+  (이 PR 의 머지 커밋·머지 후 main CI 결과는 **이 레코드 작성 시점에는 아직 확정되지 않았으므로 적지 않는다.**
+  다음 회차 세션이 `gh pr view 297 --json state,mergeCommit` 로 실측해 그때의 기록에 기재한다.)
 
 ## 본체 PR #296 결과
 
