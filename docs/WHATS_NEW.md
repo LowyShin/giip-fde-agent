@@ -6,9 +6,13 @@
 >
 > *(EN/JP 독자는 각 항목을 AI 에이전트에 번역 요청하세요. / Ask your AI assistant to translate entries.)*
 
-**기준일 (as of): 2026-10-25**
+**기준일 (as of): 2026-10-26**
 
 ---
+
+## 2026-10-26
+- **저장소 위생 정비 52차 — 죽은 51차 사후 세션의 미커밋 산출물 인수·잔재 회수 (CSN 70424)** — 51차 사후 세션이 커밋하지 못한 채 죽어 워크트리에 스테이징만 남아 있던 사후 기록 4파일을 상속해 커밋하고 **PR #305** 로 머지했습니다(merge 커밋 `fb71506`, CI 3건 전부 pass, main push run `40212533807` success). **기록과 실측의 불일치 발견** — 죽은 세션의 기록이 "워크트리 회수 완료 · 고아 브랜치 0건" 이라고 적었으나 실측은 워크트리 **2개**·로컬 고아 브랜치 **2개** 잔존이었습니다(실행되지 않은 계획을 완료로 서술한 사례). rule 73 방식으로 `> 정정` 표기를 남기고, 정본 도구 `scripts/gissue/cleanup-worktrees.ps1` 로 잔재 2건을 항목별 회수한 뒤 `git worktree list` · `git branch -a` · `git ls-remote --heads origin` · `git stash list` 4종을 재실측해 확정했습니다. [0]/[E]/[F] 대상 0건(열린 PR 0 · stash 0), [H] 24시간 창 4건 대조 결과 주장 전부 일치 → 정정 0건 · 상태 전이 0건 · giip 이슈 쓰기 0건. → [작업 기록](../.agent/work_history/20261026_014000_csn70424_repo-maintenance.md)
+- **새 지식 등록 — 회차 기록의 "완료" 서술은 실행되지 않은 계획일 수 있다 (KNOW-013)** — 회차 기록을 읽을 때 "완료" 라는 단어만 믿지 말고 그 항목의 현재 상태를 명령으로 다시 떠야 합니다(`git worktree list` · `git branch -a` · `git ls-remote --heads origin` · `git stash list`). → [KNOW-013](../.agent/k_layer/notes/KNOW-013_work_history_completion_claim_may_be_unexecuted_plan.md)
 
 ## 2026-10-25
 - **저장소 위생 정비 51차 — PR #304 머지·CI·tKB 등록·노트 절단 교정 사후 기록 (CSN 70424)** — 본체 PR **#304** 는 **MERGED** 로 반영됐고, merge 커밋 **`8114fb8b01bfd5a5cbcaf067732c3ffa246dceef`**(mergedAt `2026-10-25T15:07:13Z`, mergedBy `LowyShin`)로 main 에 반영됐습니다. **머지 주체 주의** — 세션이 `gh pr merge 304` 를 실행했을 때 결과가 "was already merged" 였습니다. 즉 **자동 머지 스윕이 세션보다 먼저 머지**했으므로, 머지 커밋·시각·주체는 `gh pr view 304 --json state,mergedAt,mergedBy,mergeCommit` 실측값으로 확정 기록했습니다(추측 아님). PR diff 는 `gh pr view 304 --json files` 실측 기준 **정확히 8건**(`.github/workflows/repo-gates.yml` · `docs/WHATS_NEW.md` · `.agent/k_layer/notes/INDEX.md` · `.agent/k_layer/notes/KNOW-012_...md` 신규 · `.agent/work_history/20261025_233000_...md` 신규 · `scripts/gissue/lib/relative-links.mjs` 신규 · `scripts/gissue/run-repo-gates.ps1` · `scripts/gissue/tests/test-relative-links.mjs` 신규) = 무관한 파일 혼입 **0건**. PR CI(run **`40205271758`**) 기준 `gh pr checks 304` 실측 GitGuardian **pass**(1s) · MJS gates **pass**(28s) · PS1 gates **pass**(1m26s) **3건 전부 pass**, 머지 후 **push to main** run **`40205429178`** "Repo Gates" **success**(headSha `8114fb8`)로 main green 을 확인했습니다. **tKB 등록 — 4,000자 절단 함정 기록** — `tkb.js sync-klayer --csn 70424 --project giip-fde-agent --note "KNOW-012_*.md"` 1차 실행에서 `[WARN 절단 4083→4000자]` 가 떴고, 절단된 쪽은 **문서 맨 마지막 불릿과 그 앞 문장의 끝**이었습니다. tKB sync 는 **1회성 스냅샷**이라 등록 후 노트를 줄여도 tKB 는 따라오지 않으므로 노트를 **3,889자**로 압축(§4 커밋 후 기준선 문장과 §5 마지막 불릿 축약)한 뒤 **재동기화**했고, 2차 결과는 `OK updated kbSn=6668` · **`[WARN]` 없음** · 실패·불일치 0 입니다. `tkb.js get --csn 70424 --kb-sn 6668 --json` 본문 **3,889자** = 커밋된 노트 **3,889자** 로 **절단 없음**을 대조 확인했습니다(마지막 불릿 "**스캐폴딩과 실제 결함은 늘지 않아야 한다.**" 까지 온전히 존재). `.agent/k_layer/notes/INDEX.md` 의 KNOW-012 행 kbSn 칸을 `6668` 로 갱신했고(INDEX.md 자체 tKB 는 `OK updated kbSn=1303`), 공유 체크아웃 미커밋 잔재 ` M scripts/gissue/list-issues.js`(타 세션 소유분·mtime 2026-10-25 03:24:27 +0900·잔여 작업 소관은 후속 isn 4130·4139)는 **스테이징·커밋·삭제·stash 없이 보존**했습니다. 본체 워크트리 `maint-51-2330` 은 **정본 도구** `scripts/gissue/cleanup-worktrees.ps1 -OnlyPath <worktree> -MinIdleMinutes 0` 를 **공유 체크아웃 cwd** 에서 실행해 회수했고, lowyworkenv 정식 등록 워크트리 `aux-sched-2645` 는 **미접촉·보존**했습니다. → [작업 기록](../.agent/work_history/20261026_001500_csn70424_repo-maintenance-post.md)
@@ -120,19 +124,6 @@
 
 ## 2026-10-20
 - **tPrivateKB 등록 클라이언트 + AI용 문서 신설** — `scripts/privatekb/privatekb.py`(put/get/list/sync-klayer)와 AI 작업자용 `README.md` 를 추가했습니다. → [README](../scripts/privatekb/README.md)
-
-## 2026-10-19
-- **sec_monitor 파서 정착 + AI 지시서를 조직 cLang 언어로 생성** — 수집 입력 파싱(`sec_monitor`)을 정착시키고, monitor 가 다음 조치를 AI 지시서로 내보내도록 했습니다. 지시서는 조직의 cLang 언어로 생성되며 정본 `csn-lang-cache` 를 읽습니다. → [AI 온보딩 문서](./60-operations/secwatch-ai-onboarding.md)
-- **유출 가능성 근거(resp_bytes·resp_series) 수집 + 공격자 실제 IP 전달** — 수집기가 응답 바이트 수·응답 계열을 근거로 담고, 공격자의 실제 IP 를 함께 전송합니다. → [수집기](../scripts/secwatch/secevt_collect.py)
-- **scope-gate 여러 PR 합산 판정** — 하나의 이슈를 여러 PR 로 나누어 구현한 경우에도 합산 판정해 REVIEW↔READY 무한 되돌림을 근본 수정했습니다. → [PR 게이트 스윕](../scripts/gissue/pr-gate-sweep.ps1)
-- **최근 코멘트 판정 최적화 — 코멘트 조회 98% 감소** — 목록 응답의 `last_comment_date` 로 판정을 끝내 이슈별 코멘트 조회를 1,202회에서 23회로 줄이고, 판정 로직을 공용 순수 함수로 분리했습니다. → [공용 판정 라이브러리](../scripts/gissue/gissue-audit-lib.ps1)
-- **hung watchdog 로그 무출력 AND 조건 추가** — lock 경과 시간만으로 hung 을 판정하지 않고 로그 N분 무출력 조건을 함께 요구하도록 고쳤습니다. → [스케줄러 스크립트](../scripts/gissue/run-gissue-claude.ps1)
-- **tKVS 읽기모델 증분 이관 cron 등록** — 컨테이너 기동 시 매분 `pApiKVSReadModelSyncbySk` 를 호출하는 cron 을 등록했습니다. → [실행 스크립트](../scripts/exec-kvs-readmodel-sync.sh)
-- **reaper 의 node 고아 열거 확장** — claude.exe 가 먼저 죽어 node 손자만 남는 경우에도 회수 후보가 잡히도록 열거를 확장했습니다(기본값 드라이런). → [스케줄러 스크립트](../scripts/gissue/run-gissue-claude.ps1)
-
-## 2026-10-18
-- **Azure 로그 수집기(PG audit / App Service HTTP → generic) PoC** — Azure 로그를 범용 수집 경로로 모으는 PoC 와 온보딩 사양을 추가했습니다. → [수집 사양](./60-operations/secwatch-azure-onboarding-spec.md)
-- **hung worker watchdog — lock 시작시각 기록 후 soft_budget×2 초과 시 강제 정리** — 워커가 멈춘 뒤엔 lock 에 기록된 시작 시각으로 경과를 계산해 강제 정리합니다. → [스케줄러 스크립트](../scripts/gissue/run-gissue-claude.ps1)
 
 ---
 *이 페이지는 [규칙 36 — What's New 유지](../.agent/rules/36_whats_new_maintenance.md)에 따라 갱신·정리됩니다.*
