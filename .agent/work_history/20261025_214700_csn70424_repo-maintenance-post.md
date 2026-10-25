@@ -40,7 +40,7 @@
   `scripts/gissue/cleanup-worktrees.ps1 -RepoPath <공유체크아웃> -OnlyPath "D:\temp\worktrees\giip-fde-agent\maint-49-2100"
   -MinIdleMinutes 0` 로 **공유 체크아웃 cwd 에서** 실행 → DryRun 에서 "[DRY-RUN] 제거 대상 1건" 확인 후
   본 실행 → **`Removed` 1건**(Aborted=False, SkippedLocked 0건, ManualReview 0건).
-  (백슬래시 경로 규칙 — [KNOW-009](../.agent/k_layer/notes/KNOW-009_cleanup_onlypath_separator_silent_zero.md))
+  (백슬래시 경로 규칙 — [KNOW-009](../k_layer/notes/KNOW-009_cleanup_onlypath_separator_silent_zero.md))
 - 회수 후 실측: `git worktree list` → 공유 체크아웃 + 사후 기록 워크트리만 · `git branch -a` → `main` +
   `remotes/origin/main` + `remotes/origin/HEAD` 뿐(고아 브랜치 0건) · `git ls-remote --heads origin` →
   원격 `refs/heads/main` **1건**뿐 · `git stash list` **0건** · `D:\temp\worktrees\giip-fde-agent` 하위는
