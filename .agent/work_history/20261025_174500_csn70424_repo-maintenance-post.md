@@ -58,11 +58,19 @@
 - 공유 체크아웃의 미커밋 잔재 ` M scripts/gissue/list-issues.js`(mtime 2026-10-25 03:24:27 +0900)는
   **타 세션 소유분**(`giip 4116` 착수 세션의 응답 `cSn` 보존 변경, 잔여 작업 소관은 후속 isn 4130·4139)이라
   **스테이징·커밋·삭제·stash 하지 않고 그대로 보존**했다.
-- 본 세션 워크트리 `D:\temp\worktrees\giip-fde-agent\maint-45-1731` 는 **정본 도구 경로**로 회수한다:
+- 본 세션 워크트리 `D:\temp\worktrees\giip-fde-agent\maint-45-1731` 는 **정본 도구 경로**로 **회수 완료**했다:
   `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gissue/cleanup-worktrees.ps1 -RepoPath <공유 체크아웃> -OnlyPath <worktree> -MinIdleMinutes 0`
-  (DryRun → 삭제 예정 확인 → 본 실행. 실행 위치는 **공유 체크아웃 cwd** — 회수 대상 워크트리 안에서 실행하면
+  (DryRun → `Aborted=False`·제거 대상 1건 확인 → 본 실행. 실행 위치는 **공유 체크아웃 cwd** — 회수 대상 워크트리 안에서 실행하면
   보호 경로로 SKIP 되어 조용히 0건 처리되는 함정 회피).
-- 회수 후 `git worktree list` → 공유 체크아웃(main) **1건**, 로컬 고아 브랜치 0건이 되어야 한다.
+  실행 결과 `Removed` **1건**(branch `chore/csn70424-maint45-post-20261025-1745`)·`SkippedLocked` 0건·`ManualReview` 0건.
+- 회수 후 실측 — `git worktree list` → 공유 체크아웃(main) **1건**,
+  `git branch -a` → `main` + `remotes/origin/main` + `remotes/origin/HEAD` 뿐(로컬 고아 브랜치 0건),
+  `git stash list` → **0건**.
+  정본 도구가 post 브랜치만 정리하고 본체 브랜치(`chore/csn70424-maint45-20261025-1731`)를 로컬에 남겼으므로
+  `git branch -D` 로 별도 삭제했다(44차가 기록한 것과 같은 패턴).
+  `D:\temp\worktrees\giip-fde-agent` 하위 잔여 디렉터리는 lowyworkenv 정식 등록 `aux-sched-2645` **1건뿐**이다.
+- 공유 체크아웃은 다시 `git merge --ff-only origin/main` 으로 `aaeb5ca` → `3a2826a` 에 ff-sync 했다
+  (Fast-forward, 2 files changed / 77 insertions).
 - `D:\temp\worktrees\giip-fde-agent` 하위의 `aux-sched-2645` 는 lowyworkenv 정식 등록 워크트리이므로
   **미접촉·보존**한다.
 - **이 저장소(PUBLIC) rule 54 자가 점검** — 이번 커밋에 **70424 외 다른 CSN 번호 0건**,
