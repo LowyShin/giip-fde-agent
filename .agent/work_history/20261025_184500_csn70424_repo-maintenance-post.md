@@ -10,7 +10,10 @@
   `48_single_source_safety_predicate.md` · `50_bot_pr_scope_discipline.md` ·
   `53_pre_push_pure_source_guard.md` · `54_generic_agent_no_customer_info.md` ·
   `55_information_lookup_order_and_feedback.md`
-- 작업 브랜치: `chore/csn70424-maint46-20261025-1824` (본체와 동일 브랜치 · 후속 커밋만 추가)
+- 작업 브랜치: `chore/csn70424-maint46-post-20261025-1845` (origin/main `420b289` 에서 분기 ·
+  본체와 동일 브랜치를 재사용하려 했으나 squash 머지된 본체 커밋을 포함해 base 와 충돌이 나 별도 브랜치로 분리)
+- 이 사후 기록의 PR: **#293** (merge 커밋 `25756c2b38997fda325369089abf977d1faa2fbf`, mergedAt `2026-10-25T09:47:10Z`).
+  PR **#292** 는 본체 커밋을 포함해 `CONFLICTING` 이 되어 사유 코멘트와 함께 **close** 됐다.
 
 ## 본체 PR #291 결과
 
@@ -48,10 +51,25 @@
   `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gissue/cleanup-worktrees.ps1 -RepoPath <공유 체크아웃> -OnlyPath <worktree> -MinIdleMinutes 0`
   (DryRun → 삭제 대상 확인 → 본 실행. 실행 위치는 **공유 체크아웃 cwd** — 회수 대상 워크트리 안에서 실행하면
   보호 경로로 SKIP 되어 조용히 0건 처리되는 함정 회피).
-  **실행 시점**: 이 사후 기록 PR(#292) 머지 후(워크트리가 clean 이고 브랜치가 머지 확인된 뒤).
-  **기대 결과**: `Removed` 1건 · `SkippedLocked` 0건 · `ManualReview` 0건 · `Aborted=False`,
-  회수 후 `git worktree list` → 공유 체크아웃(main) **1건**, `git ls-remote --heads origin` → `refs/heads/main` **1건**뿐.
-  (실행 결과는 이 세션의 최종 보고와 다음 회차 인수 매체에서 대조한다.)
+  **실행 완료** (2026-10-25 18:59 KST):
+  `Removed` **1건**(branch `chore/csn70424-know009-20261025-1855`)·`SkippedLocked` 0건·`ManualReview` 0건·`Aborted=False`.
+  회수 후 실측 — `git worktree list` → 공유 체크아웃(main) **1건**,
+  `git branch -a` → `main` + `remotes/origin/main` + `remotes/origin/HEAD` 뿐(로컬 고아 브랜치 0건),
+  `git ls-remote --heads origin` → `refs/heads/main` **1건**뿐(원격 잔여 ref 0건),
+  `git stash list` → **0건**, `D:\temp\worktrees\giip-fde-agent` 하위 잔여는 lowyworkenv 정식 등록 `aux-sched-2645` 1건뿐.
+  공유 체크아웃은 `git merge --ff-only origin/main` 으로 `420b289` → `914ff38` ff-sync.
+  (이 정정 PR 머지 후 `420b289` → `914ff38` → 본 정정 머지 커밋으로 한 번 더 ff-sync 한다.)
+
+> **정정(2026-10-25 19:0x)** — 위 절은 원래 "예정 서술"(`실행 시점: 이 사후 기록 PR(#292) 머지 후`)로 기록돼 있었으나,
+> 다음 두 가지가 사실과 달랐다. (1) 이 사후 기록이 실제로 머지된 PR 은 **#293** 이다 —
+> PR **#292** 는 본체 커밋(`b51ee41`, PR #291 머지 커밋 `420b289` 의 원본)을 포함해 base 와 충돌(`CONFLICTING`)이 나
+> 사유 코멘트와 함께 **close** 되었고, 사후 기록은 `origin/main` 에서 새 브랜치
+> (`chore/csn70424-maint46-post-20261025-1845`) 로 분리해 **PR #293** 로 머지됐다.
+> (2) 워크트리 회수는 위 **실행 완료** 기록과 같이 실제로 수행됐다(사후 기록 PR 머지 후).
+> 실행 근거: `cleanup-worktrees.ps1` 실행 로그(`Removed` 1건) + 회수 후 `git worktree list`/`git branch -a`/
+> `git ls-remote --heads origin`/`git stash list` 실측, 공유 체크아웃 ff-sync `157ea7a` → `420b289` → `914ff38`.
+> 관련 k-layer: [KNOW-009](../k_layer/notes/KNOW-009_cleanup_onlypath_separator_silent_zero.md)
+> (`-OnlyPath` 는 백슬래시 경로로 호출해야 대상이 잡힌다 — 슬래시 경로면 조용히 0건, tKB kbSn=6628).
 
 ## 이 저장소(PUBLIC) rule 54 자가 점검
 
