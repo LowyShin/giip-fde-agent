@@ -4,7 +4,7 @@
 #   이 저장소에는 이미 "정본 게이트"가 있다 —
 #     ① scripts/gissue/check-ps1-parse.ps1  (.ps1 65건 구문 + BOM 검사)
 #     ② scripts/gissue/tests/test-*.ps1    (회귀 테스트 20건)
-#     ③ scripts/gissue/tests/test-*.mjs    (회귀 테스트 4건)
+#     ③ scripts/gissue/tests/test-*.mjs    (회귀 테스트 5건)
 #   그런데 **이 게이트가 CI 에 결선돼 있지 않았다.**
 #   `.github/workflows/` 에는 windows-hook-doctor.yml 하나뿐이라,
 #   2026-10-24 이전 정비 세션이 실측한 바로 그 결함들
@@ -22,6 +22,7 @@
 #   1) 저장소 정본 게이트  : check-ps1-parse.ps1 -All  (자식 프로세스)
 #   2) ps1 회귀 테스트 전수 : scripts/gissue/tests/test-*.ps1
 #   3) mjs 회귀 테스트 전수 : scripts/gissue/tests/test-*.mjs
+#   4) 마크다운 상대링크 스캔 : scripts/gissue/lib/relative-links.mjs
 #
 # 사용법:
 #   powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gissue/run-repo-gates.ps1
@@ -40,6 +41,9 @@ param(
 
     # 단계 3(mjs 회귀 테스트)를 건너뛴다.
     [switch]$SkipMjsTests,
+
+    # 단계 4(마크다운 상대링크 스캔)를 건너뛴다.
+    [switch]$SkipLinkScan,
 
     # 저장소 루트. 미지정이면 **이 스크립트 위치에서 2단계 상위**로 추정한다
     # (scripts/gissue → scripts → 저장소 루트) — 워크트리/공유 체크아웃 어디서 호출해도
@@ -61,7 +65,7 @@ try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } 
 #   그래서 발견된 파일 수가 기대값보다 **적으면 실패**로 처리한다.
 #   테스트를 추가하면 이 수를 올리고, 제거하면(의도적 제거일 때만) 이 수를 내린다.
 $ExpectedPs1TestCount = 20
-$ExpectedMjsTestCount = 4
+$ExpectedMjsTestCount = 5
 
 function Write-Gate([string]$Message) {
     Write-Output ("[REPO-GATE] " + $Message)
@@ -93,6 +97,7 @@ $RepoRoot = $resolvedRoot.Path
 
 $TestsDir = Join-Path $RepoRoot 'scripts\gissue\tests'
 $ParseGate = Join-Path $RepoRoot 'scripts\gissue\check-ps1-parse.ps1'
+$LinkScanner = Join-Path $RepoRoot 'scripts\gissue\lib\relative-links.mjs'
 
 Write-Gate "저장소 루트: $RepoRoot"
 Write-Gate ("엔진: Windows PowerShell " + $PSVersionTable.PSVersion.ToString())
@@ -108,6 +113,7 @@ if (-not (Test-Path -LiteralPath $TestsDir -PathType Container)) {
 
 $failures = New-Object System.Collections.Generic.List[string]
 $checkedCount = 0
+$linkScanCount = 0
 
 # ── 단계 1: 저장소 정본 게이트 (check-ps1-parse.ps1 -All) ─────────────────────
 Write-Gate "단계 1 — 저장소 정본 게이트 (check-ps1-parse.ps1 -All)"
@@ -196,6 +202,41 @@ if ($SkipMjsTests) {
     }
 }
 
+# ── 단계 4: 마크다운 상대링크 스캔 ─────────────────────────────────────────────
+# 왜 필요한가 (2026-10-25 CSN 70424 저장소 정비 51차 세션 실측):
+#   43~50차 정비 세션이 **매번 새로 짠 스캐너**로 상대링크를 스캔했다.
+#   스캐너가 회차마다 달라 "미존재 링크 N건" 기준선이 11↔34 사이를 흔들었고,
+#   "N건 = 스캐폴딩 A + 코드예시 B" 분류를 매 회차 사람이 손으로 해야 했다.
+#   → 판정 로직을 저장소 정규본(`lib/relative-links.mjs`)으로 고정하고 게이트에 결선한다.
+#   같은 스캐너를 쓰면 다음 회차의 기준선은 **이번 회차와 동일**하다.
+if ($SkipLinkScan) {
+    Write-Gate "단계 4 SKIP — 마크다운 상대링크 스캔 (-SkipLinkScan 지정)"
+} else {
+    Write-Gate "단계 4 — 마크다운 상대링크 스캔"
+    if (-not (Test-Path -LiteralPath $LinkScanner -PathType Leaf)) {
+        Write-GateFail "상대링크 스캐너를 찾을 수 없습니다: $LinkScanner"
+        $failures.Add("상대링크 스캐너 없음")
+    } else {
+        $nodeCmd4 = Get-Command node -ErrorAction SilentlyContinue
+        if (-not $nodeCmd4) {
+            Write-GateFail "node 를 찾을 수 없습니다 — 상대링크 스캔을 실행할 수 없습니다 (설치하지 말고 PATH/Node 설치를 확인하십시오)"
+            $failures.Add("node 미설치 — 상대링크 스캔 미실행")
+        } else {
+            $linkOut = & $nodeCmd4.Source $LinkScanner --repo-root $RepoRoot 2>&1
+            $linkExit = $LASTEXITCODE
+            foreach ($line in $linkOut) { Write-Output ("    " + $line) }
+            $checkedCount++
+            $linkScanCount = 1
+            if ($linkExit -eq 0) {
+                Write-Gate "단계 4 통과 — 실제 결함 0건"
+            } else {
+                Write-GateFail ("상대링크 스캔 실패 — exit {0} (결함 링크 있음 또는 검사 대상 0건)" -f $linkExit)
+                $failures.Add(("상대링크 스캔 (exit {0})" -f $linkExit))
+            }
+        }
+    }
+}
+
 # ── 판정 ───────────────────────────────────────────────────────────────────────
 if ($checkedCount -eq 0) {
     Write-GateFail "총 검사 건수가 0건입니다 — 통과로 읽지 않습니다 (rule 42)"
@@ -205,9 +246,9 @@ if ($checkedCount -eq 0) {
 Write-Output ""
 if ($failures.Count -gt 0) {
     foreach ($f in $failures) { Write-GateFail ("실패: " + $f) }
-    Write-Gate ("결과: ps1 {0}건 / mjs {1}건 / 실패 {2}건" -f $ps1Count, $mjsCount, $failures.Count)
+    Write-Gate ("결과: ps1 {0}건 / mjs {1}건 / 링크스캔 {2} / 실패 {3}건" -f $ps1Count, $mjsCount, $linkScanCount, $failures.Count)
     exit 1
 }
 
-Write-Gate ("결과: ps1 {0}건 / mjs {1}건 / 실패 0건" -f $ps1Count, $mjsCount)
+Write-Gate ("결과: ps1 {0}건 / mjs {1}건 / 링크스캔 {2} / 실패 0건" -f $ps1Count, $mjsCount, $linkScanCount)
 exit 0
