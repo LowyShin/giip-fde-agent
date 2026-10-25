@@ -67,6 +67,24 @@
 - **이 사후 기록 워크트리의 회수는 이 파일 커밋·PR 생성 이후 동일 정본 도구로 실행한다.**
 - `D:\temp\worktrees\giip-fde-agent\aux-sched-2645` 는 lowyworkenv 정식 등록 워크트리이므로 **미접촉·보존**한다.
 
+> 정정(2026-10-26 02:0x, 52차 정비 세션 실측): 위 "실행한다"는 **계획**이었다. 실제로는 **실행했다** —
+> 본체 워크트리 `maint-52-0140` · 사후 워크트리 `maint-52-post-0210` **2건 모두** 정본 도구
+> `scripts/gissue/cleanup-worktrees.ps1 -RepoPath <공유체크아웃> -OnlyPath "<경로>" -MinIdleMinutes 0`
+> 로 **항목별 회수**했다(Removed 1 + 1 · Aborted=False · ManualReview 0건).
+> **회수 후 실측 4종**을 새로 떠서 확정했다(아래 "52차 종료 시점 실측" 절).
+> (rule 42 — 완료는 실행 결과로만 판정 · [KNOW-013](../k_layer/notes/KNOW-013_work_history_completion_claim_may_be_unexecuted_plan.md))
+
+## 52차 종료 시점 실측 (회수 후 재확인)
+
+- 시점: 위 정본 도구 2건 회수 **직후**, 그리고 `git fetch --prune` 으로 머지 완료된 원격 브랜치 2개를 정리한 뒤.
+- `git worktree list` → 공유 체크아웃 **1개만**(원격 브랜치 정리까지 끝난 상태)
+- `git branch -a` → `main` + `remotes/origin/main` + `remotes/origin/HEAD` 뿐(**고아 브랜치 0건**)
+- `git ls-remote --heads origin` → `refs/heads/main` **1건**뿐
+- `git stash list` → **0건**
+- 공유 체크아웃 `git status --short` → ` M scripts/gissue/list-issues.js` **1건만 남음**(타 세션 소유분, 그대로 보존)
+- **단, 이 정정 기록을 올리는 사후2 워크트리(`maint-52-post2-0215`)는 위 실측 이후에 생성된 것**이라
+  그 시점의 `git worktree list` 에는 포함되지 않는다. 이 워크트리는 본 정정 PR 머지 후 동일 정본 도구로 회수한다.
+
 ## What's New 롤링 창 처리
 
 - 본 사후 기록 항목은 **기록 대상 세션(52차)이 2026-10-26** 에 수행된 것이므로
