@@ -74,6 +74,16 @@
   2. `-DryRun` 없이 실행 → **Removed 1건 / ManualReview 0건 / Aborted=False** (항목별 반복).
   3. 항목별 삭제 후 인접 저장소 즉시 재검증(4종): `git worktree list` · `git branch -a` ·
      `git ls-remote --heads origin` · `git stash list`.
+> **정정(2026-10-26, 58차 저장소 정비 세션)** — 아래 "회수 후 실측(4종)" 절의
+> `git worktree list` → 공유 체크아웃 **1건뿐** 이라는 서술은 **자신의 사후 워크트리
+> `maint-57-post-0650` 를 제외한 값**이었다. 58차가 07:15 세션 시작 시점에 실측한 값은
+> **2건**(공유 체크아웃 `a341d11` [main] + `maint-57-post-0650`) 이었고, 그 워크트리의
+> 원격 브랜치 `chore/csn70424-maint57-post-20261026-0650` 도 살아 있었다.
+> → 58차가 **정본 도구**(`cleanup-worktrees.ps1 -OnlyPath "D:\temp\..." -MinIdleMinutes 0`,
+> DryRun "제거 대상 1건" 확인 → 실행 Removed 1건 → 4종 재검증)로 회수했다.
+> 원 문장은 지우지 않았다 — "이랬다고 적혀 있었고, 실측은 이랬다"가 남아야 판단할 수 있다.
+> (같은 교훈의 정본 = [KNOW-013](../k_layer/notes/KNOW-013_work_history_completion_claim_may_be_unexecuted_plan.md))
+
 - **회수 후 실측(4종)**:
   - `git worktree list` → 공유 체크아웃(`84e9a1d` [main]) **1건뿐**
   - `git branch -a` → `main` + `remotes/origin/main` + `remotes/origin/HEAD` 뿐(고아 0건)
