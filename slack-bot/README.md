@@ -229,6 +229,14 @@ Slack 메시지는 `intent.js` 에서 아래 순서로 분류된다(앞 단계�
 `등록해`/`처리해서` 등)으로 판정한다. 그래서 "처리 결과 파일의 github url 찾아서 보여줘" 같은 기존 파일 조회는 새 이슈를 만들지 않고,
 "찾아서 파일로 저장해줘" 는 task 로 간다. 테스트: `node --test slack-bot/tests/intent.test.js`(LLM 미호출).
 
+## 개인용 체크리스트 대시보드 (`SLACKBOT_DASHBOARD`, 기본 끔)
+
+`dashboard.js` 는 봇이 처리한 요청을 레포 루트 `LOWY_ACTION_DASHBOARD.md` 의 마커 구간(`SLACKBOT-TASKS:START/END`)에
+체크리스트로 갱신하고 `git add`/commit/push 한다. 개인용 기능이라 **기본은 꺼져 있다** — 환경변수
+`SLACKBOT_DASHBOARD=on`(대소문자 무시)일 때만 동작하고, 미설정/그 외 값이면 파일 생성·git 호출을 전혀 하지 않는다.
+공용 레포 체크아웃에서는 켜지 말 것(레포 루트가 오염된다). `node dashboard.js` CLI 수동 실행은 스위치와 무관하게 동작한다.
+테스트: `node --test slack-bot/tests/dashboard.test.js`.
+
 ## K-Layer Knowledge Base
 
 Place `.md` files in `.agent/knowledge/notes/` using the CLAIM format:

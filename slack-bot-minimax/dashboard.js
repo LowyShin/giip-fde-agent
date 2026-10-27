@@ -35,6 +35,14 @@ const MARK_END = '<!-- SLACKBOT-TASKS:END -->';
 
 const MAX_COMPLETED = 12; // 최근 완료 표시 개수
 
+// ── 기본 끔 스위치 (giip 이슈 4211) ───────────────────────────────────────────
+// 이 모듈은 개인용 체크리스트(LOWY_ACTION_DASHBOARD.md)를 레포 루트에 만들고 git add/commit/push 한다.
+// 공용 PUBLIC 레포 체크아웃에서 봇을 돌릴 때 레포가 오염되므로, SLACKBOT_DASHBOARD=on 일 때만 동작한다.
+function isDashboardEnabled() {
+  return String(process.env.SLACKBOT_DASHBOARD || '').trim().toLowerCase() === 'on';
+}
+let disabledLogged = false; // 비활성 안내는 프로세스당 1회만
+
 // 겹치는 갱신 호출을 직렬화(sync spawn 이라 실제 병렬은 없지만 중복 no-op 방지)
 let running = false;
 
@@ -209,6 +217,14 @@ function writeDashboardFile({ branch, web, now } = {}) {
 // ── 메인: pull → 섹션 갱신 → 커밋 → push. base 브랜치에서만, 예외를 삼킨다. ──────
 // opts.push=false 면 디스크 갱신만(테스트/시드용).
 function refreshDashboard(reason = '', opts = {}) {
+  // 기본 끔: 파일 생성·git 호출 전부 하지 않는다. opts.force 는 CLI 수동 실행(아래 require.main)만 쓴다.
+  if (!opts.force && !isDashboardEnabled()) {
+    if (!disabledLogged) {
+      disabledLogged = true;
+      console.log('[Dashboard] 비활성(SLACKBOT_DASHBOARD!=on) — LOWY_ACTION_DASHBOARD.md 갱신을 건너뜁니다.');
+    }
+    return { skipped: 'disabled' };
+  }
   const doPush = opts.push !== false;
   if (running) return { skipped: 'already-running' };
   running = true;
@@ -278,12 +294,13 @@ function refreshDashboard(reason = '', opts = {}) {
   }
 }
 
-module.exports = { refreshDashboard, writeDashboardFile, buildSection, applySection };
+module.exports = { isDashboardEnabled, refreshDashboard, writeDashboardFile, buildSection, applySection };
 
 // CLI: `node dashboard.js`         → pull+갱신+push (base 브랜치에서)
+//      (CLI 는 사용자가 직접 실행하는 명시적 동작이므로 SLACKBOT_DASHBOARD 스위치와 무관하게 동작)
 //      `node dashboard.js --local` → 디스크만 갱신(테스트/시드용, git 미조작)
 if (require.main === module) {
   const local = process.argv.includes('--local');
-  const res = refreshDashboard('manual', { push: !local });
+  const res = refreshDashboard('manual', { push: !local, force: true });
   console.log('[Dashboard]', JSON.stringify(res));
 }
