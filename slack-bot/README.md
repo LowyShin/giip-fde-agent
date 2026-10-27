@@ -239,6 +239,17 @@ Slack 메시지는 `intent.js` 에서 아래 순서로 분류된다(앞 단계�
 
 Jev 를 활용한 의도 분류 권장 구조(제안, 미구현): [docs/INTENT_ROUTING_JEV_SPEC.md](docs/INTENT_ROUTING_JEV_SPEC.md)
 
+## 작업 브랜치 생성 시 untracked 충돌 자가치유
+
+`prepareTaskBranch`(task-manager.js)는 `git checkout -B bot/task-<id> origin/<base>` 전에 `git ls-files --others --exclude-standard`(untracked 비-ignored)와 `git ls-tree -r --name-only <startPoint>`(기점의 tracked 경로)의 **교집합**을 구한다. 작업 클론이 어떤 PR 머지 이전 상태일 때 그 PR 이 새로 추적 대상으로 만든 파일(예: 봇이 계속 append 하는 `.agent/runtime/cost-usage.jsonl`)이 로컬에 untracked 로 남아 있으면 git 이 `untracked working tree files would be overwritten by checkout` 으로 거부하기 때문이다(giip 4224).
+
+- **치우기**: 충돌 파일을 `os.tmpdir()/giipclaude-preserve-<taskId>-<timestamp>/`(원 경로 구조 유지)에 복사한 뒤에만 삭제한다. 백업 경로는 로그(`console.error`)에 출력하고 반환 ctx 의 `preserved: { dir, files }` 에 담는다(충돌이 없으면 `null`).
+- **복원/병합**: `.agent/tasks/<id>.md`(태스크 파일)는 현재 요청(untracked)본으로 덮어쓴다(기존 동작 유지). `.agent/runtime/` 아래 `.jsonl`/`.log` 는 checkout 된 tracked 줄 + 로컬에만 있던 줄(줄 단위 중복 제거, 순서 보존)로 병합해 기록 유실을 막는다. 그 외 파일은 tracked 버전을 유지하고 로컬본은 백업 폴더에만 남는다.
+- **checkout 실패 시**: 치웠던 파일을 원위치로 복원(stash 복원 전)하고 `{ ok:false, error, conflictFiles }` 를 반환한다. `conflictFiles` 는 git stderr 의 `would be overwritten by checkout:` 아래 경로 목록이다.
+- **재시도 중단**(handlers.js): 브랜치 생성 실패 시 오류 서명(`conflictFiles` 집합, 없으면 오류 문자열)을 `lastBranchFailSig` 로 저장하고, 다음 시도가 **같은 서명으로 실패하면 남은 재시도(`MAX_BRANCH_FAIL_RETRIES`)를 소진하지 않고 즉시 중단**해 충돌 파일 목록과 수동 조치를 Slack 에 보고한다(`taskBranchFailSameCause`). `lastBranchFailSig` 가 없는 기존 상태는 기존 횟수 기반 동작과 같다. 판정 로직은 `branch-collision.js`.
+
+테스트: `node --test slack-bot/tests/branch-collision.test.js`(로컬 bare 원격 + 작업 클론으로 실제 git 재현, LLM·네트워크 없음).
+
 ## K-Layer Knowledge Base
 
 Place `.md` files in `.agent/knowledge/notes/` using the CLAIM format:

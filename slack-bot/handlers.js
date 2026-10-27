@@ -14,6 +14,7 @@ const { postMessage, postLong, fetchThreadTranscript, resolveUserName, slackGet 
 const { checkAllRepoStatus, isPushFailureNotice } = require('./repo-status');
 const { callClaude } = require('./claude-cli');
 const { isGoCmd, isCancelCmd, isForceTaskCmd, isPureGitOp, classifyRequest } = require('./intent');
+const { decideBranchFailAction } = require('./branch-collision');
 const {
   extractExistingTaskIds, extractGiipIssueRef, findSimilarPendingTasks, findDuplicatePendingClusters, applyTaskMerge,
 } = require('./task-dedup');
@@ -469,11 +470,29 @@ async function startTaskExecution(pendingKey, pendingTask, channelId, replyTs, t
     // 대기열에 올려 자동 재시도한다(수동 go 불요). clearStaleRebaseState 자가치유로 대개 다음
     // 시도에 풀리지만, 근본 원인이 남아있는 경우를 대비해 횟수를 제한하고 소진되면 수동 안내로 되돌아간다.
     const MAX_BRANCH_FAIL_RETRIES = 3;
-    const branchFailRetries = (pendingTask.branchFailRetries || 0) + 1;
-    if (branchFailRetries <= MAX_BRANCH_FAIL_RETRIES) {
+    // 직전 시도와 같은 충돌 파일 집합/같은 오류면(원인이 그대로) 남은 재시도를 소진하지 않고 즉시 중단.
+    // lastBranchFailSig 가 없는 기존 상태 JSON 은 기존 횟수 기반 동작과 같다(하위호환).
+    const decision = decideBranchFailAction(pendingTask, branchCtx, MAX_BRANCH_FAIL_RETRIES);
+    const branchFailRetries = decision.retries;
+    if (decision.action === 'stop-same-cause') {
+      ts0.pending[pendingKey] = { ...pendingTask, branchFailRetries: undefined, lastBranchFailSig: undefined, queuedBehind: undefined };
+      saveJSON(TASK_STATE_FILE, ts0);
+      tm.updateTasklistEntry(pendingTask.taskId, { status: 'pending', startedAt: null });
+      await postMessage(channelId,
+        uiT(uiLang, 'taskBranchFailSameCause', {
+          error: branchCtx.error,
+          files: (branchCtx.conflictFiles || []).map(f => `\`${f}\``).join(', ') || '-',
+          taskId: pendingTask.taskId,
+        }),
+        replyTs
+      );
+      return;
+    }
+    if (decision.action === 'retry') {
       ts0.pending[pendingKey] = {
         ...pendingTask,
         branchFailRetries,
+        lastBranchFailSig: decision.sig,
         queuedBehind: `(git 오류 자동복구 대기 ${branchFailRetries}/${MAX_BRANCH_FAIL_RETRIES})`,
         queuedAt: new Date().toISOString(),
         channelId,
