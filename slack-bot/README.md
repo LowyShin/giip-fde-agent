@@ -237,6 +237,8 @@ Slack 메시지는 `intent.js` 에서 아래 순서로 분류된다(앞 단계�
 공용 레포 체크아웃에서는 켜지 말 것(레포 루트가 오염된다). `node dashboard.js` CLI 수동 실행은 스위치와 무관하게 동작한다.
 테스트: `node --test slack-bot/tests/dashboard.test.js`.
 
+Jev 를 활용한 의도 분류 권장 구조(제안, 미구현): [docs/INTENT_ROUTING_JEV_SPEC.md](docs/INTENT_ROUTING_JEV_SPEC.md)
+
 ## K-Layer Knowledge Base
 
 Place `.md` files in `.agent/knowledge/notes/` using the CLAIM format:
