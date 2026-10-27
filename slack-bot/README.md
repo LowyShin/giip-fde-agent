@@ -229,6 +229,8 @@ Slack 메시지는 `intent.js` 에서 아래 순서로 분류된다(앞 단계�
 `등록해`/`처리해서` 등)으로 판정한다. 그래서 "처리 결과 파일의 github url 찾아서 보여줘" 같은 기존 파일 조회는 새 이슈를 만들지 않고,
 "찾아서 파일로 저장해줘" 는 task 로 간다. 테스트: `node --test slack-bot/tests/intent.test.js`(LLM 미호출).
 
+Jev 를 활용한 의도 분류 권장 구조(제안, 미구현): [docs/INTENT_ROUTING_JEV_SPEC.md](docs/INTENT_ROUTING_JEV_SPEC.md)
+
 ## K-Layer Knowledge Base
 
 Place `.md` files in `.agent/knowledge/notes/` using the CLAIM format:

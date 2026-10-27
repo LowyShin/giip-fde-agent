@@ -11,6 +11,7 @@
 ---
 
 ## 2026-10-27
+- **slack-bot 의도 분류(task/question) Jev 활용 권장 구조 사양서 추가 (제안, 미구현)** — 결정적 규칙(`isForceTaskCmd`·읽기 전용 조회 fast-path) → 규칙이 못 가른 메시지만 Jev 의도 분류 → 오류/신뢰도 부족 시 기존 LLM 분류기 → 최종 실패 시 question+안내 순서의 구조, 신설 게이트웨이 계약(입력 타입·형 지정 질문·응답)·신뢰도 라우팅 초기값 제안·데이터 취급(별도 심사 게이트 없음, `maskString` 적용)·롤아웃 스위치·평가 계획·하위 작업 A~D 를 정리했습니다. 코드 변경은 없습니다. → [INTENT_ROUTING_JEV_SPEC.md](../slack-bot/docs/INTENT_ROUTING_JEV_SPEC.md)
 - **새 규칙 56 — 결과물 배치 (문서는 `docs/` 하위, 소스는 GitHub Actions 로 배포되는 위치)** — 의뢰자 요청의 결과물이 문서면 `docs/` 하위(규칙 22 번호 체계), 소스면 작성 전에 `.github/workflows/*.yml` 의 트리거·`paths:`·배포 디렉터리를 확인해 실제 배포되는 위치에 두고, 완료 보고에 결과물 경로 전부와 워크플로 파일명을 적습니다(사용자 지시 2026-10-27). → [규칙 56](../.agent/rules/56_deliverable_placement_docs_vs_deployable_source.md)
 - **slack-bot 질문이 task 로 오분류되어 새 이슈가 발급되던 버그 수정** — 쓰기 의도 판정을 명사(`파일`/`폴더`/`처리`/`등록`/`추가`/`점검`) 포함 여부에서 쓰기 동사/명령형 기준으로 좁히고, URL/경로/내용 조회 요청(`찾아서 보여줘` 등)을 LLM 없이 question 으로 보내는 결정적 경로와 회귀 테스트(`node --test`)를 추가했습니다. → [slack-bot/README.md](../slack-bot/README.md), [intent.js](../slack-bot/intent.js)
 
