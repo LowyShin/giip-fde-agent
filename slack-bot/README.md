@@ -216,6 +216,19 @@ The name is lowercased on save. A project name works even without a matching
 
 Send any message directly to the bot for conversational Q&A with history.
 
+## 의도 분류(task / question) 결정적 경로
+
+Slack 메시지는 `intent.js` 에서 아래 순서로 분류된다(앞 단계가 우선, LLM 은 마지막).
+
+1. `isForceTaskCmd` — 태스크 등록/구현·수정 명령형 등 쓰기 패턴이면 무조건 task.
+2. `isConfirmationQuery` — 쓰기 동사/명령형이 **없고** 확인·조회 표지(`알려줘`/`확인 가능해?`/`어때?` 등) 또는
+   읽기 전용 조회(`isReadOnlyLookup`: URL/링크/경로/주소/위치/내용 + `찾아/보여/알려/확인`)이면 LLM 없이 question(즉답).
+3. 위에 해당하지 않으면 LLM 분류기(`classifyRequest`).
+
+쓰기 의도는 명사(`파일`/`폴더`/`처리`/`등록`/`추가`/`점검`) 단독이 아니라 **쓰기 동사/명령형**(`저장`/`작성`/`수정`/`삭제`,
+`등록해`/`처리해서` 등)으로 판정한다. 그래서 "처리 결과 파일의 github url 찾아서 보여줘" 같은 기존 파일 조회는 새 이슈를 만들지 않고,
+"찾아서 파일로 저장해줘" 는 task 로 간다. 테스트: `node --test slack-bot/tests/intent.test.js`(LLM 미호출).
+
 ## K-Layer Knowledge Base
 
 Place `.md` files in `.agent/knowledge/notes/` using the CLAIM format:
