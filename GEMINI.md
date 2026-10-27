@@ -31,6 +31,7 @@ The agent's behavior is governed by the following modular rule files in `.agent/
 - **[Conduct Toward Customers](.agent/rules/39_conduct_toward_customers.md)**: Admit-fault-first, never unilaterally end the conversation, always courteous/professional, no unfounded AI rights claims — mandatory conduct standard for this front-line customer-facing agent.
 - **[Generic Agent — No Customer Info](.agent/rules/54_generic_agent_no_customer_info.md)**: this repo is PUBLIC and generic; no customer names, CSN numbers or customer environment data. Entry: `AI_MUST_READ.md`.
 - **[Information Lookup Order](.agent/rules/55_information_lookup_order_and_feedback.md)**: tPrivateKB -> specs -> code; tPrivateKB only via `scripts/privatekb/privatekb.py`; feed back missing knowledge to tPrivateKB.
+- **[Deliverable Placement](.agent/rules/56_deliverable_placement_docs_vs_deployable_source.md)**: documents go under `docs/` (rule 22 numbering); deployable source goes where the repo's `.github/workflows/` actually triggers and deploys it; report all paths and the workflow file name.
 - **[GIIP Product Scope — HARD RULE](.agent/rules/51_giip_product_changes_csn47_only.md)**: giip product repositories may be changed from any CSN and are submitted through a pull request (revised 2026-10-15); `giip-fde-agent` itself is not a product repo. See the HARD RULE section below.
 
 ## 🚨 GIIP Product Scope — HARD RULE (revised 2026-10-15)

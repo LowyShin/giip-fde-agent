@@ -11,6 +11,7 @@
 ---
 
 ## 2026-10-27
+- **새 규칙 56 — 결과물 배치 (문서는 `docs/` 하위, 소스는 GitHub Actions 로 배포되는 위치)** — 의뢰자 요청의 결과물이 문서면 `docs/` 하위(규칙 22 번호 체계), 소스면 작성 전에 `.github/workflows/*.yml` 의 트리거·`paths:`·배포 디렉터리를 확인해 실제 배포되는 위치에 두고, 완료 보고에 결과물 경로 전부와 워크플로 파일명을 적습니다(사용자 지시 2026-10-27). → [규칙 56](../.agent/rules/56_deliverable_placement_docs_vs_deployable_source.md)
 - **slack-bot 질문이 task 로 오분류되어 새 이슈가 발급되던 버그 수정** — 쓰기 의도 판정을 명사(`파일`/`폴더`/`처리`/`등록`/`추가`/`점검`) 포함 여부에서 쓰기 동사/명령형 기준으로 좁히고, URL/경로/내용 조회 요청(`찾아서 보여줘` 등)을 LLM 없이 question 으로 보내는 결정적 경로와 회귀 테스트(`node --test`)를 추가했습니다. → [slack-bot/README.md](../slack-bot/README.md), [intent.js](../slack-bot/intent.js)
 
 ## 2026-10-26

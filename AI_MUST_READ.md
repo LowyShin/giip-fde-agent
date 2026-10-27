@@ -32,4 +32,5 @@
 2. **main 에 직접 push 하지 않고 PR 로 올립니다**([`35_commit_push_per_task.md`](.agent/rules/35_commit_push_per_task.md)).
 3. 커밋 전, 변경(추가)한 줄에 CSN 번호·고객 문자열이 0건인지 `git grep`/`git diff` 로 확인합니다.
 4. 의미 있는 변경은 [`docs/WHATS_NEW.md`](docs/WHATS_NEW.md) 를 갱신합니다([`36_whats_new_maintenance.md`](.agent/rules/36_whats_new_maintenance.md)).
-5. 나머지 규칙은 [`GEMINI.md`](GEMINI.md) 의 규칙 목록과 `.agent/rules/` 를 따릅니다.
+5. 의뢰 결과물은 **문서면 `docs/` 하위, 소스면 GitHub Actions 로 배포되는 위치**에 둡니다(작성 전 `.github/workflows/` 확인, 보고에 경로·워크플로명 기재)([`56_deliverable_placement_docs_vs_deployable_source.md`](.agent/rules/56_deliverable_placement_docs_vs_deployable_source.md)).
+6. 나머지 규칙은 [`GEMINI.md`](GEMINI.md) 의 규칙 목록과 `.agent/rules/` 를 따릅니다.
