@@ -37,3 +37,6 @@ docker/instances/
 
 # gissue 공유 gh 인증 설정 (토큰 포함 — 절대 커밋 금지)
 /.gh/
+
+# 개인용 슬랙봇 체크리스트(SLACKBOT_DASHBOARD=on 일 때만 생성) — 공용 레포에는 커밋하지 않음 (giip 이슈 4211)
+LOWY_ACTION_DASHBOARD.md
