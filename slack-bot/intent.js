@@ -73,14 +73,30 @@ const CONFIRM_QUERY_MARKERS = [
   /뭐(였|야|예요|냐|니|지)/,
   /뭔지|무엇\s*(인지|이야|인가)/,
   /어떻게\s*(돼|되나|됐|되었)/,
+  /어때|어떤가|어떠니/,
 ];
-// これらが含まれると「単なる確認」ではない(書込/実装/計算を伴う) → fast-path 対象外。
-const WRITE_INTENT_MARKERS = /(저장|파일|폴더|구현|수정|해결|반영|적용|배포|개선|보완|생성|작성|계산|집계|합산|추정|산출|만들|고쳐|고치|등록|추가|처리|점검|리팩터|리팩토|커밋|푸시|push|업데이트|업뎃|갱신|번역|현행화|일본어화)/;
+// 書込/実装/計算を伴う「動詞(語幹)」が含まれると「単なる確認」ではない → fast-path 対象外。
+// 注意: 名詞の 파일/폴더/처리/등록/추가/점검 単独では書込意図とみなさない。
+//   「<isn> 의 처리 결과 파일의 github url 찾아서 보여줘」のような既存ファイルの URL/パス照会が
+//   名詞一致だけで LLM(flaky) に回り task 誤分類され、新規 giip issue が発給された事故の恒久修正。
+//   これらの名詞は命令/動作形(등록해/추가해/처리해서/점검하고 …)と結合した時のみ書込扱いにする。
+const WRITE_INTENT_MARKERS = /(저장|구현|수정|해결|반영|적용|배포\s*(해|하)|개선|보완|생성|작성|계산|집계|합산|추정|산출|만들|고쳐|고치|리팩터|리팩토|커밋|푸시|push|업데이트|업뎃|갱신|번역|현행화|일본어화|삭제|제거|지워|변경|바꿔|바꾸|이동|옮겨|복사)|(등록|추가|처리|점검)\s*(을|를)?\s*(해|하|할|한\s*뒤)/;
+
+// 読み取り専用の「所在/内容の照会」: 照会対象(URL/リンク/パス/住所/位置/内容)と、
+// 探す/見せる/教える/確認の依頼動詞が共起する場合のみ。書込動詞が同居すれば対象外(WRITE_INTENT_MARKERS)。
+const LOOKUP_TARGET = /(url|링크|경로|주소|위치|내용|path|link)/i;
+const LOOKUP_VERB = /(찾아|보여|알려|확인)/;
+
+function isReadOnlyLookup(text) {
+  const t = text.replace(/`/g, '');
+  if (WRITE_INTENT_MARKERS.test(t)) return false;
+  return LOOKUP_TARGET.test(t) && LOOKUP_VERB.test(t);
+}
 
 function isConfirmationQuery(text) {
   const t = text.replace(/`/g, '');
   if (WRITE_INTENT_MARKERS.test(t)) return false;
-  return CONFIRM_QUERY_MARKERS.some(re => re.test(t));
+  return CONFIRM_QUERY_MARKERS.some(re => re.test(t)) || isReadOnlyLookup(t);
 }
 
 // ── 意図分類 (task / question) ────────────────────────────────────────────────
@@ -117,10 +133,15 @@ Classify using the following rules:
   1. Question, information inquiry, explanation request (no file output expected)
   2. Status check, deployment check, environment check, log review
   3. File path inquiry, dashboard check, system status confirmation
+     Asking to FIND / SHOW / TELL the URL, link, path, location or content of an EXISTING
+     file or result ("<isn> 의 처리 결과 파일의 github url 찾아서 보여줘") is read-only → question.
+     Nouns like 파일/폴더/처리/결과 alone do NOT imply writing.
   4. Investigation or research only (no file output expected)
   5. Message consisting only of "git push" or "git pull" (no other work instructions)
 
 Key principle: If the request involves writing, saving, or creating ANY file on disk — classify as "task".
+Merely locating/showing/reading an already-existing file, URL, or result is NOT writing — classify as "question"
+unless a write verb (저장/작성/생성/만들/수정/구현/등록해 …) is also present.
 A read-only phrasing like "보여줘/확인해줘" does NOT make it a question when satisfying it
 requires implementing or changing code.
 
@@ -129,6 +150,8 @@ Examples:
 - "csn 2 에 등록된 logical machine 이 사라진 원인 체크하고 문제 해결을 해라" → task (fix requires code/query change)
 - "지금 배포 상태 어때?" → question
 - "azure-cost 페이지 URL 이 뭐야?" → question
+- "지금 폴더 구조 재조정 했거든 123 의 처리 결과 파일의 github url 찾아서 보여줘" → question (lookup of an existing file)
+- "123 처리 결과 파일 경로 찾아서 파일로 저장해줘" → task (also asks to write a file)
 
 Reply with only one word: "task" or "question". No explanation needed.`;
 
@@ -167,4 +190,4 @@ function isPureGitOp(text) {
   return /^git\s+(push|pull)(\s+(して|する|してください|お願い|please|원|해줘|해주세요))?$/i.test(stripped);
 }
 
-module.exports = { isGoCmd, isCancelCmd, isForceTaskCmd, isConfirmationQuery, isPureGitOp, classifyRequest };
+module.exports = { isGoCmd, isCancelCmd, isForceTaskCmd, isConfirmationQuery, isReadOnlyLookup, isPureGitOp, classifyRequest };
