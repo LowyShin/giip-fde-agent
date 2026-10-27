@@ -4,8 +4,10 @@
  */
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawnSync, spawn } = require('child_process');
+const { parseConflictFiles, isMergeableLogPath, mergeLogLines } = require('./branch-collision');
 const { searchKLayer } = require('./k-layer');
 const accounts = require('./claude-accounts');
 const minimax = require('./minimax-accounts');
@@ -1034,6 +1036,16 @@ function buildCompareUrl(branch, base, baseDir = BASE_DIR) {
   return `${b}/compare/${base}...${branch}?expand=1`;
 }
 
+// untracked(비-ignored) 파일 ∩ startPoint 의 tracked 경로 = checkout 을 막을 충돌 경로.
+function findUntrackedCollisions(git, startPoint) {
+  const untracked = (git(['ls-files', '--others', '--exclude-standard', '-z']).stdout || '').split('\0').filter(Boolean);
+  if (!untracked.length) return [];
+  const tree = git(['ls-tree', '-r', '--name-only', '-z', startPoint]);
+  if (tree.status !== 0) return [];
+  const onStart = new Set((tree.stdout || '').split('\0').filter(Boolean));
+  return untracked.filter(f => onStart.has(f));
+}
+
 // ── 작업 전: 최신 base 에서 태스크 전용 브랜치를 만들어 checkout ────────────────
 // 반환 ctx 는 gitPushResultAndPR 에서 push·PR·작업트리 복원에 사용한다.
 // 핵심: 반드시 `git fetch origin <base>` 직후 `origin/<base>` 를 기점으로 브랜치를 만든다.
@@ -1076,36 +1088,74 @@ function prepareTaskBranch(taskId, baseDir = BASE_DIR) {
     stashed = stash.status === 0 && !/No local changes/.test(stash.stdout || '');
   }
 
-  // 자가 치유 ②: untracked 태스크 파일이 startPoint(origin/base)에 이미 tracked 로
-  // 존재하면(과거 시도가 PR 로 base 에 머지된 경우 — giip-645), `checkout -B` 가
-  // "untracked working tree files would be overwritten by checkout … Aborting" 으로
-  // 영구 실패한다. autostash 는 tracked 변경만 다루므로 이 충돌은 치우지 못한다.
-  //   → 현재 요청(untracked)본을 보존하고 파일을 잠시 치워 checkout 을 통과시킨 뒤,
-  //     checkout 후 다시 써서 서브에이전트가 최신 요청을 보게 한다.
+  // 자가 치유 ②(일반화): untracked 파일이 startPoint(origin/base)에 tracked 로 존재하면
+  // `checkout -B` 가 "untracked working tree files would be overwritten by checkout … Aborting"
+  // 으로 영구 실패한다. autostash 는 tracked 변경만 다루므로 이 충돌은 치우지 못한다.
+  //   · 태스크 파일(.agent/tasks/<id>.md — 과거 시도가 PR 로 base 에 머지된 경우, giip-645):
+  //     checkout 후 현재 요청(untracked)본으로 덮어써 서브에이전트가 최신 요청을 보게 한다.
+  //   · .agent/runtime/ 아래 .jsonl/.log(봇이 append 하는 로그, 어떤 PR 이 .agent/ 를 추적 대상으로
+  //     만든 경우): checkout 후 (tracked 줄 + 로컬에만 있던 줄)로 병합해 기록 유실을 막는다.
+  //   · 그 외: checkout 된 tracked 버전을 유지하고 로컬본은 백업 폴더에만 남긴다(로그에 경로 출력).
+  // 치우기 전에 반드시 임시 백업 폴더에 원 경로 구조로 복사한다(백업 없이 삭제 금지).
   const taskRel = `.agent/tasks/${taskId}.md`;
-  const taskAbs = path.join(baseDir, taskRel);
-  let savedTaskFile = null;
-  const taskTracked = git(['ls-files', '--error-unmatch', taskRel]).status === 0;
-  const taskOnStart = git(['cat-file', '-e', `${startPoint}:${taskRel}`]).status === 0;
-  if (!taskTracked && taskOnStart) {
-    try {
-      savedTaskFile = fs.readFileSync(taskAbs, 'utf8');
-      fs.rmSync(taskAbs);
-    } catch { savedTaskFile = null; }
+  const collisions = findUntrackedCollisions(git, startPoint);
+  let preserved = null;
+  if (collisions.length) {
+    const dir = path.join(os.tmpdir(), `giipclaude-preserve-${taskId}-${Date.now()}`);
+    const moved = [];
+    for (const rel of collisions) {
+      try {
+        const bak = path.join(dir, rel);
+        fs.mkdirSync(path.dirname(bak), { recursive: true });
+        fs.copyFileSync(path.join(baseDir, rel), bak);
+        fs.rmSync(path.join(baseDir, rel));
+        moved.push(rel);
+      } catch (e) {
+        console.error(`[TaskManager] prepareTaskBranch: untracked 충돌 파일 백업/치우기 실패(${rel}) — ${e.message}`);
+      }
+    }
+    if (moved.length) {
+      preserved = { dir, files: moved };
+      console.error(`[TaskManager] prepareTaskBranch: untracked 충돌 파일 ${moved.length}건을 백업 후 치웠습니다 → ${dir} (${moved.join(', ')})`);
+    }
   }
+  const putBack = () => { // 백업 → 원위치 (checkout 실패 시 롤백)
+    if (!preserved) return;
+    for (const rel of preserved.files) {
+      try {
+        const dst = path.join(baseDir, rel);
+        fs.mkdirSync(path.dirname(dst), { recursive: true });
+        fs.copyFileSync(path.join(preserved.dir, rel), dst);
+      } catch (e) { console.error(`[TaskManager] prepareTaskBranch: 원위치 복원 실패(${rel}) — 백업 ${preserved.dir}: ${e.message}`); }
+    }
+  };
 
   const co = git(['checkout', '-B', branch, startPoint]);
   if (co.status !== 0) {
-    if (savedTaskFile != null) { try { fs.writeFileSync(taskAbs, savedTaskFile); } catch {} }
+    putBack();
     if (stashed) git(['stash', 'pop']); // 실패 시 사용자 변경을 되돌려 유실 방지
-    return { ok: false, error: `브랜치 생성 실패: ${(co.stderr || '').trim().slice(0, 200)}` };
+    const stderr = (co.stderr || '').trim();
+    const conflictFiles = parseConflictFiles(stderr);
+    return { ok: false, error: `브랜치 생성 실패: ${stderr.slice(0, 200)}`, conflictFiles };
   }
-  // checkout 성공: base 의 옛 태스크 파일이 트리에 올라왔을 수 있으므로 현재 요청본으로
-  // 덮어써 서브에이전트가 최신 요청을 실행하게 한다(커밋되면 이번 태스크 변경으로 남음).
-  if (savedTaskFile != null) { try { fs.writeFileSync(taskAbs, savedTaskFile); } catch {} }
+  // checkout 성공: 치웠던 파일을 규칙대로 복원/병합한다.
+  if (preserved) {
+    for (const rel of preserved.files) {
+      try {
+        const dst = path.join(baseDir, rel);
+        const local = fs.readFileSync(path.join(preserved.dir, rel), 'utf8');
+        if (rel === taskRel) {
+          fs.writeFileSync(dst, local); // 커밋되면 이번 태스크 변경으로 남음
+        } else if (isMergeableLogPath(rel)) {
+          const tracked = fs.existsSync(dst) ? fs.readFileSync(dst, 'utf8') : '';
+          fs.writeFileSync(dst, mergeLogLines(tracked, local));
+        } // 그 외: checkout 된 tracked 버전 유지, 로컬본은 백업 폴더에만 남는다.
+      } catch (e) { console.error(`[TaskManager] prepareTaskBranch: 복원/병합 실패(${rel}) — 백업 ${preserved.dir}: ${e.message}`); }
+    }
+  }
 
   gitTreeBusy = true;
-  return { ok: true, branch, base, originalBranch, fetchedBase: fetched.status === 0, stashed };
+  return { ok: true, branch, base, originalBranch, fetchedBase: fetched.status === 0, stashed, preserved };
 }
 
 // 작업트리를 기본(base) 브랜치로 복원하고 busy 락을 해제한다. (성공/실패 무관 항상 호출)

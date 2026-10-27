@@ -127,6 +127,9 @@ const MESSAGES = {
     taskQueuedBusy: ({ occId, taskId }) => `⏸️ 지금은 \`${occId}\` 이(가) 작업트리(git)를 점유 중입니다.\n\`${taskId}\` 을(를) *대기열에 등록*했습니다 — 점유 작업이 끝나면 *자동으로 기동*합니다 (다시 \`go\` 하지 않아도 됩니다).`,
     taskBranchFailRetry: ({ n, max, error, taskId }) => `⏸️ *브랜치 생성 실패* (자동 재시도 ${n}/${max}): ${error}\n\`${taskId}\` 을(를) *대기열에 등록*했습니다 — 잠시 후 *자동으로 재시도*합니다 (\`go\` 불요).`,
     taskBranchFailExhausted: ({ max, error, taskId }) => `⏸️ *실행할 수 없습니다* (자동 재시도 ${max}회 소진): ${error}\n\`go ${taskId}\` 로 나중에 다시 실행하세요.`,
+    taskBranchFailSameCause: ({ error, files, taskId }) => `⛔ *브랜치 생성이 직전 시도와 같은 원인으로 다시 실패해 자동 재시도를 중단했습니다*: ${error}
+충돌 파일: ${files}
+해당 파일을 옮기거나 지운 뒤(또는 백업 후 정리) \`go ${taskId}\` 로 다시 실행하세요.`,
     repoMoreSuffix: () => ' 외',
     repoManualNeeded: ({ repo, filesPart, reason }) => `⚠️ 수동 필요: ${repo}${filesPart} — ${reason}`,
     repoBlockedLine: ({ repo, fileTxt, prTxt, branch }) => `🚧 보류: ${repo} — 파일 [${fileTxt}] 이(가) 미머지 PR ${prTxt} 대상이라 새 PR 을 만들지 않았습니다(브랜치 \`${branch}\` 는 push 됨).`,
@@ -246,6 +249,9 @@ const MESSAGES = {
     taskQueuedBusy: ({ occId, taskId }) => `⏸️ \`${occId}\` currently holds the worktree (git).\n\`${taskId}\` has been *queued* — it will *auto-start* when the holding task finishes (no need to \`go\` again).`,
     taskBranchFailRetry: ({ n, max, error, taskId }) => `⏸️ *Branch creation failed* (auto-retry ${n}/${max}): ${error}\n\`${taskId}\` has been *queued* — it will *auto-retry* shortly (no \`go\` needed).`,
     taskBranchFailExhausted: ({ max, error, taskId }) => `⏸️ *Cannot run* (auto-retry exhausted after ${max}): ${error}\nRun \`go ${taskId}\` to retry later.`,
+    taskBranchFailSameCause: ({ error, files, taskId }) => `⛔ *Branch creation failed again for the same cause as the previous attempt, so auto-retry was stopped*: ${error}
+Conflicting files: ${files}
+Move or remove those files (back them up first), then run \`go ${taskId}\` again.`,
     repoMoreSuffix: () => ' more',
     repoManualNeeded: ({ repo, filesPart, reason }) => `⚠️ Manual action needed: ${repo}${filesPart} — ${reason}`,
     repoBlockedLine: ({ repo, fileTxt, prTxt, branch }) => `🚧 Held: ${repo} — files [${fileTxt}] target unmerged PR ${prTxt}, so no new PR was created (branch \`${branch}\` was pushed).`,
@@ -365,6 +371,9 @@ const MESSAGES = {
     taskQueuedBusy: ({ occId, taskId }) => `⏸️ 現在 \`${occId}\` が作業ツリー(git)を占有中です。\n\`${taskId}\` を *キューに登録* しました — 占有作業が終わると *自動起動* します(再度 \`go\` 不要)。`,
     taskBranchFailRetry: ({ n, max, error, taskId }) => `⏸️ *ブランチ作成失敗* (自動リトライ ${n}/${max}): ${error}\n\`${taskId}\` を *キューに登録* しました — まもなく *自動リトライ* します(\`go\` 不要)。`,
     taskBranchFailExhausted: ({ max, error, taskId }) => `⏸️ *実行できません* (自動リトライ ${max}回を使い切りました): ${error}\n\`go ${taskId}\` で後ほど再実行してください。`,
+    taskBranchFailSameCause: ({ error, files, taskId }) => `⛔ *ブランチ作成が直前の試行と同じ原因で再び失敗したため、自動リトライを中止しました*: ${error}
+競合ファイル: ${files}
+該当ファイルを退避または削除(バックアップ後)してから \`go ${taskId}\` で再実行してください。`,
     repoMoreSuffix: () => ' 他',
     repoManualNeeded: ({ repo, filesPart, reason }) => `⚠️ 手動対応が必要: ${repo}${filesPart} — ${reason}`,
     repoBlockedLine: ({ repo, fileTxt, prTxt, branch }) => `🚧 保留: ${repo} — ファイル [${fileTxt}] が未マージ PR ${prTxt} 対象のため新規 PR を作成しませんでした(ブランチ \`${branch}\` は push 済み)。`,
