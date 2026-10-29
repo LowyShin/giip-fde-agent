@@ -54,8 +54,13 @@ function getCurrentBranch(cwd = BASE_DIR) {
   return (res.stdout || '').trim() || 'master';
 }
 
-// リポジトリの base ブランチ (PR の向き先) を判定。origin/HEAD → master/main 等。
+// リポジトリの base ブランチ (PR の向き先) を判定。
+// 정책(Dibo RULES.md §4): 봇/자동화 PR은 항상 통합 브랜치 `dev`로 향한다. `main`(배포 브랜치)에
+// 직접 PR하지 않는다. 따라서 origin/dev 가 존재하면 무조건 dev 를 base 로 쓴다. dev 가 없는
+// 저장소에서만 origin/HEAD(→ main/master) 로 폴백한다. 작업별 예외는 호출부의 ctx.base 로 준다.
 function getBaseBranch(cwd = BASE_DIR) {
+  const devChk = spawnSync('git', ['show-ref', '--verify', '--quiet', 'refs/remotes/origin/dev'], { cwd, windowsHide: true });
+  if (devChk.status === 0) return 'dev';
   const res = spawnSync('git', ['symbolic-ref', 'refs/remotes/origin/HEAD'], { cwd, encoding: 'utf8', windowsHide: true });
   const m = (res.stdout || '').trim().match(/refs\/remotes\/origin\/(.+)$/);
   if (m) return m[1];
