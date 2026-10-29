@@ -4,6 +4,7 @@
   "_scope": "이 목록은 CSN 별이 아니라 전역이다 — 항목이 늘면 모든 CSN 의 스윕이 그만큼 gh 조회를 더 한다. 실제로 giip 이슈 PR 이 올라가는 레포만 넣을 것.",
   "slugs": [
     "LowyShin/giipAgentLinux",
-    "LowyShin/giipAgentWin"
+    "LowyShin/giipAgentWin",
+    "LowyShin/caci-aqchat"
   ]
 }
