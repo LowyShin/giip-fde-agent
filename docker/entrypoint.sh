@@ -92,11 +92,44 @@ fi
 # 최종 사용할 CSN: SSOT 우선, 없으면(csn-projects.json 이 아직 없는 최초 기동 등) GIIP_CSN 폴백
 EFFECTIVE_CSN="${SSOT_CSN:-${GIIP_CSN:-}}"
 
+# giip #4231: slack-bot 도 scheduler 와 동일한 비-root 사용자로 돌려야 한다 — claude-cli.js 가
+# `claude -p --dangerously-skip-permissions` 로 호출하는데 claude 는 root/sudo 에서 이 옵션을
+# 거부하고, root 의 HOME 에는 그 사용자의 OAuth 인증 정보도 없다(실측: root 로 pm2 start 한
+# slack-bot 이 모든 Slack 응답에서 "claude(default) 인증 재시도 실패"로 실패, 2026-10-29).
+# scheduler 블록과 사용자를 공유해 한 곳에서만 만들고 재사용한다(중복 생성 로직 제거).
+GIIP_RUNTIME_USER="${GIIP_SCHEDULER_USER:-dev}"
+if ! id "$GIIP_RUNTIME_USER" >/dev/null 2>&1; then
+  if useradd -m -s /bin/bash "$GIIP_RUNTIME_USER" 2>/dev/null; then
+    echo "[entrypoint] created runtime user '$GIIP_RUNTIME_USER'"
+  else
+    echo "[entrypoint] WARN: 사용자 '$GIIP_RUNTIME_USER' 를 만들 수 없어 root 로 돌립니다 — claude 가 root 에서 거부되어 slack-bot/scheduler 가 실패합니다"
+    GIIP_RUNTIME_USER="root"
+  fi
+fi
+if [ "$GIIP_RUNTIME_USER" = "root" ]; then
+  GIIP_RUNTIME_HOME="/root"
+else
+  GIIP_RUNTIME_HOME="$(getent passwd "$GIIP_RUNTIME_USER" | cut -d: -f6)"
+fi
+
 # ── slack-bot (optional — only if Slack tokens are supplied) ──
 if [ -n "${SLACK_BOT_TOKEN:-}" ] && [ -n "${SLACK_APP_TOKEN:-}" ]; then
-  echo "[entrypoint] starting slack-bot via pm2"
-  (cd "$REPO_DIR/slack-bot" && npm install --omit=dev --no-audit --no-fund)
-  (cd "$REPO_DIR/slack-bot" && pm2 start index.js --name giipclaude-bot --time)
+  echo "[entrypoint] starting slack-bot via pm2 (user: $GIIP_RUNTIME_USER)"
+  if [ "$GIIP_RUNTIME_USER" = "root" ]; then
+    (cd "$REPO_DIR/slack-bot" && npm install --omit=dev --no-audit --no-fund)
+    (cd "$REPO_DIR/slack-bot" && pm2 start index.js --name giipclaude-bot --time)
+  else
+    [ -f "$GIIP_RUNTIME_HOME/.claude/.credentials.json" ] || echo "[entrypoint] WARN: $GIIP_RUNTIME_USER 의 claude 로그인 정보($GIIP_RUNTIME_HOME/.claude/.credentials.json)가 없습니다 — 'docker exec -it -u $GIIP_RUNTIME_USER <컨테이너> claude' 로 한 번 로그인해야 slack-bot 이 답변을 생성할 수 있습니다"
+    # 최초 기동 시 repo 는 root 로 clone 되어 slack-bot/ 이 root 소유일 수 있다 — 스케줄러 블록
+    # 끝의 fix-root-owned.sh(전체 /work)는 이 블록보다 뒤에 돌므로, slack-bot 디렉터리만 선제
+    # 회수한다(그래야 아래 npm install 이 이 사용자 권한으로 쓸 수 있다).
+    [ -f "$REPO_DIR/scripts/fix-root-owned.sh" ] && bash "$REPO_DIR/scripts/fix-root-owned.sh" "$REPO_DIR/slack-bot" "$GIIP_RUNTIME_USER" >/dev/null 2>&1 || true
+    if command -v runuser >/dev/null 2>&1; then
+      runuser -u "$GIIP_RUNTIME_USER" -- env HOME="$GIIP_RUNTIME_HOME" sh -c "cd '$REPO_DIR/slack-bot' && npm install --omit=dev --no-audit --no-fund && pm2 start index.js --name giipclaude-bot --time"
+    else
+      su -s /bin/sh "$GIIP_RUNTIME_USER" -c "cd '$REPO_DIR/slack-bot' && npm install --omit=dev --no-audit --no-fund && pm2 start index.js --name giipclaude-bot --time"
+    fi
+  fi
 else
   echo "[entrypoint] SLACK_BOT_TOKEN/SLACK_APP_TOKEN not set — skipping slack-bot"
 fi
@@ -118,21 +151,15 @@ if [ "${GIIP_ENABLE_SCHEDULER:-true}" = "true" ]; then
   SOFT_BUDGET_MIN="${GISSUE_SOFT_BUDGET_MIN:-15}"
   [[ "$SOFT_BUDGET_MIN" =~ ^[0-9]+$ ]] || SOFT_BUDGET_MIN=15
   CRON_CMD="GISSUE_SOFT_BUDGET_MIN=${SOFT_BUDGET_MIN} pwsh -NoProfile -NonInteractive -File \"$REPO_DIR/scripts/gissue/run-gissue-claude.ps1\"${ONLY_CSN_ARG} >> $REPO_DIR/scripts/gissue/logs/cron.log 2>&1"
-  # giip #3535: 스케줄러 cron 은 root 가 아니라 일반 사용자(dev)로 돌려야 한다. 엔진이 `claude -p --dangerously-skip-permissions` 를
+  # giip #3535: 스케줄러 cron 은 root 가 아니라 일반 사용자로 돌려야 한다. 엔진이 `claude -p --dangerously-skip-permissions` 를
   # 부르는데 claude 는 root/sudo 에서 이 옵션을 거부한다("--dangerously-skip-permissions cannot be used with root/sudo privileges").
   # root 로 돌리면 이슈를 "집는" 것처럼 로그만 남고 모든 이슈가 즉시 실패해 큐가 영원히 줄지 않는다(out.log 에서 788회 실측).
   # 같은 이유로 docs/60-operations/docker-dev-user-and-sudo.md 도 인스턴스에서는 dev 로 claude 를 돌리라고 한다.
-  SCHED_USER="${GIIP_SCHEDULER_USER:-dev}"
-  if ! id "$SCHED_USER" >/dev/null 2>&1; then
-    if useradd -m -s /bin/bash "$SCHED_USER" 2>/dev/null; then
-      echo "[entrypoint] created scheduler user '$SCHED_USER'"
-    else
-      echo "[entrypoint] WARN: 사용자 '$SCHED_USER' 를 만들 수 없어 root 로 스케줄러를 등록합니다 — claude 가 root 에서 거부되어 이슈가 처리되지 않습니다"
-      SCHED_USER="root"
-    fi
-  fi
+  # giip #4231: slack-bot 블록에서 이미 만든 사용자를 그대로 재사용한다 — 두 곳이 서로 다른 사용자를
+  # 만들면 claude 로그인 정보가 흩어져 한쪽은 항상 미인증 상태가 된다.
+  SCHED_USER="$GIIP_RUNTIME_USER"
   if [ "$SCHED_USER" != "root" ]; then
-    SCHED_HOME="$(getent passwd "$SCHED_USER" | cut -d: -f6)"
+    SCHED_HOME="$GIIP_RUNTIME_HOME"
     [ -f "$SCHED_HOME/.claude/.credentials.json" ] || echo "[entrypoint] WARN: $SCHED_USER 의 claude 로그인 정보($SCHED_HOME/.claude/.credentials.json)가 없습니다 — 'docker exec -it -u $SCHED_USER <컨테이너> claude' 로 한 번 로그인해야 스케줄러가 이슈를 처리합니다"
     # 이 사용자가 저장소/로그/lock 에 쓸 수 있어야 한다(root 로 만든 파일 회수).
     [ -f "$REPO_DIR/scripts/fix-root-owned.sh" ] && bash "$REPO_DIR/scripts/fix-root-owned.sh" >/dev/null 2>&1 || true
@@ -292,4 +319,4 @@ fi
 echo "[entrypoint] ready. tailing logs."
 touch "$REPO_DIR/scripts/gissue/logs/cron.log"
 mkdir -p /work/giipAgentLinux/log && touch /work/giipAgentLinux/log/cron.log
-exec tail -F "$REPO_DIR/scripts/gissue/logs/cron.log" /work/giipAgentLinux/log/cron.log ~/.pm2/logs/giipclaude-bot-out.log ~/.pm2/logs/giipclaude-bot-error.log 2>/dev/null
+exec tail -F "$REPO_DIR/scripts/gissue/logs/cron.log" /work/giipAgentLinux/log/cron.log "$GIIP_RUNTIME_HOME/.pm2/logs/giipclaude-bot-out.log" "$GIIP_RUNTIME_HOME/.pm2/logs/giipclaude-bot-error.log" 2>/dev/null
