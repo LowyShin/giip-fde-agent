@@ -6,9 +6,12 @@
 >
 > *(EN/JP 독자는 각 항목을 AI 에이전트에 번역 요청하세요. / Ask your AI assistant to translate entries.)*
 
-**기준일 (as of): 2026-10-27**
+**기준일 (as of): 2026-10-30**
 
 ---
+
+## 2026-10-30
+- **KNOW-015 예외 추가 — 자동 publish 전용(롤링 force-push) 브랜치는 "PR 없음" 이어도 PR 생성 대상에서 제외** — 저장소 정비 sweep 이 "원격 브랜치(PR 없음)"를 계승 대상으로 보고 자동으로 PR 을 만들던 규칙이, cron 이 롤링 amend+force-push 로 리포트를 publish 하는 **설계상 미병합 전용 브랜치**까지 매번 걸어 불필요한 PR 을 반복 생성하던 문제를 막습니다. 식별 방법(`... snapshot (auto)` 커밋·매회 `(forced update)`·리포트 자동생성물만 변경·소유 레포 노트의 "의도적 미병합" 선언)과 처리(제외+사유 기록)를 명문화했습니다. → [KNOW-015](../.agent/k_layer/notes/KNOW-015_dead_session_branch_pushed_without_pr.md)
 
 ## 2026-10-27
 - **slack-bot 작업 브랜치 생성이 untracked 충돌로 반복 실패하던 버그 수정 (giip 4224)** — 작업 클론에 untracked 로 남은 파일(예: 봇이 append 하는 `.agent/runtime/cost-usage.jsonl`)이 기점(`origin/<base>`)에 tracked 로 생기면 `checkout -B` 가 거부되어 "git 오류 자동복구 대기"가 3회 헛돌던 문제를, 충돌 파일을 임시 폴더에 백업한 뒤 치우고 checkout 후 로그는 (tracked 줄 + 로컬 고유 줄)로 병합해 복원하도록 고쳤습니다. 같은 충돌로 재실패하면 재시도를 소진하지 않고 즉시 중단해 충돌 파일 목록을 Slack 에 보고합니다. → [slack-bot/README.md](../slack-bot/README.md), [테스트](../slack-bot/tests/branch-collision.test.js)
