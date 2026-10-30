@@ -40,8 +40,20 @@ metadata:
 |---|---|---|
 | 워크트리(미커밋 파일) | `git worktree list` | 계승하거나 정본 도구 `cleanup-worktrees.ps1` 로 회수 |
 | 로컬 브랜치 | `git branch -a` | 머지된 PR headRefName 으로 rename 후 회수, 잔여는 `git branch -D` |
-| **원격 브랜치(PR 없음)** | `git ls-remote --heads origin` | **그 브랜치로 PR 을 만든다** |
+| **원격 브랜치(PR 없음)** | `git ls-remote --heads origin` | **그 브랜치로 PR 을 만든다** (단 아래 "예외" 의 자동 publish 전용 브랜치는 **제외**) |
 | stash | `git stash list` | 매칭 가능하면 이슈 브랜치로 옮기고 drop, 애매하면 그대로 두고 note |
+
+## 예외 — 자동 publish 전용(롤링 force-push) 브랜치는 PR 생성 대상이 아니다
+
+일부 레포에는 **cron 이 리포트/산출물을 롤링(`git commit --amend` + `git push -f`)으로 publish 하는 전용 브랜치**가 있다. 이런 브랜치는 **설계상 PR 없이·미병합으로 유지**되며(소유 레포의 노트가 "의도적 미병합"으로 선언), base 를 `main` 으로 PR 을 만들면 다음 force-push 로 **내용이 즉시 낡는다**. 따라서 위 표의 "원격 브랜치(PR 없음) → PR 생성" 절차를 **적용하지 않는다**.
+
+**식별 방법**(하나라도 해당하면 자동 publish 전용으로 보고 건너뛴다):
+- 최신 커밋 메시지가 `... snapshot (auto)` 등 자동 생성 표식이다.
+- `git fetch` 에서 매 회 `(forced update)` 가 나며, 직전 스냅샷을 amend+force 로 덮어쓴다.
+- 변경이 리포트 자동 생성물 경로(예: `reports/**` 의 HTML/JSONL)만이다.
+- 소유 레포의 K-Layer 노트가 해당 브랜치를 "자동 publish 전용·미병합 정상" 으로 명시한다.
+
+**처리**: 계승·PR 생성 대상에서 제외하고, 실행 기록에 "자동 publish 전용 브랜치이므로 PR 미생성(KNOW-015 예외)" 이라고 사유만 남긴다. 사람이 main 반영을 판단하는 운용이면 그 사람이 한다.
 
 ## 재사용 규칙
 
@@ -53,6 +65,7 @@ metadata:
 4. **"PR 이 없다"는 사실 확인과 "할 일이 없다"는 판단은 다르다.** 첫 번째는 명령으로 확인하고,
    두 번째는 그 확인 뒤에만 한다.
 5. 과거 기록은 고쳐 쓰지 않는다 — 남은 상태는 `> 정정(날짜): …` 블록으로 덧붙인다(rule 73).
+6. **자동 publish 전용(롤링 force-push) 브랜치는 "PR 없음" 이어도 PR 생성 대상이 아니다** — 위 "예외" 의 식별 방법으로 걸러 건너뛴다. "PR 이 없다"를 곧바로 "PR 을 만들어야 한다"로 연결하지 않는다.
 
 ## 관련
 
