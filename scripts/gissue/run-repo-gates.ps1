@@ -64,7 +64,7 @@ try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } 
 #   실제로는 19건만 돌게 된다(2026-10-24 실측: .bak 으로 확장자를 바꿔 우회 시도).
 #   그래서 발견된 파일 수가 기대값보다 **적으면 실패**로 처리한다.
 #   테스트를 추가하면 이 수를 올리고, 제거하면(의도적 제거일 때만) 이 수를 내린다.
-$ExpectedPs1TestCount = 20
+$ExpectedPs1TestCount = 23
 $ExpectedMjsTestCount = 5
 
 function Write-Gate([string]$Message) {

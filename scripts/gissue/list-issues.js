@@ -21,7 +21,8 @@
 //   node list-issues.js --csn <N> --queue --json                     # 스케줄러 우선순위 큐(아래)
 //
 // 출력(기본): 한 줄에 하나, "isn=<n> status=<s> age=<분|?> title=<제목>"
-// 출력(--json): [{isn, status, ageMinutes, title}, ...]
+// 출력(--json): [{isn, status, ageMinutes, title, cSn}, ...]
+//   cSn = 응답이 실제로 돌려준 이슈의 csn(요청한 csn 이 아니다 — giip #4116).
 //
 // ── --queue 모드 (giip #2645) ────────────────────────────────────────────
 // run-gissue-claude.ps1 의 Get-GissueIssueQueue 가 쓰는 "단일 우선순위 큐"를 돌려준다.
@@ -39,7 +40,7 @@
 // 정렬: qprio(0=STALE_IN_PROGRESS, 1=PENDING, 2=READY, 3=REVIEW/TESTED — 재확인은 READY 실작업 이후)
 //       → is_user_req DESC → has_comment ASC(코멘트 없는 신생 이슈 우선, giip #1651)
 //       → elapsedMin DESC(가장 오래 정지/대기한 것 우선)
-// 출력(--queue --json): [{isn, title, status, elapsedMin, lastAuthor}, ...]
+// 출력(--queue --json): [{isn, title, status, elapsedMin, lastAuthor, cSn}, ...]
 //   (qprio/is_user_req/has_comment 는 정렬 전용이라 출력에 포함하지 않는다 — 호출부 계약 유지)
 // 코멘트 조회 비용: 이슈 목록 API 가 last_comment_date/last_comment_author 를 이미 주므로
 //   elapsed/lastAuthor/has_comment 는 추가 호출 없이 계산한다. 코멘트 본문이 실제로 필요한
@@ -220,6 +221,8 @@ async function runQueue() {
         isn,
         title: sanitize(issue.title ?? issue.Title ?? ''),
         status: spec.label,
+        // 응답이 실제로 물어낸 csn 이 속한 csn (giip #4116 — 요청값 아님).
+        cSn: issue.cSn ?? issue.CSn ?? null,
         elapsedMin: elapsed === Number.MAX_SAFE_INTEGER ? 0 : elapsed,
         lastAuthor: sanitize(lastAuthor),
         _qprio: spec.qprio,
@@ -237,6 +240,7 @@ async function runQueue() {
   ));
   const out = rows.map((r) => ({
     isn: r.isn, title: r.title, status: r.status, elapsedMin: r.elapsedMin, lastAuthor: r.lastAuthor,
+    cSn: r.cSn,
   }));
   if (AS_JSON) {
     console.log(JSON.stringify(out));
@@ -284,6 +288,9 @@ async function main() {
         status,
         ageMinutes,
         title: issue.title ?? issue.Title ?? '',
+        // 응답이 실제로 물어낸 csn 이 속한 csn 을 알려 준다(giip #4116). 요청 csn 을 그대로 붙이면
+        // "클램프된 응답"(서버가 다른 csn 의 이슈를 돌려주는 경우)을 구분할 수 없다.
+        cSn: issue.cSn ?? issue.CSn ?? null,
       });
     }
   }

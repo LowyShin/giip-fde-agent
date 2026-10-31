@@ -2097,6 +2097,7 @@ try {
 # csn-projects.json 에 없는 csn 만 list-issues.js 로 열린 이슈를 조회한다(사고의 실제 원인이었던
 # project-csn.json ↔ csn-projects.json 의 차집합을 그대로 겨냥한다).
 $UnmappedCsnGuardLog = Join-Path $LogDir 'gissue_csnguard.log'
+. (Join-Path $Root 'lib/csn-guard.ps1')   # giip 4116/4139: 응답 cSn 대조(Select-GissueRowsMatchingCsn)
 
 function Get-GissueOpenIssuesAllCsn($mappedCsns) {
     $result = @()
@@ -2125,8 +2126,9 @@ function Get-GissueOpenIssuesAllCsn($mappedCsns) {
             $raw = & node $ListIssuesScript --csn $c --status 'PENDING,READY,IN_PROGRESS,REVIEW,TESTED' --accounts-file $GiipAccountsFile --api-base $ApiBase --json 2>&1
             if ($LASTEXITCODE -ne 0) { continue }
             $parsed = ($raw | Out-String) | ConvertFrom-Json
-            foreach ($r in @($parsed)) {
-                if (-not $r -or $null -eq $r.isn) { continue }
+            # giip 4116/4139: 응답 행의 실제 cSn 이 요청 csn 과 같은 행만 신뢰한다(서버 클램프 방어).
+            $trusted = Select-GissueRowsMatchingCsn -Rows $parsed -RequestedCsn "$c" -Log { param($m) "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $m" | Out-File -FilePath $UnmappedCsnGuardLog -Append -Encoding UTF8 }
+            foreach ($r in @($trusted)) {
                 $result += [pscustomobject]@{ Csn = "$c"; Isn = "$($r.isn)"; Status = "$($r.status)" }
             }
         } catch {}
@@ -2192,28 +2194,30 @@ function Invoke-GissueUnmappedCsnGuard {
             Write-GuardLine "$Tag csn=$csnVal, 미처리 이슈 isn=[$($isnList -join ',')]"
             $found += [pscustomobject]@{ Csn = $csnVal; Isns = $isnList }
 
-            $commentText = "[dp01-scheduler]$Tag csn-projects.json 미등록으로 :07 스케줄러 자동처리 대상이 아닙니다 - csn-projects.json 에 등록이 필요합니다. (auto-detected: gissue_csnguard, giip #2362)"
-
-            foreach ($isn in $isnList) {
-                $hasTag = Test-GissueLatestCommentHasTag -bashExe $BashExePath -getIssueScript $GetIssueScriptPath -isn $isn -csn $csnVal -tag $Tag
-                if ($hasTag -eq $true) {
-                    Write-GuardLine "$Tag SKIP-DUP: isn=$isn (csn=$csnVal) 최신 코멘트에 이미 태그 있음, 재게시 안 함"
+            # giip 4116/4139: 원래 이슈들에는 코멘트를 남기지 않는다(거짓 양성 코멘트 사고). 게시 단위는 csn 1건이며,
+            # 운영 이슈 등록은 GISSUE_CSNGUARD_OPS_CSN 이 지정된 때만 한다(기본 침묵 — 남의 CSN 에 쓰지 않는다).
+            $opsCsn = "$($env:GISSUE_CSNGUARD_OPS_CSN)".Trim()
+            $opsTitle = "[OPS] csn $csnVal 담당 배포 없음 — 이슈 $($isnList.Count)건 방치"
+            if (-not $opsCsn -or $opsCsn -notmatch '^\d+$') {
+                Write-GuardLine "$Tag SKIP-NOOPSCSN: csn=$csnVal 이슈 $($isnList.Count)건 — GISSUE_CSNGUARD_OPS_CSN 미지정이라 게시 없음(로그만)"
+                continue
+            }
+            if ($SkipPosting) {
+                Write-GuardLine "$Tag TEST-WOULD-POST: ops csn=$opsCsn title=$opsTitle"
+                continue
+            }
+            try {
+                $existing = & node $ListIssuesScript --csn $opsCsn --status 'PENDING,READY,IN_PROGRESS,REVIEW' --accounts-file $GiipAccountsFile --api-base $ApiBase --json 2>&1 | Out-String | ConvertFrom-Json
+                $dup = @($existing | Where-Object { $_.cSn -and "$($_.cSn)" -eq $opsCsn -and $_.title -like "[[]OPS] csn $csnVal 담당 배포 없음*" })
+                if ($dup.Count -gt 0) {
+                    Write-GuardLine "$Tag SKIP-DUP: 운영 이슈 이미 있음(isn=$($dup[0].isn)) csn=$csnVal"
                     continue
                 }
-                if ($null -eq $hasTag) {
-                    Write-GuardLine "$Tag SKIP-UNKNOWN: isn=$isn (csn=$csnVal) 최신 코멘트 조회 실패 — 중복 스팸 방지를 위해 이번 사이클엔 게시 보류"
-                    continue
-                }
-                if ($SkipPosting) {
-                    Write-GuardLine "$Tag TEST-WOULD-POST: isn=$isn (csn=$csnVal)"
-                    continue
-                }
-                try {
-                    $postOut = & $BashExePath $GetIssueScriptPath $isn $csnVal --comment $commentText 2>&1 | Out-String
-                    Write-GuardLine "$Tag POSTED: isn=$isn (csn=$csnVal) 안내 코멘트 게시 완료. 출력: $($postOut.Trim())"
-                } catch {
-                    Write-GuardLine "$Tag POST-FAIL: isn=$isn (csn=$csnVal) 코멘트 게시 실패: $($_.Exception.Message)"
-                }
+                $body = "csn $csnVal 에 열린 이슈 $($isnList.Count)건(isn=$($isnList -join ','))이 있으나 이 배포의 csn-projects.json 에 담당 매핑이 없습니다. (auto-detected: gissue_csnguard, giip 4116)"
+                $regOut = & node $RegisterIssueScript --title $opsTitle --content $body --csn $opsCsn 2>&1 | Out-String
+                Write-GuardLine "$Tag POSTED: ops csn=$opsCsn 운영 이슈 1건 등록. 출력: $($regOut.Trim())"
+            } catch {
+                Write-GuardLine "$Tag POST-FAIL: ops csn=$opsCsn 등록 실패: $($_.Exception.Message)"
             }
         }
     } catch {
