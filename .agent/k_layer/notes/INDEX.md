@@ -18,4 +18,4 @@
 | [KNOW-CSN70424](KNOW-CSN70424_giipdb_submodule_missing.md) | giipdb 서브모듈 부재는 [H] 단계 실행 불가의 근거가 아니었다 — 정본 스크립트가 형제 체크아웃에 존재하고 정상 실행됨(2026-10-26 정정) | 2026-10-26 CSN 70424 저장소 정비 53차 세션 실측 · 56차 세션이 정정·커밋 (work_history 20261026_0520) | 6272 |
 | [KNOW-014](KNOW-014_missing_tool_is_not_blocking_evidence.md) | 도구가 이 저장소 안에 없다는 사실은 단계를 건너뛸 근거가 아니다 — 정본 경로를 먼저 찾고, SK 부재 단정도 근거가 아니다 | 2026-10-26 CSN 70424 저장소 정비 53차 세션 실측 · 56차 세션이 정정·커밋 (work_history 20261026_0520) · tKB 등록 확정(kbSn 6694) | 6694 |
 | [KNOW-015](KNOW-015_dead_session_branch_pushed_without_pr.md) | "열린 PR 0건"은 "할 일 없음"의 증거가 아니다 — PR 생성 전에 죽은 세션은 원격 브랜치만 남으므로 `git ls-remote --heads origin` 으로 확인해 그 브랜치로 PR 을 만들어 계승 | 2026-10-26 CSN 70424 저장소 정비 57차 세션 실측 (work_history 20261026_0610) | 6697 |
-| [KNOW-016](KNOW-016_revert_decision_unit_is_request_checklist_not_pr_presence.md) | 되돌림 판정의 단위는 "PR 유무"가 아니라 "의뢰 항목 이행 여부" — 코드 변경 항목만 PR 이 증거, 판정불가는 되돌리지 않고 보류, 신규 판정은 Shadow 로 먼저 | giip 4334 | (등록 대기) |
+| [KNOW-016](KNOW-016_revert_decision_unit_is_request_checklist_not_pr_presence.md) | 되돌림 판정의 단위는 "PR 유무"가 아니라 "의뢰 항목 이행 여부" — 코드 변경 항목만 PR 이 증거, 판정불가는 되돌리지 않고 보류, 신규 판정은 Shadow 로 먼저 | giip 4334 | 6740 |
