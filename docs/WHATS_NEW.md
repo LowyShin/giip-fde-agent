@@ -11,6 +11,8 @@
 ---
 
 ## 2026-10-31
+- **미매핑 CSN 가드: 응답 cSn 대조 (giip 4116/4139)** — 서버가 멤버가 아닌 csn 요청을 홈 csn 으로 클램프해도 가드가 그 이슈를 미등록 csn 의 것으로 오인해 거짓 코멘트를 남기지 않도록, 응답 행의 `cSn` 이 요청 csn 과 같은 행만 신뢰합니다(`SKIP-CLAMP`/`SKIP-NOCSN`, `lib/csn-guard.ps1`). 이슈별 코멘트는 중단하고 `logs/gissue_csnguard.log` 에 결과를 남깁니다. → [사양](./60-operations/hourly-issue-scheduler.md)
+- **slack-bot: PR 없는 조사/답변형 완료 보고 (giip 4231)** — 코드 변경·PR 없이 끝난 태스크는 REVIEW 전이 코멘트에 `## 실행자 결론` 을 싣고, 전이 전에 첫 줄이 `[NO-PR-REASON]` 인 독립 코멘트(의뢰 요약·항목별 결과·결론·최종 판정)를 남겨 PR 게이트의 REVIEW->READY 도돌이표를 막습니다. → [사양](./60-operations/hourly-issue-scheduler.md)
 - **런타임 전용 PR 차단 + 게이트 디바운스 (giip 4300)** — 작업 브랜치 커밋이 `.agent/runtime/**` 를 스테이징하지 않고(`slack-bot/runtime-artifact-guard.js`), base 대비 변경이 런타임 경로뿐이면 PR 을 열지 않습니다. 또한 `pr-gate-sweep.ps1`/`review-done-audit.ps1` 는 마지막 작업 코멘트가 `-MinIdleMinutes`(기본 10분) 이내인 이슈의 되돌림·스트라이크·에스컬레이션을 한 틱 미룹니다(세션 handoff 와의 레이스 방지). → [슬랙봇 README](../slack-bot/README.md), [스케줄러 사양 13-4](60-operations/hourly-issue-scheduler.md), [KNOW-017](../.agent/k_layer/notes/KNOW-017_runtime_only_pr_and_gate_debounce.md)
 
 ## 2026-10-30

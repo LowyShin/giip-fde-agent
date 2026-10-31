@@ -896,3 +896,29 @@ Shadow 가 쌓이지 않던 원인(수정됨): `review-done-audit.ps1` 은 `pr-g
 # 레포 전체 .ps1 의 구문 + BOM 일괄 검사
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\check-ps1-parse.ps1 -All
 ```
+
+## 미매핑 CSN 가드(Phase -2.5)의 응답 cSn 대조 (giip 4116 / 4139)
+
+- 용도: `csn-projects.json` 에 없는 csn 에 열린 이슈가 방치돼 있는지 감시한다(`run-gissue-claude.ps1` 의 `Invoke-GissueUnmappedCsnGuard`).
+- 처리: 후보 csn 을 `list-issues.js --json` 으로 조회하되, **응답 행의 실제 `cSn` 이 요청 csn 과 같은 행만** 신뢰한다
+  (`lib/csn-guard.ps1` 의 `Select-GissueRowsMatchingCsn`). 서버는 멤버가 아닌 csn 요청을 홈 csn 으로 조용히 클램프하므로,
+  요청값을 그대로 붙이면 다른 csn 의 이슈가 "미매핑 csn 의 방치 이슈"로 오인된다.
+  - `cSn != 요청 csn` -> `SKIP-CLAMP`, `cSn` 없음 -> `SKIP-NOCSN`: 행을 버리고 로그만 남긴다(기본은 침묵).
+  - 원래 이슈들에는 코멘트를 남기지 않는다. 운영 이슈 1건(`[OPS] csn <N> 담당 배포 없음 — 이슈 <건수>건 방치`)은 환경변수
+    `GISSUE_CSNGUARD_OPS_CSN` 이 지정된 때만 해당 csn 에 등록하고, 미지정이면 `SKIP-NOOPSCSN` 로그만 남긴다.
+- 저장: `logs/gissue_csnguard.log` 에 `POSTED` / `SKIP-*` / `OK` 를 매 실행 기록한다. `list-issues.js --json`(및 `--queue --json`)은 각 행에 `cSn` 을 포함한다.
+- 소비처: 이 로그를 운영자가 읽는다. 회귀 테스트: `scripts/gissue/tests/test-csn-guard-clamp.ps1`.
+- 미반영(후속): 판정 재료를 DB 정본 매핑으로 바꾸는 항목은 이 레포에 DB 접근이 없고 `csn-projects.json` 이 이 배포의 정본이라(§13) 적용하지 않았다.
+
+## slack-bot 의 PR 없는 조사/답변형 완료 보고 (giip 4231)
+
+- 용도: 코드 변경·PR 이 없는 조사/점검/답변형 태스크가 끝났을 때, PR 완료 게이트(`pr-gate-sweep.ps1`)가 "대응 PR 없음"으로 REVIEW 이슈를
+  READY 로 되돌리는 도돌이표를 막고, 실행자 결론을 giip 코멘트에 남긴다.
+- 처리: `slack-bot/handlers.js` `onComplete` 가 REVIEW 전이 코멘트에 `## 실행자 결론`(결과물 4000자 클립)을 포함한다.
+  PR 이 하나도 없고(`allUrls` 비어 있음) 결론이 있으면, REVIEW 전이 **전에** 첫 줄이 `[NO-PR-REASON]` 인 독립 코멘트를
+  `giip-task.maybeCommentRaw`(행위자 헤더 없음)로 남긴다. 본문은 의뢰 요약 / 요청 항목별 결과 / 실행자 결론 / 최종 판정이다
+  (`slack-bot/no-pr-report.js`, 문구는 `i18n-ui.js` ko/en/ja). 상태전이 사유(Why)에 적는 것은 게이트가 인정하지 않는다
+  (`giip-api.issueUpdate` 가 `## [actor] 상태전이` 를 첫 줄로 붙이기 때문).
+- 저장: 코멘트는 `giipIssueComments`(tGiipIssueComment) 에 저장된다. 소비처: `gissue-audit-lib.ps1` `Test-HasNoPrReasonMarker` ->
+  보고형 완료 판정(`Invoke-ReportCompletionJudge`, giip 3801)이 의뢰와 결과를 대조해 FULFILLED 면 DONE, 아니면 되돌린다.
+- 범위 밖: `onError`(에러 종료)는 완료 주장이 아니므로 마커를 남기지 않는다. 테스트: `slack-bot/tests/no-pr-report.test.js`.

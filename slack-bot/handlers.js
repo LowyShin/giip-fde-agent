@@ -588,8 +588,9 @@ async function startTaskExecution(pendingKey, pendingTask, channelId, replyTs, t
     onComplete: async (resultFile) => {
       // 결과 내용을 태스크 파일에 추가하고 done/ 폴더로 이동
       let doneTaskFile = null;
+      let resultContent = ''; // giip 4231: REVIEW 전이 코멘트 생성 지점에서 접근하도록 콜백 스코프로 끌어올림
       try {
-        const resultContent = fs.existsSync(resultFile) ? fs.readFileSync(resultFile, 'utf8') : '';
+        resultContent = fs.existsSync(resultFile) ? fs.readFileSync(resultFile, 'utf8') : '';
         doneTaskFile = tm.completeTaskFile(pendingTask.taskId, resultContent);
       } catch (e) {
         console.error('[Bot] completeTaskFile error:', e.message);
@@ -650,9 +651,19 @@ async function startTaskExecution(pendingKey, pendingTask, channelId, replyTs, t
             await gt.maybeFinish(channelId, pendingTask.isn, 'IN_PROGRESS',
               `⚠️ 아직 완료 아님(REVIEW 보류). 이 태스크가 바꾼 다음 저장소 변경분이 PR 로 반영되지 않았습니다(수동 PR 필요): ${unlandedTxt}${prTxt}`);
           } else {
+            const nrr = require('./no-pr-report');
+            const reportOnly = nrr.isReportOnlyCompletion(allUrls, resultContent);
             const cmt = uiT(uiLang, 'issueReviewReport', { result: allUrls.length
               ? `PR: ${allUrls.join(' , ')}`
-              : `.agent/tasks/done/${pendingTask.taskId}.md (push/PR failed)` });
+              : `.agent/tasks/done/${pendingTask.taskId}.md (push/PR failed)` })
+              + nrr.buildConclusionBlock(resultContent, uiT(uiLang, 'conclusionHeading'));
+            // giip 4231: PR 없는 조사/답변형 완료는 REVIEW 전이 전에 첫 줄이 [NO-PR-REASON] 인 독립 코멘트를 먼저 남겨
+            //   PR 완료 게이트가 REVIEW->READY 로 되돌리지 않고 보고형 완료 판정으로 넘기게 한다.
+            if (reportOnly) {
+              await gt.maybeCommentRaw(channelId, pendingTask.isn, nrr.buildNoPrReasonComment(
+                { requestText: pendingTask.requestText || '', resultContent, taskId: pendingTask.taskId },
+                uiT(uiLang, 'noPrReasonLabels')));
+            }
             await gt.maybeFinish(channelId, pendingTask.isn, 'REVIEW', cmt);
           }
         }

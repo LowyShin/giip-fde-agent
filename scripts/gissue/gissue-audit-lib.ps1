@@ -147,9 +147,67 @@ function Invoke-GhPrQuery($repoSpec, $ghArgs) {
     }
 }
 
+# [giip #4335] 이슈 본문/코멘트 텍스트에서 PR 링크(https://github.com/OWNER/REPO/pull/N)를 뽑아낸다.
+# 왜 필요한가: Get-NestedRepoPaths($wd) + audit-extra-repos.json 은 "로컬 체크아웃이 있거나 수동으로
+#   등록해 둔 레포"만 본다. 제품 레포(예: giipv3)처럼 그 목록 밖에 PR 이 열리면 Test-IssueHasPr 가
+#   "PR 없음"으로 오판해 정상 완료를 되돌린다(giip #4335 실사고: PR #991 이 SHINSEMA/giipv3 에 있었는데
+#   4회 연속 "PR 없음"으로 REVIEW→READY 되돌려짐). 이슈 자신의 본문/코멘트에 실제로 링크된 PR 은
+#   "이 isn 이 그 PR 을 참조한다"는 가장 직접적인 증거이므로, 레포 스캔을 대체하지 않고 보강한다.
+function Get-PrLinksFromText([string[]]$Texts) {
+    $seen = @{}
+    $out = @()
+    foreach ($t in @($Texts)) {
+        if (-not $t) { continue }
+        foreach ($m in [regex]::Matches("$t", 'github\.com/([\w.-]+/[\w.-]+?)(?:\.git)?/pull/(\d+)')) {
+            $slug = $m.Groups[1].Value
+            $num = $m.Groups[2].Value
+            if (-not (Test-ValidPrNumber $num)) { continue }
+            $key = "$($slug.ToLowerInvariant())#$num"
+            if ($seen.ContainsKey($key)) { continue }
+            $seen[$key] = $true
+            $out += [pscustomobject]@{ Slug = $slug; Number = [int64]$num }
+        }
+    }
+    return $out
+}
+
+# 위에서 뽑은 후보를 실제로 `gh pr view --repo <slug> <number>` 로 조회해 존재/상태를 확인한다
+# (오타·삭제된 레포·권한 없음 등은 조용히 제외 — 과대 인정 방지). Invoke-GhPrQuery 의 `slug:` 경로를
+# 그대로 써서 로컬 체크아웃 여부와 무관하게 동작한다.
+#
+# $Isn(선택): 넘기면 그 PR 자신의 title/headRefName/body 가 이 isn 을 참조하는 것만 인정한다
+#   (기존 레포스캔 broad-search 의 isnRe/isnBodyRe 와 동일 기준). 이게 꼭 필요한 이유(giip #4335 (2)
+#   실측): 한 이슈 본문/코멘트에 "참고용"으로 걸린, 이 isn 과 무관한 다른 PR 링크(예: 같은 이슈가
+#   언급한 별개의 문서 정정 PR)가 우연히 먼저 머지돼 있으면, isn 필터 없이는 그 무관 PR 을 "이 isn 의
+#   대응 PR 머지됨"으로 오인해 조기 DONE 처리될 위험이 있다. $Isn 을 생략하면(레거시 호환) 필터하지
+#   않는다 — 호출부가 "PR 존재 여부"만 넉넉하게 볼 때 쓴다.
+function Get-ValidatedPrLinks($Links, $Isn = $null) {
+    $isnRe = $null; $isnBodyRe = $null
+    if ($Isn) { $isnRe = "(?<!\d)$Isn(?!\d)"; $isnBodyRe = "#$Isn(?!\d)" }
+    $out = @()
+    foreach ($l in @($Links)) {
+        if (-not $l -or -not (Test-ValidPrNumber $l.Number)) { continue }
+        $rows = @(Invoke-GhPrQuery "slug:$($l.Slug)" @('pr', 'view', "$($l.Number)", '--json', 'number,state,url,title,headRefName,mergedAt,body'))
+        $row = $rows | Select-Object -First 1
+        if (-not $row -or -not (Test-ValidPrNumber $row.number)) { continue }
+        if ($isnRe) {
+            $isRelevant = ($row.headRefName -and $row.headRefName -match $isnRe) -or ($row.title -and $row.title -match $isnRe) -or ($row.body -and $row.body -match $isnBodyRe)
+            if (-not $isRelevant) { continue }
+        }
+        $out += [pscustomobject]@{
+            repo = "slug:$($l.Slug)"; number = $row.number; url = $(if ($row.url) { $row.url } else { "https://github.com/$($l.Slug)/pull/$($l.Number)" })
+            title = $row.title; slug = $l.Slug; headRefName = $row.headRefName; state = $row.state
+            merged = [bool]$row.mergedAt; how = 'text-link'
+        }
+    }
+    return $out
+}
+
 # 이 isn 에 대응하는 PR(어느 상태든: open/merged/closed)이 nested repo 중 하나라도 있는가.
 # 오탐(불필요 되돌림) 최소화를 위해 넉넉하게 판정한다.
-function Test-IssueHasPr($isn, $repos) {
+# $LinkTexts(선택, giip #4335): 이슈 본문/코멘트 등 자유 텍스트. 생략하면(기본 @()) 기존 동작과
+# 100% 동일 — 레포 스캔으로 못 찾았을 때만 보조로 검사해 기존 호출부(인자 미전달)는 영향 없다.
+function Test-IssueHasPr($isn, $repos, $LinkTexts = @()) {
     $isnRe = "(?<!\d)$isn(?!\d)"
     # giip #2077 (2): 비표준 브랜치명 + 제목에 isn 이 없고 PR 본문(body)에만 "#<isn>"(예: "giip #2077")이
     # 있는 PR 은, --search 가 잡아와도 아래 필터가 headRefName/title 만 봤기 때문에 탈락해 "PR 없음"으로
@@ -168,13 +226,19 @@ function Test-IssueHasPr($isn, $repos) {
             }
         }
     }
+    # 3) [giip #4335] 레포 스캔 범위 밖: 이슈 본문/코멘트에 실제로 링크된, 이 isn 을 참조하는 PR 이 있으면 인정.
+    if (@($LinkTexts).Count -gt 0) {
+        $links = Get-PrLinksFromText $LinkTexts
+        if (@($links).Count -gt 0 -and @(Get-ValidatedPrLinks $links $isn).Count -gt 0) { return $true }
+    }
     return $false
 }
 
 # 이 isn 에 대응하는 PR이 "머지까지" 됐는가(review-done-audit.ps1 전용 — pr-gate-sweep.ps1 은
 # open/merged/closed 를 구분하지 않고 "PR 존재" 만 보지만, DONE 확정에는 머지 여부까지 필요하다,
 # giip #1123). --state merged 로 직접 조회해 정확하게 판정한다(squash/rebase/merge 무관).
-function Test-IssueHasMergedPr($isn, $repos) {
+# $LinkTexts: Test-IssueHasPr 와 동일 계약(선택, 기본 @() 이면 기존 동작과 동일).
+function Test-IssueHasMergedPr($isn, $repos, $LinkTexts = @()) {
     $isnRe = "(?<!\d)$isn(?!\d)"
     $isnBodyRe = "#$isn(?!\d)"   # giip #2077 (2): PR 본문의 "#<isn>" 참조도 매치(Test-IssueHasPr 와 동일)
     foreach ($repo in $repos) {
@@ -185,6 +249,13 @@ function Test-IssueHasMergedPr($isn, $repos) {
             if (($pr.headRefName -and $pr.headRefName -match $isnRe) -or ($pr.title -and $pr.title -match $isnRe) -or ($pr.body -and $pr.body -match $isnBodyRe)) {
                 return $true
             }
+        }
+    }
+    if (@($LinkTexts).Count -gt 0) {
+        $links = Get-PrLinksFromText $LinkTexts
+        if (@($links).Count -gt 0) {
+            $validated = @(Get-ValidatedPrLinks $links $isn | Where-Object { $_.merged })
+            if ($validated.Count -gt 0) { return $true }
         }
     }
     return $false
@@ -266,7 +337,8 @@ function Get-IssuePrInfoViaNode($isn, $repos) {
 #   이제 어떤 경로로 찾았든 Test-ValidPrNumber 를 통과한 PR 만 반환한다.
 # 반환 필드: repo/number/url/title/slug + (Node 경로일 때) state/headRefName/how/all
 #   all = 이 isn 에 매칭된 모든 PR(레포 횡단). 판정 코멘트에 "실제로 평가한 PR" 증거를 싣는 데 쓴다.
-function Get-IssuePrInfo($isn, $repos) {
+# $LinkTexts(선택, giip #4335): Test-IssueHasPr 와 동일 계약 — 레포 스캔이 전부 실패했을 때만 폴백.
+function Get-IssuePrInfo($isn, $repos, $LinkTexts = @()) {
     # 1순위: 판정 규칙 정본(pr-lookup.mjs) 재사용.
     $node = Get-IssuePrInfoViaNode $isn $repos
     if ($node -and $node.primary -and (Test-ValidPrNumber $node.primary.number)) {
@@ -295,6 +367,14 @@ function Get-IssuePrInfo($isn, $repos) {
             if (($pr.headRefName -and $pr.headRefName -match $isnRe) -or ($pr.title -and $pr.title -match $isnRe)) {
                 return @{ repo = $repo; number = $pr.number; url = $pr.url; title = $pr.title; slug = (Get-RepoSlugFromUrl $pr.url); headRefName = $pr.headRefName; state = $pr.state; how = 'broad-ps'; all = @() }
             }
+        }
+    }
+    # 3순위(폴백, giip #4335): 레포 스캔이 전부 실패 — 이슈 본문/코멘트에 링크된, 이 isn 을 참조하는 PR 을 직접 조회.
+    if (@($LinkTexts).Count -gt 0) {
+        $links = @(Get-ValidatedPrLinks (Get-PrLinksFromText $LinkTexts) $isn)
+        if ($links.Count -gt 0) {
+            $p = $links[0]
+            return @{ repo = $p.repo; number = $p.number; url = $p.url; title = $p.title; slug = $p.slug; headRefName = $p.headRefName; state = $p.state; how = 'text-link'; all = @($links) }
         }
     }
     return $null
@@ -833,16 +913,16 @@ function Get-LatestUnmetChecklistItems($Comments) {
 }
 
 # 코드 항목 증거로 쓸 PR 상태. 조회 실패는 Known=$false(보정 안 함).
-function Get-ChecklistPrEvidence($isn, $repos) {
+function Get-ChecklistPrEvidence($isn, $repos, $LinkTexts = @()) {
     $ev = @{ Known = $false; HasMerged = $false; HasAny = $false; Text = '(PR 조회 불가 - 레포 경로 없음)'; }
-    if (-not $repos -or @($repos).Count -eq 0) { return $ev }
+    if ((-not $repos -or @($repos).Count -eq 0) -and @($LinkTexts).Count -eq 0) { return $ev }
     try {
-        $merged = [bool](Test-IssueHasMergedPr $isn $repos)
-        $any = [bool](Test-IssueHasPr $isn $repos)
+        $merged = [bool](Test-IssueHasMergedPr $isn $repos $LinkTexts)
+        $any = [bool](Test-IssueHasPr $isn $repos $LinkTexts)
         $ev.Known = $true; $ev.HasMerged = $merged; $ev.HasAny = ($any -or $merged)
         $lines = @("- 머지된 대응 PR: $(if ($merged) { '있음' } else { '없음' }) / 대응 PR 존재: $(if ($ev.HasAny) { '있음' } else { '없음' })")
         if ($ev.HasAny) {
-            $info = Get-IssuePrInfo $isn $repos
+            $info = Get-IssuePrInfo $isn $repos $LinkTexts
             if ($info) {
                 $cands = @($info.all | Where-Object { $_ }) ; if ($cands.Count -eq 0) { $cands = @($info) }
                 foreach ($p in @($cands | Select-Object -First 6)) {
