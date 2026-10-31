@@ -759,6 +759,61 @@ A-3b 는 `-LiveCsn` 기본값(`0`)일 때 `csn-projects.json` 의 **첫 번째 e
 > A-3b 의 판정도 하위 도구의 메시지 문자열(`조회 실패`) 매칭에서 **종료코드 판정**으로 바꿨습니다
 > (`verify-runner.mjs` 의 계약: 0=PASS / 1=FAIL / 2=verify 블록 없음 / 3=판정 불가).
 
+## 13-3) REVIEW/DONE 되돌림 판정 = 의뢰 체크리스트 (giip 4334)
+
+사후 점검(`pr-gate-sweep.ps1`, `review-done-audit.ps1`)이 REVIEW/DONE 이슈를 READY 로 되돌리는 근거를
+"대응 PR 이 있고 머지됐는가"에서 **"의뢰 항목이 전부 이행됐는가"** 로 바꾸는 사양입니다. 의뢰는 보통 복수
+항목이고 문서 등록·외부 설정·조사처럼 코드 변경이 아닌 항목이 섞여 있는데, PR 유무 하나로 전체 완료를 뒤집으면
+정상 완료가 반복해서 되돌려집니다(분류 자체도 키워드 근사치였습니다).
+
+### 판정 규칙
+
+| 단계 | 내용 |
+|---|---|
+| 1. 분해 | 이슈 본문 + 의뢰를 확정/재정의한 코멘트를 서로 독립적으로 확인 가능한 항목으로 나눕니다(경량 LLM, 도구 없음 — `Invoke-ChecklistJudge`). 각 항목은 `code`(소스 변경 필요) / `other`(문서·설정·조사·운영 조치). |
+| 2. 항목 판정 | 항목마다 `MET`(충족) / `UNMET`(미충족) / `UNDETERMINED`(판정불가) + 근거(코멘트·PR·증적 링크). PR 머지는 **`code` 항목의 증거 중 하나**일 뿐입니다. `code` 항목이 `MET` 인데 머지된 PR·커밋 링크 증거가 없으면 자동 보정합니다(미머지 PR 이 있으면 `UNMET`, PR 자체가 없으면 `UNDETERMINED`). |
+| 3. 결정 | 전 항목 `MET` → **KEEP**(현 상태 유지/확정). `UNMET` 1건 이상 → **REVERT**(READY). `UNMET` 0건 + `UNDETERMINED` 있음 → **HOLD**(되돌리지 않고 NEEDS_DECISION + 필요한 증거 명시). 판정 호출 실패·빈 응답·항목 파싱 실패 → **전이 없음**. |
+| 4. 코멘트 의무 | 모든 전이는 `## 의뢰 체크리스트 판정` 절(전 항목)을 담은 감사 코멘트와 함께여야 합니다. 마커: `[REVIEW-AUDIT:CHECKLIST-REVERT]` / `-HOLD` / `-KEEP`. Live 모드의 `review-done-audit` 은 이 코멘트가 등록되지 않은 isn 의 READY/DONE 전이를 코드로 차단합니다(`[CHECKLIST-GUARD]`). |
+| 5. 후속 세션 | REVERT 코멘트의 `## 미충족 항목 (다음 세션 작업 범위)` 절(`- [ ] (C<번호>) ...`)이 다음 세션의 우선 작업 범위입니다. `run-gissue-claude.ps1` 의 [C] 지시문이 이를 강제하고, `Get-LatestUnmetChecklistItems` 가 같은 형식을 파싱합니다. |
+| 6. 흡수된 게이트 | PR 없음 단독 REVERT / scope-gate / comment-gate / 보고형(`[NO-PR-REASON]`) 대조 / VERIFY-GATE 실패는 별도 되돌림이 아니라 항목 판정의 **증거**입니다(VERIFY-GATE 실패는 "verify 블록 PASS" 미충족 항목으로 합류). |
+| 7. 무한루프 방지 | 전 게이트 합산 되돌림 횟수(`Get-GateRevertTally`, 신규 키 `checklist` 포함)가 캡(기본 3)을 넘거나, 직전 REVERT 와 미충족 항목 집합이 같으면 더 되돌리지 않고 WARN(`review-done-audit`) / NEEDS_DECISION(`pr-gate-sweep`) 으로 에스컬레이션합니다. 기존 "동일 코멘트 반복 → WARN" 도 `CHECKLIST-REVERT` 에 적용됩니다. |
+
+적용 범위: `review-done-audit` 에서는 구룰이 **PR-전용 REVERT** 를 내거나(Modification 분기) **DONE 승격(PASS)** 을 내는 지점에만 개입합니다. 구룰이 되돌리지 않던 경로(FINAL 유지, `[NO-PR-REASON]` 유지, Uncertain 스킵)에서 새 되돌림을 만들지는 않습니다.
+
+### 모드와 롤아웃 (Live 는 명시적으로만)
+
+`-ChecklistMode Off|Shadow|Live` (미지정이면 환경변수 `GISSUE_CHECKLIST_MODE`, 그것도 없으면 **Shadow**). `-Live`(쓰기 허용)와는 별개의 스위치입니다.
+
+| 모드 | 동작 |
+|---|---|
+| `Off` | 신규 로직 없음(종전 동작). |
+| `Shadow`(기본) | 구룰이 그대로 동작합니다. 구룰이 되돌리려는 이슈마다 신룰 판정을 계산해 `scripts/gissue/logs/checklist-shadow.jsonl` 에 한 줄(구룰 결론·신룰 결론·항목별 판정)로 **기록만** 합니다. 코멘트·상태 쓰기 없음. |
+| `Live` | 신룰이 PR-전용 되돌림을 대체합니다. 아래 롤아웃 조건을 만족한 뒤에만 켭니다. |
+
+롤아웃 절차(이슈 4334 변경 지시 8):
+
+1. `compare-checklist-vs-legacy.ps1` 로 최근 2주 실제 되돌림 표본에 신·구 판정을 병행합니다(읽기 전용). 핵심 지표는 `newKeep_legacyMisjudgeEstimate`(구룰 되돌림 중 신룰로는 유지되는 건수 = 오판 추정). 결과를 이슈 코멘트로 보고합니다.
+2. Live 전환 후 `-LiveSince <전환 시각>` 으로 같은 스크립트를 돌려 **"체크리스트 없는 되돌림 전이"가 0건** 인지 확인합니다. 0건이 아니면 `GISSUE_CHECKLIST_MODE` 를 Shadow 로 되돌립니다.
+
+```powershell
+# 신·구 병행 비교(읽기 전용; 표본 판정에 claude -p 호출 — 표본당 1~2분)
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\compare-checklist-vs-legacy.ps1 -Csn <csn> -Workdir "<프로젝트 workdir>" -Days 14 -MaxSamples 30 -OutFile "<결과.json>"
+# Live 전환 후 검증
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\compare-checklist-vs-legacy.ps1 -Csn <csn> -Workdir "<프로젝트 workdir>" -Days 7 -LiveSince 2026-11-01T00:00:00Z
+# 판정 케이스 테스트
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\tests\test-checklist-judgement.ps1
+```
+
+해석 시 주의: 비교 스크립트의 PR 증거는 되돌림 당시가 아니라 **조회 시점** 상태입니다(코멘트는 되돌림 직전까지로 잘라 판정). 표본 수가 적은 CSN 에서는 통계적 의미가 약합니다.
+
+### 저장 위치 / 소비처
+
+| 산출물 | 위치 | 소비처 |
+|---|---|---|
+| 체크리스트 감사 코멘트 | giip 이슈 코멘트 (`[REVIEW-AUDIT:CHECKLIST-*]`) | 다음 스케줄러 세션([C] 지시문), 사람, `Get-GateRevertTally`(REVERT 만 집계) |
+| Shadow 기록 | `scripts/gissue/logs/checklist-shadow.jsonl`(gitignore) | 롤아웃 판단(사람), 비교 스크립트 보조 |
+| 비교 결과 | `-OutFile` 로 지정한 JSON | 이슈 코멘트 보고(사람) |
+
 ## 14) 연결 문서
 
 - **Docker 배포(auto clone + csn/sk/login_id 자동 등록 + Linux/pwsh 이식)**: `./docker-deployment.md`
