@@ -86,6 +86,13 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# [ENCODING][giip 4334 후속 실측] 체크리스트 Shadow/Live 판정(Invoke-GissueJudge)은 `$prompt | & claude -p` stdin 파이프로 한글 본문을 넘긴다.
+# 이 스크립트는 `powershell -File` 로 직접 실행되어 PowerShell 5.1 기본 인코딩(콘솔 CP/ASCII)으로 파이프되므로, UTF-8 을 명시하지 않으면
+# 한글이 깨진 채 전달되어 판정 응답이 형식 불일치(항목 파싱 실패)로 돌아온다(감사 12건 중 구룰 REVERT 판정 대상이 전부/대부분 실패한 것을 실측).
+# pr-gate-sweep.ps1 은 이미 같은 고정을 하고 있다(giip #1204 버그 B). 이 두 줄이 없으면 Shadow 레코드가 쌓이지 않는다.
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+
 # ── [giip #2613] 이 실행의 AI 행위자(actor) 고정 ───────────────────────────────
 # 배경(실측 2026-09-16): giip 코멘트 최근 30일 작성자 1위가 `lowyshin.giip` 3,385건이었다.
 #   이건 사람 계정이다(tCorpUser usn=156). 코멘트 SP 가 dbo.lwGetUSNbyat(@ak) 로 작성자를 정하는데,

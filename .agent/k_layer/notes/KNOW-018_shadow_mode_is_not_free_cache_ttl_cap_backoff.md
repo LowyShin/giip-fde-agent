@@ -30,4 +30,6 @@ metadata:
 6. **끌 수 있어야 한다.** `GISSUE_CHECKLIST_SHADOW_REDUCE=off` 로 종전 동작을 복원할 수 있어야 축소 자체가 오판을
    숨기는지 비교할 수 있다.
 
+7. **판정 LLM 에 한글을 stdin 으로 넘기는 스크립트는 UTF-8 을 명시 고정한다.** `review-done-audit.ps1` 에는 `pr-gate-sweep.ps1` 에 있는 `[Console]::OutputEncoding` / `$OutputEncoding` UTF-8 고정이 없어 한글이 깨진 채 `claude -p` 에 전달됐고, Shadow 판정 4건이 전부 형식 불일치(Ok=false)로 끝나 레코드가 한 건도 쌓이지 않았다. 수정 후 4건 모두 기록. 같은 계열 결함은 한 스크립트만 고치면 다른 스크립트에 남는다 - 회귀 테스트가 두 스크립트의 고정 여부를 함께 본다.
+
 사양: `docs/60-operations/hourly-issue-scheduler.md` "Shadow 비용 축소" 절. 선행 노트: KNOW-016.

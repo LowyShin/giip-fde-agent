@@ -148,6 +148,11 @@ $rda = Get-Content -LiteralPath (Join-Path $gissueDir 'review-done-audit.ps1') -
 $shadowIdx = $rda.IndexOf('Test-ChecklistShadowSkip'); $liveIdx = $rda.IndexOf('Get-AuditChecklistAssessment $iss $comments $repos')
 Assert ($shadowIdx -gt 0 -and $liveIdx -gt $shadowIdx -and ([regex]::Matches($rda, 'Test-ChecklistShadowSkip')).Count -eq 1) 'review-done-audit: 스킵 검사는 Shadow 분기 안에만 있고 Live 분기(else)는 그대로 직접 판정'
 
+Write-Host '== (6b) 입력 인코딩: 판정 LLM 에 한글을 stdin 으로 넘기는 스크립트는 UTF-8 을 고정한다 =='
+foreach ($sn in 'review-done-audit.ps1', 'pr-gate-sweep.ps1') {
+    $src = Get-Content -LiteralPath (Join-Path $gissueDir $sn) -Raw -Encoding UTF8
+    Assert (($src -match '(?m)^\$OutputEncoding\s*=\s*\[System\.Text\.Encoding\]::UTF8') -and ($src -match '(?m)^\[Console\]::OutputEncoding\s*=\s*\[System\.Text\.Encoding\]::UTF8')) "$sn 가 `$OutputEncoding/Console 출력을 UTF-8 로 고정(없으면 한글이 깨져 Shadow 판정이 파싱 실패)"
+}
 Write-Host '== (7) 동시 쓰기: 3 프로세스 x 15줄 =='
 Reset-Logs
 $libPath = Join-Path $gissueDir 'gissue-audit-lib.ps1'

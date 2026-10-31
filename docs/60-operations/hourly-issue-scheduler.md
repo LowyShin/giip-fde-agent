@@ -831,6 +831,8 @@ Shadow 는 구룰이 되돌리려는 이슈마다 판정 LLM(haiku)을 1회 부�
 
 저장물과 소비처: `scripts/gissue/logs/checklist-shadow.jsonl`(판정 기록)·`checklist-shadow-failures.jsonl`(실패 기록) — 둘 다 gitignore, 머신 로컬. 소비처는 롤아웃 판단(사람)이다. 호출량 효과: 종전에는 구룰이 같은 이슈를 되돌리려 하는 틱마다 1회씩 호출했으나(파싱 실패는 기록도 없어 매 틱 재시도), 이제 같은 `(isn, source)` 는 24시간에 1회 이하, 입력이 같으면 0회, 틱당 5회·시간당 20회로 상한이 있다.
 
+Shadow 가 쌓이지 않던 원인(수정됨): `review-done-audit.ps1` 은 `pr-gate-sweep.ps1` 과 달리 `[Console]::OutputEncoding` / `$OutputEncoding` 을 UTF-8 로 고정하지 않아, `powershell -File` 직접 실행 시 판정 LLM(`claude -p` stdin 파이프)에 한글이 깨져 전달됐고 응답이 항목 형식을 지키지 못해 `Ok=$false`(기록 없음)로 끝났다(실측: 구룰 REVERT 판정 4건 모두 파싱 실패 → 고정 후 4건 모두 기록). 같은 입력을 쓰는 Live 판정에도 영향이 있었다.
+
 회귀 테스트: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\tests\test-checklist-shadow-reduce.ps1` (캐시 적중/미적중, 입력 변경 시 재호출, TTL·틱·시간당 상한, 실패 백오프, 끄기, Live 불변, 동시 쓰기).
 
 ## 13-4) 게이트 디바운스 — 작업 세션이 방금 움직인 이슈는 한 틱 미룬다 (giip 4300)
