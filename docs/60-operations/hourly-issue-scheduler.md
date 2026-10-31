@@ -811,8 +811,27 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\tests\test-ch
 | 산출물 | 위치 | 소비처 |
 |---|---|---|
 | 체크리스트 감사 코멘트 | giip 이슈 코멘트 (`[REVIEW-AUDIT:CHECKLIST-*]`) | 다음 스케줄러 세션([C] 지시문), 사람, `Get-GateRevertTally`(REVERT 만 집계) |
-| Shadow 기록 | `scripts/gissue/logs/checklist-shadow.jsonl`(gitignore) | 롤아웃 판단(사람), 비교 스크립트 보조 |
+| Shadow 기록 | `scripts/gissue/logs/checklist-shadow.jsonl`(gitignore; 실패는 `checklist-shadow-failures.jsonl`) | 롤아웃 판단(사람), 비교 스크립트 보조 |
 | 비교 결과 | `-OutFile` 로 지정한 JSON | 이슈 코멘트 보고(사람) |
+
+### Shadow 비용 축소 (giip 4334 후속)
+
+Shadow 는 구룰이 되돌리려는 이슈마다 판정 LLM(haiku)을 1회 부른다. 같은 이슈가 같은 이유로 틱마다 다시 평가되면 호출이 낭비되므로 **Shadow 경로에만** 아래를 적용한다(`gissue-audit-lib.ps1` 의 `Test-ChecklistShadowSkip` / `Invoke-ChecklistShadowJudge`). `Live`/`Off` 는 이 구역을 쓰지 않으며, Live 판정(`Invoke-ChecklistAssessment`)은 캐시 없이 매번 새로 계산한다.
+
+| 단계 | 동작 | 기본값 |
+|---|---|---|
+| (b) 평가 대상 축소 | 같은 `(isn, source)` 의 Shadow 기록이 최근 TTL 시간 안에 있으면 입력 조회(API/gh)와 LLM 호출을 모두 생략한다. `source` 는 구룰 사유(`pr-gate-sweep:PR-gate`/`scope-gate`/`comment-gate`/`report-gate`, `review-done-audit:DONE`/`REVIEW`)다. | TTL 24시간 |
+| (b) 호출 상한 | 프로세스(스크립트 1회 실행 = 1틱) 당 실제 LLM 호출 수 상한 + 최근 1시간 전 프로세스 합산 상한(두 스크립트·여러 CSN 이 같은 로그를 공유하므로 로그 기준으로 센다). 캐시 적중은 세지 않는다. | 틱당 5, 시간당 20 |
+| (a) 입력해시 캐시 | 판정기가 보는 입력 전부(의뢰 본문 + 코멘트 이력 전체 + PR 증거 + 판정 모델 + 프롬프트 버전)의 SHA-256(`inputHash`)이 같은 직전 기록이 있으면 LLM 을 부르지 않고 그 판정을 재사용한다(`cached=true`, `reusedFromTs` 기록). 입력이 한 글자라도 바뀌면 해시가 달라져 재호출하므로 판정 정확성에 영향이 없다. 부분 해시(`contentHash`, `scopeCommentsHash`(`[SCOPE-RECONCILED]` 코멘트), `latestCommentHash`, `commentsHash`, `prHash`)는 무엇이 바뀌어 재호출됐는지 보기 위한 진단용이다. | 항상 on(REDUCE 와 함께) |
+| (c) 실패 백오프 | 호출 실패·빈 응답·항목 파싱 실패는 `checklist-shadow-failures.jsonl` 에 한 줄 남기고, 같은 `(isn, source)` 는 백오프 시간 동안 다시 부르지 않는다. 판정 기록(`checklist-shadow.jsonl`)에는 섞지 않는다. | 360분 |
+
+환경변수(모두 선택): `GISSUE_CHECKLIST_SHADOW_REDUCE=off`(축소 전체 끄기 = 종전 동작: 매 틱 호출, 캐시·스킵·상한 없음), `GISSUE_CHECKLIST_SHADOW_TTL_HOURS`(0=TTL 스킵 끔), `GISSUE_CHECKLIST_SHADOW_MAX_PER_TICK`(0=끔), `GISSUE_CHECKLIST_SHADOW_MAX_PER_HOUR`(0=끔), `GISSUE_CHECKLIST_SHADOW_FAIL_BACKOFF_MIN`(0=끔), `GISSUE_CHECKLIST_SHADOW_DIR`(로그 폴더 재지정, 테스트용).
+
+기록 방식: 로그 폴더가 없으면 만들고, BOM 없는 UTF-8 한 줄 JSON 으로 추가한다. 여러 프로세스가 동시에 쓰면 .NET 이 두 번째 쓰기를 `IOException` 으로 거절하므로 짧게 재시도한다(최대 6회). 레코드 필드: `ts, isn, source, legacy, checklist, reason, items[], cached, inputHash, contentHash, scopeCommentsHash, latestCommentHash, commentsHash, prHash, model, promptVersion` (+ 캐시 적중 시 `reusedFromTs`). 판정 프롬프트(`Invoke-ChecklistJudge`)를 바꾸면 `$script:ChecklistJudgePromptVersion` 을 올려 캐시를 무효화한다.
+
+저장물과 소비처: `scripts/gissue/logs/checklist-shadow.jsonl`(판정 기록)·`checklist-shadow-failures.jsonl`(실패 기록) — 둘 다 gitignore, 머신 로컬. 소비처는 롤아웃 판단(사람)이다. 호출량 효과: 종전에는 구룰이 같은 이슈를 되돌리려 하는 틱마다 1회씩 호출했으나(파싱 실패는 기록도 없어 매 틱 재시도), 이제 같은 `(isn, source)` 는 24시간에 1회 이하, 입력이 같으면 0회, 틱당 5회·시간당 20회로 상한이 있다.
+
+회귀 테스트: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\tests\test-checklist-shadow-reduce.ps1` (캐시 적중/미적중, 입력 변경 시 재호출, TTL·틱·시간당 상한, 실패 백오프, 끄기, Live 불변, 동시 쓰기).
 
 ## 13-4) 게이트 디바운스 — 작업 세션이 방금 움직인 이슈는 한 틱 미룬다 (giip 4300)
 

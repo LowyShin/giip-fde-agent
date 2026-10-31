@@ -768,14 +768,24 @@ function Invoke-AuditIssue($iss, $repos) {
     $legacyRevert = ($decisionMarker -eq 'REVERT')
     $legacyPromote = ($decisionNewStatus -eq 'DONE')
     if ($ChecklistModeResolved -ne 'Off' -and ($legacyRevert -or ($ChecklistModeResolved -eq 'Live' -and $legacyPromote))) {
-        $assess = Get-AuditChecklistAssessment $iss $comments $repos
         if ($ChecklistModeResolved -eq 'Shadow') {
             if ($legacyRevert) {
-                Write-AuditLog "isn=${isn}: [CHECKLIST-SHADOW] 구룰=REVERT 신룰=$($assess.Decision) ($($assess.Reason)) - 기록만, 구룰 계속 진행."
-                if ($assess.Ok) { Write-ChecklistShadowRecord $isn 'REVERT' $assess 'review-done-audit' }
+                # [giip #4334 후속] Shadow 비용 축소(Shadow 한정 - Live 판정은 아래 else 에서 캐시 없이 매번 계산한다).
+                $src = "review-done-audit:$status"
+                $skip = Test-ChecklistShadowSkip $isn $src
+                if ($skip.Skip) {
+                    Write-AuditLog "isn=${isn}: [CHECKLIST-SHADOW] 구룰=REVERT 신룰 평가 생략 - $($skip.Why) - 구룰 계속 진행."
+                } else {
+                    $content = if ($iss.content) { "$($iss.content)" } else { '' }
+                    if (-not $content) { $d = Get-IssueDetail $isn $ApiKey $ApiBaseUrl; if ($d -and $d.content) { $content = "$($d.content)" } }
+                    $shPr = Get-ChecklistPrEvidence $isn $repos
+                    $shRes = Invoke-ChecklistShadowJudge $isn 'REVERT' $src $content $comments $shPr
+                    Write-AuditLog "isn=${isn}: [CHECKLIST-SHADOW] 구룰=REVERT 신룰=$($shRes.Assessment.Decision) ($($shRes.Assessment.Reason)) [$($shRes.Action)] - 기록만, 구룰 계속 진행."
+                }
             }
             $assess = $null
         } else {
+            $assess = Get-AuditChecklistAssessment $iss $comments $repos
             if (-not $assess.Ok) {
                 Write-AuditLog "isn=${isn}: [CHECKLIST] $($assess.Reason) - 전이 없음(근거 없이 되돌리지도 확정하지도 않는다)."
                 return

@@ -922,18 +922,210 @@ function Invoke-ChecklistAssessment($isn, $issueContent, $Comments, $Pr, $model 
 
 # Shadow 모드 기록: 구룰 결론 vs 신룰 결론을 jsonl 한 줄로 남긴다(코멘트/상태 쓰기 없음).
 # 소비처: compare-checklist-vs-legacy.ps1 과 사람(롤아웃 판단 근거). 실패해도 감사를 막지 않는다.
-function Write-ChecklistShadowRecord($isn, $legacy, $assessment, $source) {
+# 저장: <이 스크립트 폴더>/logs/checklist-shadow.jsonl (gitignore, 머신 로컬). 환경변수 GISSUE_CHECKLIST_SHADOW_DIR 로 폴더 재지정(테스트용).
+# $extra: 추가 필드(입력해시 등) 해시테이블 - 레코드 끝에 그대로 병합한다(giip #4334 후속, Shadow 비용 축소).
+# 반환: 기록 성공 $true. 동시 쓰기(스케줄러가 CSN 별로 pr-gate-sweep/review-done-audit 를 병행 실행)로 파일이 잠겨 있으면
+#   짧게 재시도한다(.NET AppendAllText 는 FileShare.Read 라 두 번째 쓰기가 IOException 이다).
+function Get-ChecklistShadowDir {
+    if ($env:GISSUE_CHECKLIST_SHADOW_DIR) { return "$env:GISSUE_CHECKLIST_SHADOW_DIR" }
+    return (Join-Path $PSScriptRoot 'logs')
+}
+
+function Add-ChecklistShadowJsonLine($fileName, $rec) {
     try {
-        $dir = Join-Path $PSScriptRoot 'logs'
+        $dir = Get-ChecklistShadowDir
         if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+        $line = ($rec | ConvertTo-Json -Depth 5 -Compress)
+        $path = Join-Path $dir $fileName
+        $enc = New-Object System.Text.UTF8Encoding $false
+        for ($try = 1; $try -le 6; $try++) {
+            try { [System.IO.File]::AppendAllText($path, $line + "`n", $enc); return $true }
+            catch [System.IO.IOException] { Start-Sleep -Milliseconds (40 * $try + (Get-Random -Minimum 0 -Maximum 60)) }
+        }
+        return $false
+    } catch { return $false }
+}
+
+function Write-ChecklistShadowRecord($isn, $legacy, $assessment, $source, $extra = $null) {
+    try {
         $rec = [ordered]@{
             ts = (Get-Date).ToUniversalTime().ToString('o'); isn = [int]$isn; source = "$source"
             legacy = "$legacy"; checklist = "$($assessment.Decision)"; reason = "$($assessment.Reason)"
             items = @($assessment.Items | ForEach-Object { [ordered]@{ n = $_.N; kind = $_.Kind; verdict = $_.Verdict; text = $_.Text } })
         }
-        $line = ($rec | ConvertTo-Json -Depth 5 -Compress)
-        [System.IO.File]::AppendAllText((Join-Path $dir 'checklist-shadow.jsonl'), $line + "`n", (New-Object System.Text.UTF8Encoding $false))
-    } catch { }
+        if ($extra) { foreach ($k in $extra.Keys) { $rec[$k] = $extra[$k] } }
+        return (Add-ChecklistShadowJsonLine 'checklist-shadow.jsonl' $rec)
+    } catch { return $false }
+}
+
+# ═════════════════════════════════════════════════════════════════════════════════════
+# Shadow 비용 축소 (giip #4334 후속): Shadow 는 구룰이 되돌리려는 이슈마다 haiku 를 1회 호출한다.
+# 같은 이슈가 같은 이유로 틱마다 다시 평가되면 호출이 낭비되므로 Shadow 경로에만 아래를 적용한다.
+#  (Live/Off 는 이 구역을 쓰지 않는다 - Live 판정은 캐시 없이 매번 새로 계산한다.)
+#   a) 입력해시 캐시: 판정기가 보는 입력 전체(의뢰 본문 + 코멘트 이력 전체 + PR 증거 + 판정 모델/프롬프트 버전)의
+#      SHA-256 이 같은 직전 Shadow 기록이 있으면 LLM 을 호출하지 않고 그 판정을 재사용한다(cached=true 기록).
+#      입력이 한 글자라도 바뀌면 해시가 달라져 재호출한다 -> 캐시가 판정 정확성에 영향을 주지 않는다.
+#   b) 평가 대상 축소: 같은 (isn, source=구룰 사유) 기록이 최근 TTL 시간 안에 있으면 입력 조회(API/gh)도 LLM 도 건너뛴다.
+#      프로세스(= 스크립트 1회 실행) 당 호출 상한 + 최근 1시간 전 프로세스 합산 호출 상한.
+#   c) 실패/타임아웃: 실패는 checklist-shadow-failures.jsonl 에 남기고 같은 (isn, source) 는 백오프 시간 동안 재시도하지 않는다.
+#  끄기: GISSUE_CHECKLIST_SHADOW_REDUCE=off (기본 on). 값: GISSUE_CHECKLIST_SHADOW_TTL_HOURS(24),
+#        GISSUE_CHECKLIST_SHADOW_MAX_PER_TICK(5), GISSUE_CHECKLIST_SHADOW_MAX_PER_HOUR(20),
+#        GISSUE_CHECKLIST_SHADOW_FAIL_BACKOFF_MIN(360).
+# ═════════════════════════════════════════════════════════════════════════════════════
+$script:ChecklistJudgePromptVersion = 'v1'   # Invoke-ChecklistJudge 프롬프트를 바꾸면 올린다(캐시 무효화).
+$script:ChecklistShadowJudgedThisRun = 0     # 이 프로세스에서 실제로 LLM 을 호출한 횟수(틱 상한용).
+
+function Get-ChecklistShadowConfig {
+    $int = {
+        param($name, $default)
+        $v = [Environment]::GetEnvironmentVariable($name)
+        $n = 0
+        if ($v -and [int]::TryParse("$v".Trim(), [ref]$n) -and $n -ge 0) { return $n }
+        return $default
+    }
+    $reduce = $true
+    if ($env:GISSUE_CHECKLIST_SHADOW_REDUCE -and "$env:GISSUE_CHECKLIST_SHADOW_REDUCE".Trim() -match '^(?i)(off|0|false|no)$') { $reduce = $false }
+    return @{
+        Reduce             = $reduce
+        TtlHours           = (& $int 'GISSUE_CHECKLIST_SHADOW_TTL_HOURS' 24)
+        MaxPerTick         = (& $int 'GISSUE_CHECKLIST_SHADOW_MAX_PER_TICK' 5)
+        MaxPerHour         = (& $int 'GISSUE_CHECKLIST_SHADOW_MAX_PER_HOUR' 20)
+        FailBackoffMinutes = (& $int 'GISSUE_CHECKLIST_SHADOW_FAIL_BACKOFF_MIN' 360)
+    }
+}
+
+function Get-TextSha256($text) {
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes("$text"))
+        return (($bytes | ForEach-Object { $_.ToString('x2') }) -join '')
+    } finally { $sha.Dispose() }
+}
+
+# 판정기 입력의 해시 묶음. inputHash 가 캐시 키다(= 판정기가 보는 입력 전부 + 모델 + 프롬프트 버전).
+# 나머지는 사람이 "무엇이 바뀌어 재호출됐는가"를 보기 위한 부분 해시다.
+function Get-ChecklistInputHash($issueContent, $comments, $prText, $model = $null) {
+    if (-not $model) { $model = if ($env:GISSUE_CHECKLIST_MODEL) { $env:GISSUE_CHECKLIST_MODEL } else { 'claude-haiku-4-5' } }
+    $sorted = @($comments | Where-Object { $_ } | Sort-Object { $_.regdate })
+    $fmt = { param($c) "[$($c.regdate)] ($($c.author)/$($c.issuetype), cSn=$($c.cSn)): $($c.content)" }
+    $scope = @($sorted | Where-Object { "$($_.content)" -match '\[SCOPE-RECONCILED\]' } | ForEach-Object { & $fmt $_ }) -join "`n---`n"
+    $latest = if ($sorted.Count -gt 0) { & $fmt $sorted[$sorted.Count - 1] } else { '' }
+    $contentHash = Get-TextSha256 $issueContent
+    $commentsHash = Get-TextSha256 (ConvertTo-CommentsText $comments)
+    $prHash = Get-TextSha256 $prText
+    return [ordered]@{
+        inputHash         = (Get-TextSha256 "$contentHash|$commentsHash|$prHash|$model|$($script:ChecklistJudgePromptVersion)")
+        contentHash       = $contentHash
+        scopeCommentsHash = (Get-TextSha256 $scope)
+        latestCommentHash = (Get-TextSha256 $latest)
+        commentsHash      = $commentsHash
+        prHash            = $prHash
+        model             = "$model"
+        promptVersion     = "$($script:ChecklistJudgePromptVersion)"
+    }
+}
+
+# 로그 파일의 마지막 $max 줄을 공유 읽기로 읽는다(다른 프로세스가 쓰는 중이어도 읽힌다).
+function Read-ChecklistShadowLines($fileName, $max = 4000) {
+    $path = Join-Path (Get-ChecklistShadowDir) $fileName
+    if (-not (Test-Path -LiteralPath $path)) { return @() }
+    try {
+        $fs = New-Object System.IO.FileStream($path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+        try {
+            $sr = New-Object System.IO.StreamReader($fs, (New-Object System.Text.UTF8Encoding $false))
+            $all = New-Object System.Collections.Generic.List[string]
+            while (($l = $sr.ReadLine()) -ne $null) { if ($l.Trim()) { $all.Add($l) } }
+            $sr.Dispose()
+        } finally { $fs.Dispose() }
+        if ($all.Count -gt $max) { return @($all.GetRange($all.Count - $max, $max)) }
+        return @($all)
+    } catch { return @() }
+}
+
+# 해당 isn 의 기록(최신이 마지막). 줄 단위 문자열 선필터 후 파싱한다(전체 JSON 파싱 비용 회피).
+function Get-ChecklistShadowRecordsFor($fileName, $isn) {
+    $needle = '"isn":' + [int]$isn + ','
+    $out = @()
+    foreach ($l in (Read-ChecklistShadowLines $fileName)) {
+        if ($l.Contains($needle)) { try { $out += ($l | ConvertFrom-Json) } catch { } }
+    }
+    return $out
+}
+
+# Shadow 평가를 건너뛸지: @{ Skip; Why }. 입력 조회(API/gh)나 LLM 호출 전에 부른다. 감소 기능이 꺼져 있으면 항상 Skip=$false.
+function Test-ChecklistShadowSkip($isn, $source) {
+    $cfg = Get-ChecklistShadowConfig
+    if (-not $cfg.Reduce) { return @{ Skip = $false; Why = '' } }
+    $now = (Get-Date).ToUniversalTime()
+    # (b-1) 프로세스(틱) 호출 상한
+    if ($cfg.MaxPerTick -gt 0 -and $script:ChecklistShadowJudgedThisRun -ge $cfg.MaxPerTick) {
+        return @{ Skip = $true; Why = "틱 호출 상한($($cfg.MaxPerTick)) 도달 - 이번 실행에서는 평가하지 않음" }
+    }
+    # (b-2) 최근 1시간 전 프로세스 합산 상한(성공+실패 호출 모두, cached 제외)
+    if ($cfg.MaxPerHour -gt 0) {
+        $cut = $now.AddHours(-1).ToString('o')
+        $n = 0
+        foreach ($f in @('checklist-shadow.jsonl', 'checklist-shadow-failures.jsonl')) {
+            foreach ($l in (Read-ChecklistShadowLines $f 600)) {
+                if ($l -match '"ts":"([^"]+)"' -and [string]::CompareOrdinal($Matches[1], $cut) -ge 0 -and -not $l.Contains('"cached":true')) { $n++ }
+            }
+        }
+        if ($n -ge $cfg.MaxPerHour) { return @{ Skip = $true; Why = "최근 1시간 호출 상한($($cfg.MaxPerHour)) 도달($n 건)" } }
+    }
+    # (b-3) 같은 (isn, source) 최근 TTL 기록
+    if ($cfg.TtlHours -gt 0) {
+        $recs = @(Get-ChecklistShadowRecordsFor 'checklist-shadow.jsonl' $isn | Where-Object { $_.source -eq "$source" })
+        if ($recs.Count -gt 0) {
+            $last = $recs[$recs.Count - 1]
+            $t = [datetime]::MinValue
+            if ([datetime]::TryParse("$($last.ts)", [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind, [ref]$t) -and ($now - $t.ToUniversalTime()).TotalHours -lt $cfg.TtlHours) {
+                return @{ Skip = $true; Why = "같은 (isn, $source) 기록이 $([math]::Round(($now - $t.ToUniversalTime()).TotalHours,1))시간 전에 있음(TTL $($cfg.TtlHours)h)" }
+            }
+        }
+    }
+    # (c) 최근 실패 백오프
+    if ($cfg.FailBackoffMinutes -gt 0) {
+        $fails = @(Get-ChecklistShadowRecordsFor 'checklist-shadow-failures.jsonl' $isn | Where-Object { $_.source -eq "$source" })
+        if ($fails.Count -gt 0) {
+            $last = $fails[$fails.Count - 1]
+            $t = [datetime]::MinValue
+            if ([datetime]::TryParse("$($last.ts)", [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind, [ref]$t) -and ($now - $t.ToUniversalTime()).TotalMinutes -lt $cfg.FailBackoffMinutes) {
+                return @{ Skip = $true; Why = "직전 판정 실패 후 백오프 중($($cfg.FailBackoffMinutes)분)" }
+            }
+        }
+    }
+    return @{ Skip = $false; Why = '' }
+}
+
+# Shadow 판정 1건: 입력해시 계산 -> 캐시 적중이면 재사용, 아니면 LLM 호출 -> 기록. 코멘트/상태 쓰기 없음.
+# 반환: @{ Action = 'cached'|'judged'|'failed'; Assessment; InputHash }
+function Invoke-ChecklistShadowJudge($isn, $legacy, $source, $issueContent, $comments, $pr) {
+    $cfg = Get-ChecklistShadowConfig
+    $prText = if ($pr -and $pr.Text) { $pr.Text } else { '(PR 증거 없음)' }
+    $h = Get-ChecklistInputHash $issueContent $comments $prText
+    if ($cfg.Reduce) {
+        $prev = @(Get-ChecklistShadowRecordsFor 'checklist-shadow.jsonl' $isn | Where-Object { $_.inputHash -and $_.inputHash -eq $h.inputHash -and $_.cached -ne $true })
+        if ($prev.Count -gt 0) {
+            $p = $prev[$prev.Count - 1]
+            $a = @{ Ok = $true; Decision = "$($p.checklist)"; Reason = "$($p.reason)"
+                    Items = @($p.items | ForEach-Object { @{ N = $_.n; Kind = $_.kind; Verdict = $_.verdict; Text = $_.text } }) }
+            $extra = [ordered]@{ cached = $true; reusedFromTs = "$($p.ts)" }
+            foreach ($k in $h.Keys) { $extra[$k] = $h[$k] }
+            [void](Write-ChecklistShadowRecord $isn $legacy $a $source $extra)
+            return @{ Action = 'cached'; Assessment = $a; InputHash = $h.inputHash }
+        }
+    }
+    $script:ChecklistShadowJudgedThisRun++
+    $a = Invoke-ChecklistAssessment $isn $issueContent $comments $pr
+    if (-not $a.Ok) {
+        $frec = [ordered]@{ ts = (Get-Date).ToUniversalTime().ToString('o'); isn = [int]$isn; source = "$source"; legacy = "$legacy"; reason = "$($a.Reason)"; inputHash = $h.inputHash }
+        [void](Add-ChecklistShadowJsonLine 'checklist-shadow-failures.jsonl' $frec)
+        return @{ Action = 'failed'; Assessment = $a; InputHash = $h.inputHash }
+    }
+    $extra = [ordered]@{ cached = $false }
+    foreach ($k in $h.Keys) { $extra[$k] = $h[$k] }
+    [void](Write-ChecklistShadowRecord $isn $legacy $a $source $extra)
+    return @{ Action = 'judged'; Assessment = $a; InputHash = $h.inputHash }
 }
 
 # 직전 CHECKLIST-REVERT 의 미충족 항목 집합과 이번 판정의 미충족 항목 집합이 같은가(루프 감지, 변경 지시 7).
