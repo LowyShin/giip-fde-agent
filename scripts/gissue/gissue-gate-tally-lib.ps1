@@ -46,6 +46,40 @@ function Get-GateRevertReasonLine($content) {
     return $line
 }
 
+# ── [giip #4300] 게이트 디바운스: "작업 세션이 방금 움직인 이슈"는 한 틱 미룬다 ──────────────────
+# 배경: 3회 누적 에스컬레이션이 IN_PROGRESS 로 활발히 작업 중이던 구간의 체크에도 가산돼,
+#   세션의 정상 handoff(REVIEW 전이)와 게이트의 NEEDS_DECISION 강제 전이가 1분 4초 차로 레이스했다.
+# 규칙: 게이트/감사가 자기 자신이 쓴 코멘트(되돌림·에스컬레이션·감사·verify 실행 로그)를 제외한
+#   "마지막 작업 코멘트"가 $MinIdleMinutes 분 이내면 Active=$true — 호출부는 스트라이크 가산·되돌림·
+#   에스컬레이션을 하지 않고 다음 틱으로 미룬다(상태 전이 없음). MinIdleMinutes<=0 이면 끈다.
+function Test-GateOwnComment($content) {
+    $t = "$content".TrimStart()
+    if (-not $t) { return $false }
+    foreach ($d in (Get-GateRevertSourceDefs)) { if ($t.Contains($d.Marker)) { return $true } }
+    return ($t -match '^\[(?:[A-Z0-9\-]+-GATE|REVIEW-AUDIT|GATE-ESCALATED|VERIFY-RUN|VERIFY-GATE|CHECKLIST|[A-Z\-]*HUMAN-REVIEW|[A-Z\-]*ESCALATED)[\]:\-]')
+}
+
+function Get-IssueActivityDebounce($comments, [int]$MinIdleMinutes, $NowUtc) {
+    $result = [pscustomobject]@{ Active = $false; LastWhen = $null; IdleMinutes = $null }
+    if ($MinIdleMinutes -le 0) { return $result }
+    if (-not $NowUtc) { $NowUtc = (Get-Date).ToUniversalTime() }
+    $last = $null
+    foreach ($c in @($comments)) {
+        if (Test-GateOwnComment $c.content) { continue }
+        $t = $null
+        try { $t = ([datetime]::Parse("$($c.regdate)", [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AdjustToUniversal -bor [Globalization.DateTimeStyles]::AssumeUniversal)) } catch { $t = $null }
+        if (-not $t) { continue }
+        if (-not $last -or $t -gt $last) { $last = $t }
+    }
+    if (-not $last) { return $result }
+    $idle = ($NowUtc - $last).TotalMinutes
+    $result.LastWhen = $last
+    $result.IdleMinutes = [math]::Round($idle, 1)
+    # 미래 시각(시계 오차)도 활동 중으로 본다. 단 하루 이상 미래면 신뢰하지 않는다.
+    $result.Active = ($idle -lt $MinIdleMinutes -and $idle -gt -1440)
+    return $result
+}
+
 # 이미 조회해 둔 코멘트 배열($comments)로부터 게이트 되돌림을 전부 집계한다(추가 API 호출 없음).
 # 반환: PSCustomObject
 #   .Total        [int]    모든 게이트 되돌림 합계(review-done-audit 되돌림 포함)

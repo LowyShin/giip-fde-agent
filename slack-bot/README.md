@@ -250,6 +250,17 @@ Jev 를 활용한 의도 분류 권장 구조(제안, 미구현): [docs/INTENT_R
 
 테스트: `node --test slack-bot/tests/branch-collision.test.js`(로컬 bare 원격 + 작업 클론으로 실제 git 재현, LLM·네트워크 없음).
 
+## 런타임 경로 커밋 제외 + 산출물 없는 PR 억제 (giip 4300)
+
+작업 브랜치 커밋이 `git add -A` 면 봇/세션이 쓰는 `.agent/runtime/**`(checkpoints/evidence/receipts/progress/cost-usage 등)까지 올라가, 실제 산출물이 없는 "런타임 전용" PR 이 열리고 머지되는 사고가 난다. `runtime-artifact-guard.js` 가 두 겹으로 막는다.
+
+- **스테이징 제외**(`stageDeliverables`): task-manager.js 의 모든 커밋 지점(`gitPushResult`, `gitPushResultAndPR`, `commitAndPRChangedRepos` 의 두 경로)이 `git add -A -- . ':(exclude).agent/runtime'` 로 스테이징하고, 이미 index 에 올라가 있던 런타임 경로는 index 에서만 뺀다(작업트리 파일은 보존).
+- **PR 억제**(`branchHasDeliverables`): `ensurePR` 이 PR 생성 직전에 `origin/<base>...<branch>` 변경 파일을 보고, 전부 `.agent/runtime/**` 면 PR 을 열지 않고 `null` 을 반환한다(호출부는 `skipped`/`failed` 에 사유를 기록). git 판정 자체가 실패하면 기존 동작(PR 생성)을 유지한다(fail-open).
+- 저장물 없음(커밋/PR 의 **미생성**이 결과). 소비처는 `commitAndPRChangedRepos` 의 `skipped[]` 사유 → Slack 완료 보고.
+- 참고: 이 가드는 PR 이 **열리는 것**을 막을 뿐, 열린 PR 이 **누구에 의해 머지되는지**(저장소의 auto-merge / 브랜치 보호 설정)는 코드 밖이다. 저장소 측에서 브랜치 보호와 auto-merge 설정을 확인해야 한다.
+
+테스트: `node --test slack-bot/tests/runtime-artifact-guard.test.js`(임시 git 저장소로 실제 재현, LLM·네트워크 없음).
+
 ## K-Layer Knowledge Base
 
 Place `.md` files in `.agent/knowledge/notes/` using the CLAIM format:

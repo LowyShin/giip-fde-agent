@@ -98,6 +98,8 @@ param(
     #            logs/checklist-shadow.jsonl 에 기록만 한다. Live = REVIEW 이슈 판정을 체크리스트 하나로 대체
     #            (PR 없음 단독/scope/comment/보고형 되돌림은 항목 판정의 증거로 흡수). 명시적으로만 켠다.
     [string]$ChecklistMode = '',
+    # giip #4300: 마지막 작업 코멘트가 이 분 이내인 이슈는 되돌림/스트라이크/에스컬레이션을 한 틱 미룬다(0=끔).
+    [int]$MinIdleMinutes = 10,
     [int]$Csn = 0,
     [Parameter(Mandatory = $true)][string]$Workdir,
     [string]$ApiKey,
@@ -604,7 +606,7 @@ Write-SweepLog "REVIEW 이슈 $(@($issues).Count)건 검사."
 $reverted = 0; $keptHasPr = 0; $keptGuard = 0; $keptNoPrReason = 0
 $scopeReverted = 0; $scopeGuard = 0; $scopeNoPrReason = 0; $commentReverted = 0; $commentGuard = 0; $gateWarn = 0
 $reportDone = 0; $reportReverted = 0
-$script:checklistKept = 0; $script:checklistReverted = 0; $script:checklistHeld = 0; $script:checklistEscalated = 0; $script:checklistSkipped = 0
+$script:debounced = 0; $script:checklistKept = 0; $script:checklistReverted = 0; $script:checklistHeld = 0; $script:checklistEscalated = 0; $script:checklistSkipped = 0
 Write-SweepLog "체크리스트 판정 모드: $ChecklistModeResolved (giip #4334)"
 foreach ($iss in $issues) {
     $isn = [int]$iss.isn
@@ -615,6 +617,17 @@ foreach ($iss in $issues) {
     # review-done-audit 가 남긴 되돌림은 아예 세지 않았다. 이제 위에서 1회 조회한 $comments 만으로
     # 게이트별 횟수 + 전체 합계 + 회차 이력을 모두 얻는다.
     $tally = Get-GateRevertTally $comments
+
+    # ── [giip #4300] 디바운스: 세션이 방금 움직인 이슈는 이번 틱에 건드리지 않는다 ──
+    #   세션의 정상 handoff 와 게이트 에스컬레이션이 분 단위로 레이스한 사고(작업 중 구간 체크가 스트라이크로
+    #   누적돼 NEEDS_DECISION 으로 강제 전이)를 막는다. 게이트 자신의 코멘트는 활동으로 치지 않으므로
+    #   무한 미룸은 없다(작업 코멘트가 MinIdleMinutes 만큼 잠잠해지면 다음 틱에 정상 판정).
+    $debounce = Get-IssueActivityDebounce $comments $MinIdleMinutes
+    if ($debounce.Active) {
+        Write-SweepLog "isn=${isn}: [DEBOUNCE] 마지막 작업 코멘트 $($debounce.IdleMinutes)분 전(< ${MinIdleMinutes}분) - 스트라이크 가산/되돌림/에스컬레이션 없이 다음 틱으로 미룹니다(giip #4300)."
+        $script:debounced++
+        continue
+    }
 
     # ── [giip #4334] Live: REVIEW 이슈 판정 전부를 의뢰 체크리스트로 대체한다 ──
     # PR 없음 단독 REVERT / scope-gate / comment-gate / 보고형(#3801) 대조는 이 판정의 항목별 증거로 흡수된다
@@ -816,7 +829,7 @@ foreach ($iss in $issues) {
     }  # end of scope-gate else (scope-gate max attempts or scope-gate proper)
     }  # end of else (hasNoPrReason) for PR-exists path
 }  # end of foreach loop
-Write-SweepLog "완료: PR없음-되돌림 $reverted, PR없음-NoPrReason유지 $keptNoPrReason, 보고형-자동DONE $reportDone, 보고형-되돌림 $reportReverted, PR있음 $keptHasPr, 누적캡-NEEDS_DECISION에스컬레이션 $keptGuard, scope-되돌림 $scopeReverted, scope-NoPrReason유지 $scopeNoPrReason, scope-NEEDS_DECISION에스컬레이션 $scopeGuard, comment-되돌림 $commentReverted, comment-NEEDS_DECISION에스컬레이션 $commentGuard, 게이트경고(폴백) $gateWarn."
+Write-SweepLog "완료: PR없음-되돌림 $reverted, PR없음-NoPrReason유지 $keptNoPrReason, 보고형-자동DONE $reportDone, 보고형-되돌림 $reportReverted, PR있음 $keptHasPr, 누적캡-NEEDS_DECISION에스컬레이션 $keptGuard, scope-되돌림 $scopeReverted, scope-NoPrReason유지 $scopeNoPrReason, scope-NEEDS_DECISION에스컬레이션 $scopeGuard, comment-되돌림 $commentReverted, comment-NEEDS_DECISION에스컬레이션 $commentGuard, 게이트경고(폴백) $gateWarn, 디바운스-보류 $($script:debounced)."
 if ($ChecklistModeResolved -eq 'Live') {
     Write-SweepLog "체크리스트(Live) 결과: 유지/확정 $($script:checklistKept), 되돌림 $($script:checklistReverted), 보류(NEEDS_DECISION) $($script:checklistHeld), 에스컬레이션 $($script:checklistEscalated), 판정불가로 전이없음 $($script:checklistSkipped)."
 }
