@@ -521,9 +521,19 @@ function Get-SweepChecklistAssessment($isn, $comments) {
 function Write-SweepChecklistShadow($isn, $comments, $legacyLabel) {
     if ($ChecklistModeResolved -ne 'Shadow') { return }
     try {
-        $a = Get-SweepChecklistAssessment $isn $comments
-        Write-SweepLog "isn=${isn}: [CHECKLIST-SHADOW] 구룰=REVERT($legacyLabel) 신룰=$($a.Decision) ($($a.Reason)) - 기록만, 구룰 계속 진행."
-        if ($a.Ok) { Write-ChecklistShadowRecord $isn 'REVERT' $a "pr-gate-sweep:$legacyLabel" }
+        # [giip #4334 후속] Shadow 비용 축소: 같은 (isn, 구룰 사유) 최근 기록/호출 상한/실패 백오프면 입력 조회와 LLM 호출을 모두 생략한다.
+        $src = "pr-gate-sweep:$legacyLabel"
+        $skip = Test-ChecklistShadowSkip $isn $src
+        if ($skip.Skip) {
+            Write-SweepLog "isn=${isn}: [CHECKLIST-SHADOW] 구룰=REVERT($legacyLabel) 신룰 평가 생략 - $($skip.Why) - 구룰 계속 진행."
+            return
+        }
+        $d = Get-IssueDetail $isn $ApiKey $ApiBaseUrl
+        $content = if ($d -and $d.content) { "$($d.content)" } else { '' }
+        $pr = Get-ChecklistPrEvidence $isn $repos
+        $r = Invoke-ChecklistShadowJudge $isn 'REVERT' $src $content $comments $pr
+        $a = $r.Assessment
+        Write-SweepLog "isn=${isn}: [CHECKLIST-SHADOW] 구룰=REVERT($legacyLabel) 신룰=$($a.Decision) ($($a.Reason)) [$($r.Action)] - 기록만, 구룰 계속 진행."
     } catch {
         Write-SweepLog "isn=${isn}: [CHECKLIST-SHADOW] 판정 중 오류(무시): $($_.Exception.Message)"
     }
