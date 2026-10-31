@@ -1,4 +1,4 @@
-# test-pr-link-evidence.ps1 - PR 이 nested repo 스캔 범위 밖에만 있을 때의 오탐 되돌림 재현/수정 검증 (giip #4335)
+﻿# test-pr-link-evidence.ps1 - PR 이 nested repo 스캔 범위 밖에만 있을 때의 오탐 되돌림 재현/수정 검증 (giip #4335)
 #
 # 배경(실사고): 이슈 #4335 의 대응 PR(#991)이 SHINSEMA/giipv3 — csn-projects.json workdir(/work/dibo)의
 #   nested repo도 아니고 audit-extra-repos.json 에도 없는 제품 레포 — 에만 있어서, Test-IssueHasPr(repos)가
