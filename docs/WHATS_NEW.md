@@ -6,9 +6,12 @@
 >
 > *(EN/JP 독자는 각 항목을 AI 에이전트에 번역 요청하세요. / Ask your AI assistant to translate entries.)*
 
-**기준일 (as of): 2026-10-30**
+**기준일 (as of): 2026-10-31**
 
 ---
+
+## 2026-10-31
+- **런타임 전용 PR 차단 + 게이트 디바운스 (giip 4300)** — 작업 브랜치 커밋이 `.agent/runtime/**` 를 스테이징하지 않고(`slack-bot/runtime-artifact-guard.js`), base 대비 변경이 런타임 경로뿐이면 PR 을 열지 않습니다. 또한 `pr-gate-sweep.ps1`/`review-done-audit.ps1` 는 마지막 작업 코멘트가 `-MinIdleMinutes`(기본 10분) 이내인 이슈의 되돌림·스트라이크·에스컬레이션을 한 틱 미룹니다(세션 handoff 와의 레이스 방지). → [슬랙봇 README](../slack-bot/README.md), [스케줄러 사양 13-4](60-operations/hourly-issue-scheduler.md), [KNOW-017](../.agent/k_layer/notes/KNOW-017_runtime_only_pr_and_gate_debounce.md)
 
 ## 2026-10-30
 - **KNOW-015 예외 추가 — 자동 publish 전용(롤링 force-push) 브랜치는 "PR 없음" 이어도 PR 생성 대상에서 제외** — 저장소 정비 sweep 이 "원격 브랜치(PR 없음)"를 계승 대상으로 보고 자동으로 PR 을 만들던 규칙이, cron 이 롤링 amend+force-push 로 리포트를 publish 하는 **설계상 미병합 전용 브랜치**까지 매번 걸어 불필요한 PR 을 반복 생성하던 문제를 막습니다. 식별 방법(`... snapshot (auto)` 커밋·매회 `(forced update)`·리포트 자동생성물만 변경·소유 레포 노트의 "의도적 미병합" 선언)과 처리(제외+사유 기록)를 명문화했습니다. → [KNOW-015](../.agent/k_layer/notes/KNOW-015_dead_session_branch_pushed_without_pr.md)

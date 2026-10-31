@@ -72,6 +72,7 @@ param(
     [switch]$Live,                      # 명시해야만 실제 코멘트/상태변경/이슈생성 — 기본은 dry-run(로그만)
     [switch]$DryRun,                    # pr-gate-sweep.ps1 관례와의 호환용 별칭 — 주면 -Live 를 무시하고 강제 dry-run
     [int]$FollowupLoopThreshold = 2,    # 트레일링 윈도 내 이 개수 이상 이미 생성됐으면 다음 생성을 막는다
+    [int]$MinIdleMinutes = 10,          # giip #4300: 마지막 작업 코멘트가 이 분 이내인 이슈는 감사를 한 틱 미룬다(세션 handoff 와의 레이스 방지). 0=끔.
     [int]$RecentWindowHours = 2,        # "최근 코멘트됨" 필터 윈도. 0 또는 음수 = 최근-코멘트 필터 무제한(수동 전체점검용, giip #2587). 루프브레이커#2 트레일링 윈도는 아래에서 최소 2h 로 별도 유지.
     [int]$StalePrHours = 24,            # REVIEW+PR있음(미머지)일 때 "방치"로 보는 기준(시간)
     [switch]$AllowWideLiveWindow,       # "창 무제한(-RecentWindowHours 0) + -Live" 조합 허용. giip #2586(VERIFY-GATE fail-open) 수정 후에만 명시 — 없으면 그 조합을 거부한다(giip #2587 요건4, 자동 DONE 전이 범위 확대 방지).
@@ -638,6 +639,13 @@ function Invoke-AuditIssue($iss, $repos) {
     $isn = [int]$iss.isn
     $status = "$($iss.status)"
     $comments = Get-IssueComments $isn $ApiKey $ApiBaseUrl
+    # ── [giip #4300] 디바운스: 작업 세션이 방금 움직인 이슈는 이번 틱에 감사(되돌림/에스컬레이션)하지 않는다 ──
+    #   세션 handoff 와 게이트 전이가 분 단위로 레이스하는 것을 막는다. 감사 자신의 코멘트는 활동으로 보지 않는다.
+    $debounce = Get-IssueActivityDebounce $comments $(if ($DiagnoseIsn -gt 0) { 0 } else { $MinIdleMinutes })   # 진단 모드는 항상 판정 출력
+    if ($debounce.Active) {
+        Write-AuditLog "isn=${isn}: [DEBOUNCE] 마지막 작업 코멘트 $($debounce.IdleMinutes)분 전(< ${MinIdleMinutes}분) - 감사 없이 다음 틱으로 미룹니다(giip #4300)."
+        return
+    }
     # 루프브레이커#2 트레일링 윈도는 최소 2h 로 유지 — 최근-코멘트 필터를 무제한(-RecentWindowHours 0)으로
     # 돌려도 후속이슈 생성폭주 감지가 꺼지지 않게 한다(giip #2587).
     $followupWindowHours = if ($RecentWindowHours -gt 0) { $RecentWindowHours } else { 2 }

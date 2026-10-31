@@ -8,6 +8,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync, spawn } = require('child_process');
 const { parseConflictFiles, isMergeableLogPath, mergeLogLines } = require('./branch-collision');
+const { stageDeliverables, branchHasDeliverables } = require('./runtime-artifact-guard'); // giip #4300
 const { searchKLayer } = require('./k-layer');
 const accounts = require('./claude-accounts');
 const minimax = require('./minimax-accounts');
@@ -977,7 +978,8 @@ function gitPushResult(taskId, taskTitle, resultFile, doneTaskFile = null) {
   const lockHolder = `task-manager:${process.pid}:${taskId}`;
   acquireRepoLock(lockHolder, `task ${taskId}`, { waitMs: 120000 });
   try {
-    spawnSync('git', ['add', '-A'], { cwd: BASE_DIR, encoding: 'utf8', windowsHide: true });
+    // giip #4300: .agent/runtime/** 는 스테이징하지 않는다(런타임 전용 커밋/PR 방지).
+    stageDeliverables((args) => spawnSync('git', args, { cwd: BASE_DIR, encoding: 'utf8', windowsHide: true }));
 
     // commit
     const msg = `task(${taskId}): ${taskTitle.slice(0, 60)}\n\nAuto-committed by giipclaude Bot\n\nDirective: task result push on ${branch}`;
@@ -1216,6 +1218,13 @@ function ensurePR(taskId, taskTitle, branch, base, baseDir = BASE_DIR) {
   delete ghEnv.GH_TOKEN;
   const gh = (args) => spawnSync('gh', args, { cwd: baseDir, encoding: 'utf8', windowsHide: true, env: ghEnv });
 
+  // giip #4300: 산출물 없는 PR 억제 — base 대비 변경이 .agent/runtime/** 뿐이면 PR 을 열지 않는다(null 반환).
+  const gitLocal = (args) => spawnSync('git', args, { cwd: baseDir, encoding: 'utf8', windowsHide: true });
+  if (!branchHasDeliverables(gitLocal, base, branch)) {
+    console.error(`[TaskManager] ensurePR: '${branch}' 는 base(${base}) 대비 .agent/runtime/** 외 산출물이 없어 PR 을 열지 않습니다(giip #4300).`);
+    return null;
+  }
+
   // 기존 PR 확인 (재실행/중복 방지)
   const existing = gh(['pr', 'list', '--head', branch, '--state', 'open', '--json', 'url', '--jq', '.[0].url']);
   const existingUrl = (existing.stdout || '').trim();
@@ -1281,7 +1290,8 @@ function gitPushResultAndPR(taskId, taskTitle, resultFile, doneTaskFile, ctx, ba
     const base = (ctx && ctx.base) || getBaseBranch(baseDir);
 
     // 산출물 전부 스테이지(경로 무관, rule 35). 런타임 json 은 .gitignore 처리됨.
-    git(['add', '-A']);
+    // giip #4300: 단 .agent/runtime/** 는 스테이징하지 않는다.
+    stageDeliverables(git);
     const msg = `task(${taskId}): ${taskTitle.slice(0, 60)}\n\nAuto-committed by giipclaude Bot\n\nDirective: ${branch} → PR to ${base}`;
     const commitRes = git(['commit', '-m', msg]);
     if (commitRes.status !== 0 && !(commitRes.stdout || '').includes('nothing to commit')) {
@@ -1638,7 +1648,7 @@ function commitAndPRChangedRepos(taskId, taskTitle, snapshots, opts = {}) {
         }
         // 専用 feature/task ブランチ上の変更 → そのブランチのまま commit·push·PR する。
         // (stash→bot/task ブランチ の付け替えはしない: ブランチは既にセッション/前段が選んでいる。)
-        git(['add', '-A']);
+        stageDeliverables(git); // giip #4300: .agent/runtime/** 제외
         const msgF = `task(${taskId}): ${String(taskTitle).slice(0, 60)}\n\nAuto-committed by giipclaude Bot\n\n${coAuthor}`;
         const commitF = git(['commit', '-m', msgF]);
         if (commitF.status !== 0 && !/nothing to commit/.test(commitF.stdout || '')) {
@@ -1661,7 +1671,8 @@ function commitAndPRChangedRepos(taskId, taskTitle, snapshots, opts = {}) {
           continue; // 경쟁 PR 을 만들지 않는다. "머지완료 <taskid>" 로 재개.
         }
         const urlF = ensurePR(taskId, taskTitle, originalBranch, base0, root);
-        prs.push({ repo: root, url: urlF });
+        if (urlF) prs.push({ repo: root, url: urlF });
+        else skipped.push({ repo: root, reason: `no deliverables outside .agent/runtime/** on '${originalBranch}'; PR not opened (giip #4300)` });
         continue; // このリポは完了。以降の clean-before(stash) フローには進まない。
       }
 
@@ -1712,7 +1723,7 @@ function commitAndPRChangedRepos(taskId, taskTitle, snapshots, opts = {}) {
       }
 
       // clean pop → commit
-      git(['add', '-A']);
+      stageDeliverables(git); // giip #4300: .agent/runtime/** 제외
       const msg = `task(${taskId}): ${String(taskTitle).slice(0, 60)}\n\nAuto-committed by giipclaude Bot\n\n${coAuthor}`;
       const commit = git(['commit', '-m', msg]);
       if (commit.status !== 0 && !/nothing to commit/.test(commit.stdout || '')) {
@@ -1744,7 +1755,8 @@ function commitAndPRChangedRepos(taskId, taskTitle, snapshots, opts = {}) {
       }
       // PR 作成(gh 失敗時は ensurePR が compare URL にフォールバック)
       const url = ensurePR(taskId, taskTitle, branch, base, root);
-      prs.push({ repo: root, url });
+      if (url) prs.push({ repo: root, url });
+      else skipped.push({ repo: root, reason: `no deliverables outside .agent/runtime/** on '${branch}'; PR not opened (giip #4300)` });
       git(['checkout', originalBranch]); // 作業ツリーを元ブランチへ復元
     } catch (e) {
       // best-effort: 例外時も必ず元ブランチへ戻し、mid-conflict のまま放置しない
@@ -1795,7 +1807,8 @@ function resumeBlockedTask(taskId, taskTitle, blockedRecords) {
         continue;
       }
       const url = ensurePR(taskId, taskTitle, branch, base, root);
-      prs.push({ repo: root, url });
+      if (url) prs.push({ repo: root, url });
+      else failed.push({ repo: root, reason: `.agent/runtime/** 외 산출물이 없어 PR 을 열지 않았습니다(giip #4300)` });
       if (originalBranch) git(['checkout', originalBranch]);
     } catch (e) {
       try { if (originalBranch) git(['checkout', originalBranch]); } catch {}

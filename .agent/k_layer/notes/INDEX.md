@@ -19,3 +19,4 @@
 | [KNOW-014](KNOW-014_missing_tool_is_not_blocking_evidence.md) | 도구가 이 저장소 안에 없다는 사실은 단계를 건너뛸 근거가 아니다 — 정본 경로를 먼저 찾고, SK 부재 단정도 근거가 아니다 | 2026-10-26 CSN 70424 저장소 정비 53차 세션 실측 · 56차 세션이 정정·커밋 (work_history 20261026_0520) · tKB 등록 확정(kbSn 6694) | 6694 |
 | [KNOW-015](KNOW-015_dead_session_branch_pushed_without_pr.md) | "열린 PR 0건"은 "할 일 없음"의 증거가 아니다 — PR 생성 전에 죽은 세션은 원격 브랜치만 남으므로 `git ls-remote --heads origin` 으로 확인해 그 브랜치로 PR 을 만들어 계승 | 2026-10-26 CSN 70424 저장소 정비 57차 세션 실측 (work_history 20261026_0610) | 6697 |
 | [KNOW-016](KNOW-016_revert_decision_unit_is_request_checklist_not_pr_presence.md) | 되돌림 판정의 단위는 "PR 유무"가 아니라 "의뢰 항목 이행 여부" — 코드 변경 항목만 PR 이 증거, 판정불가는 되돌리지 않고 보류, 신규 판정은 Shadow 로 먼저 | giip 4334 | 6740 |
+| [KNOW-017](KNOW-017_runtime_only_pr_and_gate_debounce.md) | 런타임(.agent/runtime/**) 전용 커밋은 PR 로 나가면 안 된다 — 스테이징 제외 + 산출물 없는 PR 억제, 게이트 3회 누적 에스컬레이션은 작업 코멘트가 방금 있는 이슈를 한 틱 미룬다(디바운스) | giip 4300 | (tKB 미등록) |

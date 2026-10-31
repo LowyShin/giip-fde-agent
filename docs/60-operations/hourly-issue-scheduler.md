@@ -814,6 +814,25 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\tests\test-ch
 | Shadow 기록 | `scripts/gissue/logs/checklist-shadow.jsonl`(gitignore) | 롤아웃 판단(사람), 비교 스크립트 보조 |
 | 비교 결과 | `-OutFile` 로 지정한 JSON | 이슈 코멘트 보고(사람) |
 
+## 13-4) 게이트 디바운스 — 작업 세션이 방금 움직인 이슈는 한 틱 미룬다 (giip 4300)
+
+**문제**: 3회 누적 에스컬레이션(전 게이트 합산 캡, giip #2085/#2415)이 이슈가 실제로 작업 중이던 구간의 체크에도 가산돼,
+세션의 정상 handoff(REVIEW 전이)와 게이트의 NEEDS_DECISION 강제 전이가 1분 4초 차로 레이스한 사고가 있었다.
+
+**사양** (`scripts/gissue/gissue-gate-tally-lib.ps1` 의 `Get-IssueActivityDebounce`):
+
+| 항목 | 내용 |
+|---|---|
+| 용도 | `pr-gate-sweep.ps1` / `review-done-audit.ps1` 가 이슈를 판정하기 전에, 마지막 **작업 코멘트**가 `-MinIdleMinutes`(기본 10) 이내인지 본다. |
+| 활동에서 제외 | 게이트 자신의 코멘트(되돌림·에스컬레이션·감사·`[VERIFY-RUN]`/`[VERIFY-GATE]`·체크리스트 판정). 포함하면 게이트가 코멘트를 남길 때마다 스스로 디바운스를 연장한다(자기참조). `Test-GateOwnComment` 가 판정. |
+| 동작 | Active 이면 **스트라이크 가산·되돌림·에스컬레이션·상태 전이를 모두 하지 않고** 로그(`[DEBOUNCE]`)만 남긴 채 다음 틱으로 미룬다. 작업 코멘트가 잠잠해지면 다음 틱에 정상 판정하므로 무한 미룸이 없다. |
+| 적용 지점 | `pr-gate-sweep.ps1`: 이슈별 `$tally` 계산 직후 — 체크리스트 `Live` 경로와 구룰(Off/Shadow) 경로 **양쪽 모두 이 앞**이다. `review-done-audit.ps1`: `Invoke-AuditIssue` 의 코멘트 조회 직후(`-DiagnoseIsn` 진단 모드는 디바운스하지 않는다). |
+| 끄기 | `-MinIdleMinutes 0`. |
+| 저장·소비 | 저장물 없음(상태 비저장 — 판정은 매 틱 이슈 코멘트의 `regdate` 로 다시 계산). 소비처는 위 두 스크립트의 로그. |
+| 테스트 | `scripts/gissue/tests/test-gate-debounce.ps1` |
+
+범위 밖: 동시 세션이 같은 이슈를 중복 수행하는 문제(세션 간 작업 가시성)는 이 디바운스로 해소되지 않는다. 디바운스는 게이트가 활동 중인 이슈를 건드리지 않게 할 뿐, 세션 시작 시 같은 isn 의 활성 세션을 확인하는 지점은 별도 후속 이슈로 다룬다.
+
 ## 14) 연결 문서
 
 - **Docker 배포(auto clone + csn/sk/login_id 자동 등록 + Linux/pwsh 이식)**: `./docker-deployment.md`
