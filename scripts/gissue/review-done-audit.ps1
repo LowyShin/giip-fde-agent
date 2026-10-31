@@ -74,7 +74,13 @@ param(
     [int]$FollowupLoopThreshold = 2,    # 트레일링 윈도 내 이 개수 이상 이미 생성됐으면 다음 생성을 막는다
     [int]$RecentWindowHours = 2,        # "최근 코멘트됨" 필터 윈도. 0 또는 음수 = 최근-코멘트 필터 무제한(수동 전체점검용, giip #2587). 루프브레이커#2 트레일링 윈도는 아래에서 최소 2h 로 별도 유지.
     [int]$StalePrHours = 24,            # REVIEW+PR있음(미머지)일 때 "방치"로 보는 기준(시간)
-    [switch]$AllowWideLiveWindow        # "창 무제한(-RecentWindowHours 0) + -Live" 조합 허용. giip #2586(VERIFY-GATE fail-open) 수정 후에만 명시 — 없으면 그 조합을 거부한다(giip #2587 요건4, 자동 DONE 전이 범위 확대 방지).
+    [switch]$AllowWideLiveWindow,       # "창 무제한(-RecentWindowHours 0) + -Live" 조합 허용. giip #2586(VERIFY-GATE fail-open) 수정 후에만 명시 — 없으면 그 조합을 거부한다(giip #2587 요건4, 자동 DONE 전이 범위 확대 방지).
+    # [giip #4334] 의뢰 체크리스트 판정 모드: Off | Shadow(기본) | Live. 미지정이면 환경변수 GISSUE_CHECKLIST_MODE, 그것도 없으면 Shadow.
+    #   Shadow = 구룰이 그대로 동작하고 신룰 판정은 logs/checklist-shadow.jsonl 에 기록만 한다(코멘트/상태 변경 없음).
+    #   Live   = PR-전용 되돌림(Modification 분기)을 체크리스트 판정으로 대체한다. 롤아웃 조건(신구 병행 비교 보고 +
+    #            "체크리스트 없는 되돌림 0건" 확인)을 만족한 뒤에만 명시적으로 켠다. -Live(쓰기 허용)와는 별개의 스위치다.
+    [string]$ChecklistMode = '',
+    [int]$MaxChecklistReverts = 3       # [giip #4334] 전 게이트 합산 되돌림 이 횟수에 도달하면 더 되돌리지 않고 WARN 에스컬레이션
 )
 
 $ErrorActionPreference = 'Stop'
@@ -94,6 +100,14 @@ $env:GIIP_ACTOR = 'ai.dp01.gissue-scheduler'
 # PR-존재/머지 판정 + 코멘트 조회 공유 로직(중복 구현 금지, giip #1123 명시 요구) — pr-gate-sweep.ps1
 # 과 이 스크립트가 함께 dot-source 한다.
 . (Join-Path $PSScriptRoot 'gissue-audit-lib.ps1')
+# [giip #4334] 전 게이트 합산 되돌림 횟수(캡 판정)용 — pr-gate-sweep.ps1 과 같은 집계기.
+. (Join-Path $PSScriptRoot 'gissue-gate-tally-lib.ps1')
+
+# [giip #4334] 체크리스트 판정 모드(Off|Shadow|Live). 기본 Shadow = 신룰은 기록만, 구룰이 계속 동작.
+$ChecklistModeResolved = Get-ChecklistMode $ChecklistMode
+# 체크리스트 감사 코멘트를 실제로 남긴 isn. Live 모드의 READY/DONE 전이는 이 표에 있어야만 실행된다
+# (체크리스트 코멘트 없는 상태 전이 금지 - Set-IssueStatusAudit 가드).
+$script:ChecklistPosted = @{}
 
 $IsLive = [bool]$Live -and -not [bool]$DryRun   # -DryRun 이 있으면 무조건 dry-run 강제(둘 다 줘도 안전 쪽)
 $WindowUnlimited = ($RecentWindowHours -le 0)   # 0/음수 = 최근-코멘트 필터 무제한(수동 전체점검, giip #2587)
@@ -306,6 +320,7 @@ function Write-AuditComment($isn, $body, $marker) {
         # 로 결정되므로($AuditAuthor 는 마커 기반 멱등성 판정에만 쓰인다) 인자로 넘기지 않는다.
         & node (Join-Path $PSScriptRoot 'lib\post-comment.js') $isn "@$tmp" $ApiKey $ApiBaseUrl 'note' | Out-Null
         if ($LASTEXITCODE -ne 0) { Write-AuditLog "isn=${isn}: [경고] 코멘트 등록 실패(post-comment.js exit=$LASTEXITCODE)" }
+        elseif ($body -match '\[REVIEW-AUDIT:CHECKLIST-(REVERT|HOLD|KEEP)\]|## 의뢰 체크리스트 판정') { $script:ChecklistPosted[[int]$isn] = $true }
     } finally {
         Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
     }
@@ -314,6 +329,12 @@ function Write-AuditComment($isn, $body, $marker) {
 function Set-IssueStatusAudit($isn, $status, $reason) {
     Write-AuditLog "isn=${isn}: [상태변경 예정] -> $status"
     if (-not $IsLive) { return }
+    # [giip #4334 변경 지시 3] Live 체크리스트 모드에서는 체크리스트 감사 코멘트가 실제로 등록되지 않은 isn 의
+    # READY(되돌림)/DONE(확정) 전이를 금지한다. (WARN 에스컬레이션/사람확인 NEEDS_DECISION 은 되돌림이 아니라 제외.)
+    if ($ChecklistModeResolved -eq 'Live' -and $status -in @('READY', 'DONE') -and -not $script:ChecklistPosted.ContainsKey([int]$isn)) {
+        Write-AuditLog "isn=${isn}: [CHECKLIST-GUARD] 체크리스트 코멘트 없이 -> $status 전이 시도 차단(giip #4334)."
+        return
+    }
     if (-not $reason) { $reason = "review-done-audit: $status 로 전이" }
     # rule 63(giip #2586 동반 보완): 이 함수 스코프만 Continue 로 내려, 한 줄의 오류로 감사 전체가
     # 죽지 않게 한다. 상태전이는 감사의 최종 산출물이라 조용히 죽으면 안 된다.
@@ -596,6 +617,22 @@ function Get-HumanConfirmSignal($comments) {
     return $null
 }
 
+# ── [giip #4334] 이슈 1건의 의뢰 체크리스트 판정(부작용 없음: 조회 + LLM 판정만) ──
+# 반환: Invoke-ChecklistAssessment 결과(@{Ok;Decision;Items;Reason;Raw}) + .Pr(PR 증거). Ok=$false 면 호출부는
+# 아무것도 전이하지 않는다(근거 없이 되돌리지도, 확정하지도 않는다).
+function Get-AuditChecklistAssessment($iss, $comments, $repos) {
+    $isn = [int]$iss.isn
+    $content = if ($iss.content) { "$($iss.content)" } else { '' }
+    if (-not $content) {
+        $d = Get-IssueDetail $isn $ApiKey $ApiBaseUrl
+        if ($d -and $d.content) { $content = "$($d.content)" }
+    }
+    $pr = Get-ChecklistPrEvidence $isn $repos
+    $a = Invoke-ChecklistAssessment $isn $content $comments $pr
+    $a.Pr = $pr
+    return $a
+}
+
 # ── 이슈 1건 감사 ──
 function Invoke-AuditIssue($iss, $repos) {
     $isn = [int]$iss.isn
@@ -709,6 +746,63 @@ function Invoke-AuditIssue($iss, $repos) {
 
     if (-not $decisionBody) { return }
 
+    # ══ [giip #4334] 의뢰 체크리스트 판정 단계 ═══════════════════════════════════════════
+    # 구룰이 낸 결론이 (a) PR-전용 REVERT 이거나 (b) DONE 승격(PASS)일 때만 개입한다.
+    #  - Shadow: 구룰 그대로 진행하되, 신룰 판정을 계산해 logs/checklist-shadow.jsonl 에 기록(REVERT 만 대상).
+    #  - Live  : 구룰 REVERT 를 체크리스트 판정으로 대체한다.
+    #       KEEP   -> 되돌리지 않는다(구룰 REVERT 였다면 오판 정정). DONE 승격(PASS)이면 체크리스트를 코멘트에 싣고 진행.
+    #       REVERT -> 미충족 항목을 명시한 체크리스트 코멘트 + READY (전 게이트 합산 캡 도달 시 WARN 에스컬레이션).
+    #       HOLD   -> 되돌리지 않고 NEEDS_DECISION + 필요한 증거 코멘트.
+    #       판정 호출 실패/빈 응답(Ok=$false) -> 아무것도 전이하지 않는다(근거 없이 되돌리지도 확정하지도 않음).
+    # VERIFY-GATE/scope/comment/보고형 대조는 별도 되돌림이 아니라 이 항목 판정의 증거로 흡수됐다
+    # (VERIFY-GATE FAIL 은 아래에서 "verify 블록 통과" 미충족 항목으로 체크리스트에 합류한다).
+    $assess = $null
+    $legacyRevert = ($decisionMarker -eq 'REVERT')
+    $legacyPromote = ($decisionNewStatus -eq 'DONE')
+    if ($ChecklistModeResolved -ne 'Off' -and ($legacyRevert -or ($ChecklistModeResolved -eq 'Live' -and $legacyPromote))) {
+        $assess = Get-AuditChecklistAssessment $iss $comments $repos
+        if ($ChecklistModeResolved -eq 'Shadow') {
+            if ($legacyRevert) {
+                Write-AuditLog "isn=${isn}: [CHECKLIST-SHADOW] 구룰=REVERT 신룰=$($assess.Decision) ($($assess.Reason)) - 기록만, 구룰 계속 진행."
+                if ($assess.Ok) { Write-ChecklistShadowRecord $isn 'REVERT' $assess 'review-done-audit' }
+            }
+            $assess = $null
+        } else {
+            if (-not $assess.Ok) {
+                Write-AuditLog "isn=${isn}: [CHECKLIST] $($assess.Reason) - 전이 없음(근거 없이 되돌리지도 확정하지도 않는다)."
+                return
+            }
+            if ($assess.Decision -eq 'KEEP') {
+                if ($legacyRevert) {
+                    Write-AuditLog "isn=${isn}: [CHECKLIST] 구룰=REVERT 였으나 의뢰 체크리스트 $($assess.Reason) - 되돌리지 않고 상태 유지(giip #4334)."
+                    return
+                }
+                # DONE 승격: 체크리스트를 승격 코멘트에 싣는다(코멘트 없는 전이 금지).
+                $decisionBody = Format-ChecklistComment $isn 'KEEP' $assess.Items $assess.Reason 0 $MaxChecklistReverts "$decisionNewStatus 로 전이합니다. (구룰 PASS 조건: $($decisionBody -split "`n" | Select-Object -Skip 1 | Select-Object -First 1))"
+                $decisionMarker = 'CHECKLIST-KEEP'
+            }
+            elseif ($assess.Decision -eq 'HOLD') {
+                $decisionBody = Format-ChecklistComment $isn 'HOLD' $assess.Items $assess.Reason 0 $MaxChecklistReverts '위 항목의 증거를 이슈 코멘트로 남기고 사람이 DONE/READY 로 직접 전이해 주십시오.'
+                $decisionMarker = 'CHECKLIST-HOLD'; $decisionNewStatus = 'NEEDS_DECISION'
+            }
+            else {
+                # REVERT: 전 게이트 합산 되돌림 횟수 캡 + 동일 미충족 집합 반복 감지(무한루프 방지 유지, 변경 지시 7).
+                $tally = Get-GateRevertTally $comments
+                $repeat = Test-ChecklistUnmetRepeat $comments $assess.Items
+                if ($repeat -or ($tally.Total + 1) -gt $MaxChecklistReverts) {
+                    $why = if ($repeat) { '직전 체크리스트 되돌림과 미충족 항목 집합이 동일(작업자가 같은 지점에서 반복 실패)' } else { "전 게이트 합산 되돌림 $($tally.Total)회로 캡($MaxChecklistReverts) 도달" }
+                    $warnBody = (Format-ChecklistComment $isn 'HOLD' $assess.Items $assess.Reason 0 $MaxChecklistReverts "더 이상 자동으로 되돌리지 않습니다: $why. 상태를 WARN 으로 전환하고 이 이슈에 대한 자동 조치를 중단합니다 - 사람이 확인해 주십시오. (giip #4334 무한루프 방지)") -replace '\[REVIEW-AUDIT:CHECKLIST-HOLD\]', '[REVIEW-AUDIT:WARN]'
+                    Write-AuditComment $isn $warnBody 'WARN'
+                    Set-IssueStatusAudit $isn 'WARN' "체크리스트 되돌림 루프브레이커: $why (giip #4334)"
+                    Write-AuditLog "isn=${isn}: [CHECKLIST] 루프브레이커 발동 - $why -> WARN."
+                    return
+                }
+                $decisionBody = Format-ChecklistComment $isn 'REVERT' $assess.Items $assess.Reason ($tally.Total + 1) $MaxChecklistReverts
+                $decisionMarker = 'CHECKLIST-REVERT'; $decisionNewStatus = 'READY'
+            }
+        }
+    }
+
     # 요건 1: 동일 코멘트 반복 감지(직전 감사 코멘트와 정규화 비교) — 결정 코멘트를 실제로 남기기 전에 검사.
     # giip #2402: "왕복 반복"의 진짜 신호는 REVERT 반복뿐이다. PASS/FINAL/NEEDS_DECISION이 직전과
     # 동일한 건 문제 재발이 아니라 무관한 새 코멘트가 붙을 때마다 같은 결론이 반복되는 정상 패턴(실제
@@ -719,7 +813,7 @@ function Invoke-AuditIssue($iss, $repos) {
         $normNew = Get-NormalizedText $decisionBody
         $normOld = Get-NormalizedText $lastAudit.content
         if ($normNew -and $normNew -eq $normOld) {
-            if ($decisionMarker -eq 'REVERT') {
+            if ($decisionMarker -eq 'REVERT' -or $decisionMarker -eq 'CHECKLIST-REVERT') {
                 $warnBody = "[REVIEW-AUDIT:WARN] (감지 시각: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))`n이 이슈에 대해 감사 로직이 2회 연속 동일한 REVERT 판정을 반복했습니다(정규화 비교 일치). 근본 원인 추정: 되돌림(READY) 후에도 같은 문제(PR 미생성/미머지 등)가 그대로 재발했거나, 처리 담당 세션이 매번 같은 지점에서 멈추고 있을 가능성이 높습니다. 무한 왕복을 막기 위해 상태를 WARN 으로 전환하고 이 이슈에 대한 자동 조치를 중단합니다 — 사람이 근본 규칙/막힌 지점을 확인해 주세요. (giip #1123 무한루프 방지 요건 1, giip #2402로 REVERT 전용으로 범위 축소)"
                 Write-AuditComment $isn $warnBody 'WARN'
                 Set-IssueStatusAudit $isn 'WARN' "루프브레이커#1: 감사 판정이 2회 연속 동일한 REVERT(정규화 비교 일치) — 왕복 반복 의심, 자동조치 중단 (giip #1123, giip #2402)"
@@ -765,6 +859,15 @@ function Invoke-AuditIssue($iss, $repos) {
                 $decisionMarker = 'VERIFY-FAIL'
                 $decisionNewStatus = 'READY'
                 $decisionBody = "[VERIFY-GATE:FAIL] 완료조건 실행 실패로 DONE 을 취소합니다.`n이슈에 적힌 verify 블록을 실제로 실행한 결과 하나 이상이 exit!=0 이었습니다(직전 [VERIFY-RUN] 코멘트에 명령별 출력이 있습니다). PR 이 머지됐더라도 실제 동작이 확인되지 않았으므로 완료가 아닙니다. READY 로 되돌려 재처리합니다. (rule 57 / k-layer KNOW-021)"
+                # [giip #4334] Live 체크리스트 모드: verify 실행 FAIL 도 별도 되돌림이 아니라 체크리스트의 미충족 항목으로 합류시키고,
+                # 체크리스트 코멘트와 함께 전이한다(코멘트 없는 READY 전이 금지).
+                if ($ChecklistModeResolved -eq 'Live' -and $assess -and $assess.Ok) {
+                    $vItems = @($assess.Items) + @([pscustomobject]@{ N = (@($assess.Items).Count + 1); Kind = 'other'; Verdict = 'UNMET'
+                        Text = '이슈 verify 블록(기계 실행 가능한 완료조건)이 실제 실행에서 PASS 한다'
+                        Evidence = 'verify-runner 실행 결과 FAIL(exit=1) - 직전 [VERIFY-RUN] 코멘트의 명령별 출력 참조' })
+                    $decisionBody = Format-ChecklistComment $isn 'REVERT' $vItems "verify 실행 FAIL 포함 - 미충족 $(@($vItems | Where-Object { $_.Verdict -eq 'UNMET' }).Count)건" 0 $MaxChecklistReverts
+                    $decisionMarker = 'CHECKLIST-REVERT'
+                }
             } elseif ($verifyExit -eq 2) {
                 Write-AuditLog "isn=${isn}: [VERIFY-GATE] SKIP - verify 블록 없음, 기존 판정 유지."
                 $decisionBody = "$decisionBody`n`n[VERIFY-GATE] SKIP - 이 이슈에는 기계 실행 가능한 완료조건(verify 블록)이 없어 실행 검증을 하지 못했습니다. 사용자가 제기한 불편이라면 rule 57 에 따라 verify 블록을 추가해야 합니다."

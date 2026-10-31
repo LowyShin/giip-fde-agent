@@ -492,7 +492,9 @@ function Invoke-GissuePrGateSweep($csn, $workdir) {
     $sk = Get-GissueCsnSk $csn
     if (-not $sk) { Write-Log $csn "[PR-GATE-SWEEP] SKIP: SK 없음(giip-accounts.json 에 csn=$csn 미등록)"; return }
     try {
-        $out = & $script:GissuePsExe -NoProfile -ExecutionPolicy Bypass -File $SweepScript -Csn $csn -Workdir $workdir -ApiKey $sk 2>&1
+        # [giip #4334] 체크리스트 판정 모드는 환경변수 GISSUE_CHECKLIST_MODE(Off|Shadow|Live)로만 바꾼다. 미설정=Shadow(기록만).
+        $chkMode = if ($env:GISSUE_CHECKLIST_MODE) { @('-ChecklistMode', $env:GISSUE_CHECKLIST_MODE) } else { @() }
+        $out = & $script:GissuePsExe -NoProfile -ExecutionPolicy Bypass -File $SweepScript -Csn $csn -Workdir $workdir -ApiKey $sk @chkMode 2>&1
         foreach ($line in @($out)) { if ("$line".Trim()) { Write-Log $csn "[PR-GATE-SWEEP] $line" } }
     } catch {
         Write-Log $csn "[PR-GATE-SWEEP] 오류: $($_.Exception.Message)"
@@ -523,7 +525,9 @@ function Invoke-GissueReviewDoneAudit($csn, $workdir) {
     $sk = Get-GissueCsnSk $csn
     if (-not $sk) { Write-Log $csn "[REVIEW-DONE-AUDIT] SKIP: SK 없음(giip-accounts.json 에 csn=$csn 미등록)"; return }
     try {
-        $out = & $script:GissuePsExe -NoProfile -ExecutionPolicy Bypass -File $ReviewDoneAuditScript -Csn $csn -Workdir $workdir -ApiKey $sk -Live 2>&1
+        # [giip #4334] -Live 는 "쓰기 허용"이고 체크리스트 모드(GISSUE_CHECKLIST_MODE, 기본 Shadow)와는 별개다.
+        $chkMode = if ($env:GISSUE_CHECKLIST_MODE) { @('-ChecklistMode', $env:GISSUE_CHECKLIST_MODE) } else { @() }
+        $out = & $script:GissuePsExe -NoProfile -ExecutionPolicy Bypass -File $ReviewDoneAuditScript -Csn $csn -Workdir $workdir -ApiKey $sk -Live @chkMode 2>&1
         foreach ($line in @($out)) { if ("$line".Trim()) { Write-Log $csn "[REVIEW-DONE-AUDIT] $line" } }
     } catch {
         Write-Log $csn "[REVIEW-DONE-AUDIT] 오류: $($_.Exception.Message)"
@@ -915,6 +919,15 @@ $BlockC = @'
     pr-gate-sweep.ps1 은 같은 마커+작성자 조합의 되돌림 코멘트 개수를 세어 최대 3회까지만 자동으로
     되돌리고, 그래도 해소되지 않으면 `*-GATE-HUMAN-REVIEW` 코멘트를 남기고 REVIEW 를 유지한 채 자동
     되돌림을 멈춘다.
+  - **의뢰 체크리스트 미충족 항목만 이어받기(필수, giip #4334)**: 코멘트 이력에 `[REVIEW-AUDIT:CHECKLIST-REVERT]`
+    마커 코멘트가 있으면(스케줄러의 사후검증이 의뢰 항목을 체크리스트로 분해·판정해 되돌리며 남긴 것), 가장 최근
+    것의 `## 미충족 항목 (다음 세션 작업 범위)` 절에 적힌 항목(`- [ ] (C<번호>) ...`)만을 이번 세션의 작업 범위로
+    우선 삼는다. `## 의뢰 체크리스트 판정` 절에서 `[x]`(충족)로 판정된 항목은 다시 하지 않는다 — 단 그 근거
+    (코멘트/PR 링크)가 실제로 성립하는지 의심스러우면 확인 결과를 코멘트에 남긴다. 미충족 항목을 처리한 뒤
+    REVIEW/DONE 코멘트에는 항목 번호(C<번호>)별로 무엇을 했고 어떤 증거(커밋/PR/외부 증적 링크, 실행 결과)가
+    있는지 적는다 — 다음 사후검증이 항목별로 대조한다. PR 은 코드 변경이 필요한 항목의 증거일 뿐이며, 문서·설정·조사
+    항목은 결과 코멘트와 증적 링크가 증거다. `[REVIEW-AUDIT:CHECKLIST-HOLD]` 코멘트(판정불가 항목)가 있으면
+    그 "필요한 증거" 절의 증거를 코멘트로 남긴다.
   - **대응 PR 이 성립하지 않는 이슈의 탈출구 — `[NO-PR-REASON]` 마커를 직접 남길 것(필수, giip #2425)**:
     이 이슈가 조사·진단·설계결정·보고·캐리오버(실제 조치를 후속 이슈로 분리)형이라 **대응 코드 PR 이
     애초에 성립하지 않는다**고 판단했으면, REVIEW 로 전이하기 **전에** 반드시 아래 형식의 note 코멘트를

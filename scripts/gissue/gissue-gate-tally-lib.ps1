@@ -25,7 +25,9 @@ function Get-GateRevertSourceDefs {
         @{ Key = 'scope-gate';   Marker = ('[SCOPE-GATE-' + 'REVERT]');   Author = 'gissue-scope-gate';   Label = 'scope-gate(scope-match MISMATCH)' },
         @{ Key = 'comment-gate'; Marker = ('[COMMENT-GATE-' + 'REVERT]'); Author = 'gissue-comment-gate'; Label = 'comment-gate(진행 코멘트 프로토콜 미충족)' },
         @{ Key = 'review-audit'; Marker = ('[REVIEW-AUDIT:' + 'REVERT]'); Author = 'gissue-review-audit'; Label = 'review-done-audit(완료위조 감사 되돌림)' },
-        @{ Key = 'report-gate';  Marker = ('[NO-PR-REASON-' + 'REVERT]'); Author = 'gissue-report-gate';  Label = 'report-gate(보고형 의뢰↔결과 미충족)' }
+        @{ Key = 'report-gate';  Marker = ('[NO-PR-REASON-' + 'REVERT]'); Author = 'gissue-report-gate';  Label = 'report-gate(보고형 의뢰↔결과 미충족)' },
+        # giip #4334: 의뢰 체크리스트 판정 되돌림. CHECKLIST-KEEP/HOLD 는 되돌림이 아니므로 세지 않는다.
+        @{ Key = 'checklist';    Marker = ('[REVIEW-AUDIT:CHECKLIST-' + 'REVERT]'); Author = 'gissue-review-audit'; Label = 'checklist(의뢰 체크리스트 미충족 되돌림)' }
     )
 }
 
