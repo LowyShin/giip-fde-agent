@@ -129,6 +129,19 @@ async function maybeComment(channelId, isn, comment) {
   catch (e) { console.error('[giip-task] comment(note) 실패:', e.message); }
 }
 
+/**
+ * 행위자 헤더 없이 본문 그대로 코멘트를 남긴다(best-effort). 첫 줄이 계약 마커여야 하는 코멘트
+ * (예: `[NO-PR-REASON]` — scripts/gissue/gissue-audit-lib.ps1 Test-HasNoPrReasonMarker, giip 4231)용이다.
+ * 반환: 게시 성공 여부.
+ */
+async function maybeCommentRaw(channelId, isn, comment) {
+  if (!isn || !comment) return false;
+  const acct = accounts.resolve(channelId);
+  if (!acct) return false;
+  try { await giip.issueComment(acct, isn, String(comment)); return true; }
+  catch (e) { console.error('[giip-task] comment(raw) 실패:', e.message); return false; }
+}
+
 /** 길이 제한(태스크 파일·프롬프트 폭주 방지). */
 function clip(s, max) {
   const str = String(s == null ? '' : s);
@@ -178,4 +191,4 @@ async function fetchIssueHistory(channelId, isn) {
   return { issue, comments, digest: formatIssueHistory(isn, issue, comments) };
 }
 
-module.exports = { maybeCreateIssue, maybeFinish, maybeComment, fetchIssueHistory, formatIssueHistory };
+module.exports = { maybeCreateIssue, maybeFinish, maybeComment, maybeCommentRaw, fetchIssueHistory, formatIssueHistory };
