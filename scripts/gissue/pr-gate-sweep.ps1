@@ -508,7 +508,10 @@ function Invoke-ChecklistTransition($isn, $note, $newStatus, $label) {
 function Get-SweepChecklistAssessment($isn, $comments) {
     $d = Get-IssueDetail $isn $ApiKey $ApiBaseUrl
     $content = if ($d -and $d.content) { "$($d.content)" } else { '' }
-    $pr = Get-ChecklistPrEvidence $isn $repos
+    # [giip #4335] nested repo 스캔 밖(예: 제품 레포 giipv3)의 PR 도 이슈 본문/코멘트에 링크돼 있으면
+    # 증거로 인정한다 — Get-ChecklistPrEvidence 가 레포 스캔으로 못 찾을 때만 이 텍스트를 보조로 쓴다.
+    $linkTexts = @($content, (ConvertTo-CommentsText $comments))
+    $pr = Get-ChecklistPrEvidence $isn $repos $linkTexts
     return (Invoke-ChecklistAssessment $isn $content $comments $pr)
 }
 
@@ -624,15 +627,20 @@ foreach ($iss in $issues) {
         continue
     }
 
-    if (-not (Test-IssueHasPr $isn $repos)) {
+    # [giip #4335] 구룰(PR-gate) 에도 이슈 본문/코멘트의 PR 링크를 보조 증거로 넘긴다 — nested repo
+    # 스캔 밖(예: 제품 레포 giipv3)에만 PR 이 있어 "PR 없음"으로 오판·되돌림되는 사고를 막는다.
+    # 아래 $issueDetail/$issueContent/$commentsText 는 [NO-PR-REASON] 분기(보고형 완료판정)도 그대로 재사용한다.
+    $issueDetail = Get-IssueDetail $isn $ApiKey $ApiBaseUrl
+    $issueContent = if ($issueDetail -and $issueDetail.content) { $issueDetail.content } else { '' }
+    $commentsText = ConvertTo-CommentsText $comments
+    $legacyLinkTexts = @($issueContent, $commentsText)
+
+    if (-not (Test-IssueHasPr $isn $repos $legacyLinkTexts)) {
         # ── giip #3801: [NO-PR-REASON] 보고형 이슈 — 마커만 보고 통과시키지 않고 의뢰↔결과를 대조한다 ──
         # 종전(giip #2415)에는 마커만 있으면 판정 없이 REVIEW 를 유지해, 완료됐든 미완성이든 똑같이 주차됐다.
         # 이제 [이슈 본문](의뢰)과 [코멘트 보고](결과)를 Invoke-ReportCompletionJudge 로 대조한다:
         #   FULFILLED → 자동 DONE, UNFULFILLED → 되돌림(전체 합산 3회 캡), 판정 실패/모호 → 안전 폴백(REVIEW 유지).
         if ($hasNoPrReason) {
-            $issueDetail = Get-IssueDetail $isn $ApiKey $ApiBaseUrl
-            $issueContent = if ($issueDetail -and $issueDetail.content) { $issueDetail.content } else { '' }
-            $commentsText = ConvertTo-CommentsText $comments
             $doneJudge = Invoke-ReportCompletionJudge $isn $issueContent $commentsText
             if (-not $doneJudge.ok) {
                 $gateWarn++
@@ -688,7 +696,7 @@ foreach ($iss in $issues) {
     # ── giip #1210: scope-match / comment-gate 2단계 추가 판정 (giip #2085 로 3회 캡 적용) ──
     # PR 이 존재하는 것으로 확인된 이슈에 대해서만 진행한다. 판정 호출 자체가 실패/차단되면
     # 안전하게 기존 동작(PR 있음 → REVIEW 유지)으로 폴백하고 WARN 로그만 남긴다(이슈 본문 명시 요구).
-    $prInfo = Get-IssuePrInfo $isn $repos
+    $prInfo = Get-IssuePrInfo $isn $repos $legacyLinkTexts
     if (-not $prInfo) {
         $gateWarn++
         Write-SweepLog "isn=${isn}: PR 있음으로 판정됐지만 상세 조회 실패 → scope/comment 게이트 생략, REVIEW 유지(안전 폴백)."

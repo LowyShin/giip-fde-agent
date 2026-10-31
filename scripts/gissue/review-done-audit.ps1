@@ -691,8 +691,10 @@ function Invoke-AuditIssue($iss, $repos) {
         $decisionMarker = 'PASS'; $decisionNewStatus = 'DONE'
     }
     elseif ($classification -eq 'Modification') {
-        $hasMerged = Test-IssueHasMergedPr $isn $repos
-        $hasAny = Test-IssueHasPr $isn $repos
+        # [giip #4335] nested repo 스캔 밖(제품 레포 등)의 PR 도 이슈 본문/코멘트 링크로 인정한다.
+        # $allText(title+content+전체 코멘트, 위에서 이미 계산됨)를 그대로 재사용 — 추가 API 호출 없음.
+        $hasMerged = Test-IssueHasMergedPr $isn $repos @($allText)
+        $hasAny = Test-IssueHasPr $isn $repos @($allText)
 
         if ($hasMerged) {
             if ($status -eq 'DONE') {
