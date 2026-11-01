@@ -105,3 +105,22 @@
   - `.agent/k_layer/notes/INDEX.md` (KNOW-022 행 추가)
   - `docs/WHATS_NEW.md` (66차 항목 추가 + 65차 항목 정정 1줄)
 - 소비처: 다음 회차 세션의 인수 매체 · `docs/WHATS_NEW.md` → `README.md` 최상단 링크 · tKB 지식 정본 색인
+
+## 이슈 측 조치 (66차 — 1차 커밋 후 실행분)
+
+1차 커밋(`0acec41`)이 남긴 "이슈 측 조치는 후속 커밋에 기록한다" 를 실제 결과로 채운다.
+
+- **정정 코멘트**: `bash scripts/gissue/get-issue.sh 4411 70424 --comment-file <UTF-8 파일> --role orchestrator`
+  → 등록 성공 · **cSn 37073**(author `ai.dp01.gissue-scheduler`, loadedRole `orchestrator`,
+  regdate `2026-11-01T21:42:26Z` = 2026-11-02 06:42:26 KST).
+  스크립트 자체 사후검증 `[VERIFY] OK — 저장본이 원문과 일치(cSn=37073)` 통과(mojibake 없음).
+- **상태 전이**: `updateIssueStatus.ps1 -isn 4411 -status READY -ExpectedCsn 70424
+  -Actor "ai.dp01.gissue-scheduler" -Reason "…" -Role "orchestrator"`
+  → **PENDING → READY** 성공 · 전이 코멘트 **cSn 37074**(regdate `2026-11-01T21:44:15Z`).
+  `DONE`·`TESTED` 전이는 하지 않았다([H] 범위 — giip #1244 사고 회피).
+- **PR**: https://github.com/LowyShin/giip-fde-agent/pull/342 (66차 1차 커밋 `0acec41`)
+- **tKB**: `node scripts/gissue/tkb.js sync-klayer --csn 70424 --dir <worktree>/.agent/k_layer/notes
+  --project giip-fde-agent --note "KNOW-022_*.md"` → **created kbSn 6817**
+  (합계 1건 · created 1 / updated 0 / 실패·불일치 0).
+  `tkb.js get --csn 70424 --kb-sn 6817` 대조로 본문 마지막 불릿
+  ("`KNOW-015` — '열린 PR 0건'은 할 일 없음의 증거가 아니다")까지 온전함을 확인(4,000자 절단 없음).
