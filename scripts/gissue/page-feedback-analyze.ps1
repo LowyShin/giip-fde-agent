@@ -159,7 +159,7 @@ function Invoke-PfaClaude([string]$SystemPrompt, [string]$UserPrompt, [string]$M
         $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
         # 도구 전부 차단: --tools "" 는 내장 도구를 모두 끈다. MCP/설정/스킬/세션 저장도 끈다. 권한 우회 옵션은 쓰지 않는다.
         foreach ($a in @('-p', '--bare', '--tools', '', '--strict-mcp-config', '--setting-sources', '', '--disable-slash-commands',
-                '--no-session-persistence', '--output-format', 'text', '--model', $(if ($env:MINIMAX_MODEL) { $env:MINIMAX_MODEL } else { 'MiniMax-M2.7' }),
+                '--no-session-persistence', '--output-format', 'text', '--model', $(if ($env:MINIMAX_MODEL) { $env:MINIMAX_MODEL } else { 'MiniMax-M3' }),
                 '--system-prompt', $SystemPrompt)) { $psi.ArgumentList.Add($a) }
         $psi.Environment['ANTHROPIC_BASE_URL'] = if ($env:MINIMAX_BASE_URL) { $env:MINIMAX_BASE_URL } else { 'https://api.minimax.io/anthropic' }
         $psi.Environment['ANTHROPIC_API_KEY'] = $MiniMaxKey

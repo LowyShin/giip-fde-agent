@@ -94,7 +94,7 @@ $ClaudeModel  = 'claude-opus-4-8'
 # MiniMax 우선 엔진(2026-08-07 사용자 지시 — "모든 AI처리는 minimax가 메인, 품질체크만 claude").
 # MINIMAX_API_KEY 가 있으면 먼저 시도(Anthropic 호환 엔드포인트로 claude CLI 자체를 재사용), 실패/
 # 사용량한도면 같은 실행 안에서 즉시 실제 claude($ClaudeModel)로 폴백한다. 키가 없으면 항상 claude.
-$MiniMaxModel = 'MiniMax-M2.7'
+$MiniMaxModel = 'MiniMax-M3'
 $MiniMaxBaseUrl = 'https://api.minimax.io/anthropic'
 # giip #1141: claude CLI 가 'MiniMax-M2.7' 모델명을 인식하지 못해 "auto-compact will keep this session
 # within 200k tokens" 로 가정하고 과도하게 auto-compact 한다. MiniMax-M2.7 실제 컨텍스트 창은 공식

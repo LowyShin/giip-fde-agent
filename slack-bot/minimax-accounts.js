@@ -13,7 +13,7 @@
  * 서로 호환되지 않는다. MINIMAX_API_KEY 에는 반드시 sk-cp- 로 시작하는 구독 키를 넣는다.
  */
 
-const DEFAULT_MODEL = 'MiniMax-M2.7';
+const DEFAULT_MODEL = 'MiniMax-M3';
 const ANTHROPIC_BASE_URL = 'https://api.minimax.io/anthropic';
 const DEFAULT_COOLDOWN_MS = 60 * 60 * 1000; // 1h — MiniMax 쪽 리셋 주기를 모르므로 보수적 기본값
 
