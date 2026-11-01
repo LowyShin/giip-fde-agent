@@ -84,8 +84,12 @@ if (-not $result.Healthy) {
         $listJs = Join-Path $ScriptDir 'list-issues.js'
         $regJs  = Join-Path $ScriptDir 'register-issue.js'
         try {
-            $existing = & node $listJs --csn $ops --status 'PENDING,READY,IN_PROGRESS,REVIEW' --json 2>&1 | Out-String | ConvertFrom-Json
-            $dup = @($existing | Where-Object { $_.title -like "$($title.Replace('[','[[]'))*" })
+            # list-issues.js 가 없는 배포(일부 사본)에서는 중복 조회를 건너뛰고 쿨다운 서명만으로 막는다.
+            $dup = @()
+            if (Test-Path -LiteralPath $listJs) {
+                $existing = & node $listJs --csn $ops --status 'PENDING,READY,IN_PROGRESS,REVIEW' --json 2>&1 | Out-String | ConvertFrom-Json
+                $dup = @($existing | Where-Object { $_.title -like "$($title.Replace('[','[[]'))*" })
+            }
             if ($dup.Count -gt 0) {
                 Say "[gissue-liveness] 알림 생략: 열린 [OPS] 이슈가 이미 있음(isn=$($dup[0].isn))"
             } else {
