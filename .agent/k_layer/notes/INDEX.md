@@ -23,3 +23,4 @@
 | [KNOW-016](KNOW-016_revert_decision_unit_is_request_checklist_not_pr_presence.md) | 되돌림 판정의 단위는 "PR 유무"가 아니라 "의뢰 항목 이행 여부" — 코드 변경 항목만 PR 이 증거, 판정불가는 되돌리지 않고 보류, 신규 판정은 Shadow 로 먼저 | giip 4334 | 6740 |
 | [KNOW-017](KNOW-017_runtime_only_pr_and_gate_debounce.md) | 런타임(.agent/runtime/**) 전용 커밋은 PR 로 나가면 안 된다 — 스테이징 제외 + 산출물 없는 PR 억제, 게이트 3회 누적 에스컬레이션은 작업 코멘트가 방금 있는 이슈를 한 틱 미룬다(디바운스) | giip 4300 | 6742 |
 | [KNOW-020](KNOW-020_shadow_mode_is_not_free_cache_ttl_cap_backoff.md) | Shadow 모드도 비용이다 - 구룰이 되돌리려는 이슈마다 LLM 을 부르는 기록 전용 경로는 입력해시 캐시·TTL·상한·실패 백오프가 필요하다(캐시는 Shadow 한정, 동시 쓰기 유실 방지) | giip 4334 | (tKB 미등록) |
+| [KNOW-021](KNOW-021_scheduler_liveness_is_judged_by_output_freshness_not_task_result.md) | 스케줄러 생존은 태스크 결과코드(LastTaskResult=0)가 아니라 처리 로그 신선도로 판정, 감시자는 독립 태스크 — 처리 본체가 6일 넘게 안 돈 사고 | giip 4411 | (tKB 등록 대기) |

@@ -897,6 +897,46 @@ Shadow 가 쌓이지 않던 원인(수정됨): `review-done-audit.ps1` 은 `pr-g
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\check-ps1-parse.ps1 -All
 ```
 
+## 16) 처리 무소식 알람 — 처리 로그 신선도 점검 (giip 4411)
+
+**실사고**: 스케줄 태스크가 이슈 처리 본체(`run-gissue-claude.ps1`)가 아닌 다른 스크립트를 가리키도록 일괄 변경돼,
+처리 본체가 6일 넘게 한 번도 돌지 않았다. 태스크는 매시 2초 만에 정상 종료(`LastTaskResult=0`)라 아무도 몰랐다.
+**"스케줄러가 돈다"는 사실은 Task Scheduler 결과코드로 알 수 없다 — 처리 산출물이 신선한지를 본다.**
+
+| 항목 | 내용 |
+|---|---|
+| 용도 | CSN 별 처리 로그가 일정 시간 갱신되지 않으면 "무소식"으로 알린다 |
+| 스크립트 | `scripts/gissue/check-gissue-liveness.ps1` (판정 함수는 `scripts/gissue/lib/gissue-liveness-lib.ps1`) |
+| 읽는 곳 | `scripts/gissue/logs/gissue_csn<N>.log` 의 mtime, `gissue_csn<N>.lock`(`PID\|시작\|마지막로그`), 대상 CSN 은 `csn-projects.json` 의 `enabled` CSN(없으면 로그 파일명) |
+| 쓰는 곳 | 기본은 **없음(읽기 전용)**. `-Notify -OpsCsn <csn>` 일 때만 giip 이슈 DB 에 `[OPS] gissue 처리 무소식 감지` 이슈 1건(`register-issue.js`)과 쿨다운 서명 `logs/gissue_liveness_state.json` |
+| 소비처 | 종료코드(0 정상 / 1 무소식·판정 불가)는 점검 태스크의 `LastTaskResult`, `-Json` 은 대시보드·사람, `[OPS]` 이슈는 운영 큐 |
+| 등록 | `scripts/gissue/register-gissue-liveness-task.ps1` (매시 :37, 태스크명 `GIIP_GissueLiveness_Hourly`). **사람이 실행한다** — 스케줄러 변경은 자동화하지 않는다 |
+| 테스트 | `scripts/gissue/tests/test-gissue-liveness.ps1` (가짜 로그 디렉터리 + mtime 픽스처) |
+
+**판정**
+- CSN 별: `OK`(최근 `-MaxSilentHours` 이내 로그 갱신, 기본 3h = 스케줄 1h + 긴 실행 상한 105분 여유) /
+  `RUNNING`(살아있는 락 = 처리 중. 로그가 잠잠해도 오탐하지 않는다) /
+  `SILENT`(로그가 기준보다 오래됨; 죽은 PID 락이나 `-StaleLockHours`(기본 2h) 이상 묵은 락이면 사유에 표시) /
+  `NO_LOG`(로그 파일 없음).
+- 전체: `OK` / `PARTIAL_SILENT`(일부 CSN 만 — 스케줄러는 도는데 해당 CSN 만 건너뜀) /
+  `ALL_SILENT`(전부 — **스케줄러 자체 정지 의심**, 태스크 대상 스크립트부터 확인) /
+  `NO_TARGETS`(대상 0건 — 판정 불가이며 정상으로 치지 않는다).
+- 처리 본체는 CSN 마다 매 실행 `Write-Log` 를 남기므로(이슈 0건이어도) 정상 가동이면 로그는 매시 갱신된다.
+
+**알림 정책**: 기본은 출력만(`-Notify` 없음 = DRYRUN). `-OpsCsn`(또는 환경변수 `GISSUE_LIVENESS_OPS_CSN`)이 없으면
+알림 없이 종료코드만 남긴다. 대상 CSN 은 이 배포가 쓰기 권한을 가진 작업 CSN 이어야 한다(남의 CSN 에 쓰지 않는다).
+열린 같은 제목 이슈가 있으면 새로 만들지 않고, 상태 서명(전체/일부 + 무소식 CSN 목록)이 같으면 `-CooldownHours`(기본 6)
+동안 재알림하지 않는다. 선례는 미매핑 CSN 가드(`GISSUE_CSNGUARD_OPS_CSN`)다.
+
+**설계 원칙 — 감시자는 감시 대상과 독립 태스크여야 한다.** 이 점검을 `GIIP_Gissue_Claude` 에 끼우거나 `run-gissue-claude.ps1`
+안에서 돌리면, 이번 사고처럼 처리 경로가 통째로 죽을 때 감시도 같이 죽어 아무도 알리지 못한다. 그래서 별도 태스크
+(`GIIP_GissueLiveness_Hourly`)로 등록하고, 처리 본체(:07)와 30분 어긋난 :37 에 돌린다. 점검기는 처리 본체의 어떤 파일도
+import 하지 않는다(로그·락 파일만 읽는다).
+
+**사람이 하는 일(등록)**: 정상 체크아웃(worktree 아님)에서
+`powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\register-gissue-liveness-task.ps1 [-OpsCsn <csn>]`.
+해제는 `-Unregister`.
+
 ## 미매핑 CSN 가드(Phase -2.5)의 응답 cSn 대조 (giip 4116 / 4139)
 
 - 용도: `csn-projects.json` 에 없는 csn 에 열린 이슈가 방치돼 있는지 감시한다(`run-gissue-claude.ps1` 의 `Invoke-GissueUnmappedCsnGuard`).
