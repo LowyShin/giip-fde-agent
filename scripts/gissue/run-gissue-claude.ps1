@@ -3831,7 +3831,7 @@ function Invoke-GissueOvertimeCheck($r) {
     $r.OvertimeHandled = $true
     $res = $g.Result
     Write-Log $r.Csn "[OVERTIME] 결과 mode=$mode reason=$($g.Reason) steps=$(@($res.Steps) -join ',') final=$($res.FinalStatus) children=$(@($res.ChildIsns) -join ',') writes=$($res.WriteCalls) errors=$(@($res.Errors).Count)"
-    foreach ($e in @($res.Errors)) { Write-Log $r.Csn "[OVERTIME][WARN] $e" }
+    foreach ($e in @($res.Errors)) { $eTxt = "$e"; if (-not $eTxt.Trim()) { $eTxt = '(원인 문구 없음 — 결과 객체의 Errors 항목이 비어 있다. 포트 출력 혼입 여부 확인)' }; Write-Log $r.Csn "[OVERTIME][WARN] $eTxt" }
     if ($mode -ne 'Live') { return $false }
     if ($res.NeedsRunnerTimeout) {
         # 처리 중인 이슈가 없다(저장소 정비 등): 기존 TIMEOUT 경로가 같은 회차에서 Stop-Job + Complete-Run 한다.

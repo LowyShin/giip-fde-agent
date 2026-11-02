@@ -872,6 +872,10 @@ Shadow 가 쌓이지 않던 원인(수정됨): `review-done-audit.ps1` 은 `pr-g
    그 동안 다른 CSN 잡의 마감 판정이 멈춘다.
 3. **저장소 정비 세션에는 시간 캡이 없다** — 이슈별 40분 캡(`[TIMEBOX]`)은 이슈 순회에만 걸려 있다.
 
+### 알려진 결함과 수정 — 포트 출력 혼입 (2026-11-02, giip 4429 후속)
+
+러너의 Log 포트(`Write-Log`)가 `Write-Output` 으로 줄을 흘리면 `Invoke-GissueOvertimeSplit` 의 반환이 `[문자열..., 결과]` 배열이 되어, 러너 로그의 `[OVERTIME] 결과 ... errors=` 가 실제 오류가 없는데도 1 로 찍히고 내용 없는 `[OVERTIME][WARN] ` 줄이 따라왔다(쓰기 0건이라 피해는 없었다). 수정: 포트 호출(`Log`/`StopJob`/`RemoveLocks`)은 `$null = & $Ports.X` 로 출력을 버리고, `Invoke-GissueOvertimeGuard` 는 결과를 `Steps` 를 가진 객체 1개로 고정하며, 러너는 빈 `Errors` 항목에도 원인 안내 문구를 담는다. 순서(원인 코멘트 -> 서브 이슈 -> 종료/락 정리 -> `[SPLIT-CLOSE]` -> DONE)와 fail-closed 조건은 불변. 테스트: `tests/test-overtime-split.ps1` [M2].
+
 ### 규칙 (사용자 지시 2026-11-02)
 
 1. 단일 이슈 처리 실행이 한도를 넘기면 먼저 **원인을 그 이슈 코멘트에 보고**한다(무엇을 하다 어디서 시간이 걸렸는지, 모르면 "미상").

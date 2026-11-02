@@ -25,3 +25,7 @@ metadata:
 - 테스트: `scripts/gissue/tests/test-overtime-split.ps1`
 - 사양: `docs/60-operations/hourly-issue-scheduler.md` §13-5
 - 같은 계열: KNOW-021(스케줄러 생존은 처리 산출물 신선도로 판정).
+
+## 후속 발견 (2026-11-02, 포트 출력 혼입)
+
+러너 Log 포트(`Write-Log`)가 `Write-Output` 으로 줄을 흘리면 오케스트레이터 반환값이 `[문자열..., 결과]` 배열로 오염된다(`errors=1` + 빈 `[OVERTIME][WARN]`, 실제 오류 0건). 포트 호출은 `$null = & $Ports.X` 로 출력을 버리고 진입점은 결과를 객체 1개로 고정한다. 테스트 `tests/test-overtime-split.ps1` [M2]. 근거 giip 4429.

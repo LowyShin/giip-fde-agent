@@ -332,7 +332,7 @@ function Invoke-GissueOvertimeSplit($Ctx, [string]$Mode, $Ports) {
     if ($Mode -eq 'Off') { [void]$res.Steps.Add('off'); return $res }
     $live = ($Mode -eq 'Live')
     $tag = if ($live) { '[OVERTIME]' } else { '[OVERTIME-SHADOW]' }
-    $log = { param($m) try { & $Ports.Log "$tag $m" } catch { } }
+    $log = { param($m) try { $null = & $Ports.Log "$tag $m" } catch { } }   # 포트 출력(Write-Log 의 Write-Output 등)이 결과 객체와 섞이지 않게 버린다
     $step = { param($s) [void]$res.Steps.Add($s) }
 
     $isn = $Ctx.Isn
@@ -404,13 +404,13 @@ function Invoke-GissueOvertimeSplit($Ctx, [string]$Mode, $Ports) {
     # ── 규칙 3: 종료·정리 (Live 에서 분할 성패와 무관하게 항상 수행 — 외부 강제 종료가 곧 온다) ─────
     if ($live) {
         & $step 'stop-job'; $res.WriteCalls++
-        try { & $Ports.StopJob } catch { [void]$res.Errors.Add("stop-job: $($_.Exception.Message)") }
+        try { $null = & $Ports.StopJob } catch { [void]$res.Errors.Add("stop-job: $($_.Exception.Message)") }
         $recs = @()
         try { $recs = @(& $Ports.ListLocks) } catch { [void]$res.Errors.Add("list-locks: $($_.Exception.Message)") }
         $sel = Get-GissueOvertimeLockTargets $recs $Ctx.Csn $Ctx.RunnerPid $Ctx.JobPids $Ctx.IsAlive
         foreach ($sk in $sel.Skipped) { & $log "락 유지: $($sk.Path) — $($sk.Why)" }
         & $step 'cleanup-locks'; $res.WriteCalls++
-        try { & $Ports.RemoveLocks $sel.Targets } catch { [void]$res.Errors.Add("remove-locks: $($_.Exception.Message)") }
+        try { $null = & $Ports.RemoveLocks $sel.Targets } catch { [void]$res.Errors.Add("remove-locks: $($_.Exception.Message)") }
         foreach ($t in $sel.Targets) { & $log "락 정리: $($t.Path) — $($t.Why)" }
     } else {
         & $step 'would:stop-job'; & $step 'would:cleanup-locks'
@@ -482,6 +482,7 @@ function Invoke-GissueOvertimeGuard($Base, [string]$Mode, $Ports) {
         OutputLines = $Base.OutputLines; Over = $check; Settings = $Base.Settings; IssueStartUtc = $issueStart
         NowUtc = $Base.NowUtc; RunnerPid = $Base.RunnerPid; JobPids = $Base.JobPids; IsAlive = $Base.IsAlive; IssueUrlBase = $Base.IssueUrlBase
     }
-    $res = Invoke-GissueOvertimeSplit $ctx $Mode $Ports
+    # 방어: 어떤 포트가 출력을 흘려도 결과는 Steps 를 가진 마지막 객체 1개로 고정한다(흘린 문자열이 섞이면 errors 계수가 틀어진다).
+    $res = @(Invoke-GissueOvertimeSplit $ctx $Mode $Ports | Where-Object { $_ -is [pscustomobject] -and $_.PSObject.Properties['Steps'] }) | Select-Object -Last 1
     [pscustomobject]@{ Over = $true; Reason = $check.Reason; Result = $res; Check = $check }
 }
