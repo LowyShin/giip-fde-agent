@@ -106,7 +106,9 @@ foreach ($s in $samples) {
     $before = @($commentsByIsn[$isn] | Where-Object { $t = ConvertTo-Utc $_.regdate; $t -and $t -lt $s.At })
     $content = "$($cands[$isn].content)"
     if (-not $content) { $d = Get-IssueDetail $isn $ApiKey $ApiBaseUrl; if ($d -and $d.content) { $content = "$($d.content)" } }
-    $pr = if ($repos.Count -gt 0) { Get-ChecklistPrEvidence $isn $repos } else { @{ Known = $false; HasMerged = $false; HasAny = $false; Text = '(PR 조회 불가 - Workdir 미지정)' } }
+    # [giip #4335] 레포 스캔 밖(제품 레포 등) PR 도 이슈 본문/코멘트 링크로 인정 — pr-gate-sweep.ps1 과 동일 계약.
+    $linkTexts = @($content, (ConvertTo-CommentsText $before))
+    $pr = Get-ChecklistPrEvidence $isn $repos $linkTexts
     $a = Invoke-ChecklistAssessment $isn $content $before $pr
     $unmet = @($a.Items | Where-Object { $_.Verdict -eq 'UNMET' } | ForEach-Object { $_.Text })
     $results += [pscustomobject]@{
