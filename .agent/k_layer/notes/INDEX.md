@@ -25,3 +25,4 @@
 | [KNOW-020](KNOW-020_shadow_mode_is_not_free_cache_ttl_cap_backoff.md) | Shadow 모드도 비용이다 - 구룰이 되돌리려는 이슈마다 LLM 을 부르는 기록 전용 경로는 입력해시 캐시·TTL·상한·실패 백오프가 필요하다(캐시는 Shadow 한정, 동시 쓰기 유실 방지) | giip 4334 | 6800 |
 | [KNOW-021](KNOW-021_scheduler_liveness_is_judged_by_output_freshness_not_task_result.md) | 스케줄러 생존은 태스크 결과코드(LastTaskResult=0)가 아니라 처리 로그 신선도로 판정, 감시자는 독립 태스크 — 처리 본체가 6일 넘게 안 돈 사고 | giip 4411 | 6805 |
 | [KNOW-022](KNOW-022_pr_merge_does_not_imply_issue_side_writes_were_executed.md) | PR 머지는 이슈 측 쓰기(정정 코멘트·상태 전이) 실행의 증거가 아니다 — 세션이 끊기면 남은 act 는 "미실행"이고, 공개 문서에는 완료로 남을 수 있다 | giip 4411 · 2026-11-02 저장소 정비 66차 세션 실측 (work_history 20261102_0521) | 6817 |
+| [KNOW-023](KNOW-023_dead_session_uncommitted_diff_can_be_older_than_main.md) | 죽은 세션 워크트리의 미커밋 diff 는 main 보다 오래됐을 수 있다 — 이관 전에 `git diff origin/main` 로 staleness 를 먼저 대조할 것(오래된 스냅샷을 커밋하면 회귀 PR) · 정본 도구 MANUAL-REVIEW 판정은 우회하지 않고 사유를 기록 | 2026-11-02 저장소 정비 68차 세션 실측 (work_history 20261102_1008) | 미등록 |
