@@ -490,6 +490,27 @@ function Test-HasNoPrReasonMarker($comments) {
 }
 
 # ─────────────────────────────────────────────────────────────────────────
+# giip 4429: [SPLIT-CLOSE] 마커 — "2시간 초과 실행 분할 이전 종결"을 감사가 정당한 종료로 인식하게 한다.
+# 스케줄러(lib/overtime-split.ps1 Invoke-GissueOvertimeSplit, Live 모드)가 과시간 실행을 서브 이슈로 분할한 뒤
+# 원본에 남기는 코멘트다. 이 DONE 은 구현 완료가 아니라 "남은 작업이 DB 에 등록된 서브 이슈로 이전됨"이다
+# (rule 69-5). review-done-audit 이 이를 "PR 없음/증거 부족"으로 되돌리면 분할 → DONE → 되돌림 → 재처리의
+# 무한루프가 생기므로 [NO-PR-REASON] 과 같은 방식으로 면제한다.
+# 유효 조건(3개 모두): 코멘트 첫 줄이 [SPLIT-CLOSE](대소문자 무시) + 본문에 "분할 이전" 문구 + 서브 이슈 번호 참조
+# ("giip <숫자>" 또는 giip-issues/<숫자>). 마커만 있고 서브 이슈 번호가 없으면 무효 — 근거 없이 면제하지 않는다.
+# ─────────────────────────────────────────────────────────────────────────
+function Test-HasSplitCloseMarker($comments) {
+    foreach ($c in @($comments)) {
+        $content = "$($c.content)"
+        if (-not $content) { continue }
+        $lines = $content -split '\r?\n'
+        if ($lines[0].Trim() -notmatch '(?i)^\[SPLIT-CLOSE\]') { continue }
+        if ($content -notmatch '분할\s*이전') { continue }
+        if ($content -match '(?i)giip[\s#-]*\d{2,}|giip-issues/\d+') { return $true }
+    }
+    return $false
+}
+
+# ─────────────────────────────────────────────────────────────────────────
 # giip #2085(2026-09-06): 게이트 되돌림(REVIEW/TESTED→READY) loop guard를 "1회성 boolean"에서
 # "최대 3회 캡 + 매 회 지시 강화"로 확장하며 추가된 카운팅/이력요약 헬퍼. 기존
 # Test-AlreadyRevertedByMarker(boolean)는 그대로 유지한다 — 에스컬레이션 마커

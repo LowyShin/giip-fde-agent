@@ -65,7 +65,10 @@ param(
     #   -MapFileOverride : CSN 매핑 파일(csn-projects.json) 경로 대체. 테스트는 임시 파일을 넘겨
     #                     실제 배포용 매핑 파일(로컬 전용·gitignore)을 건드리지 않는다.
     [switch]$FunctionsOnly,
-    [string]$MapFileOverride = ''
+    [string]$MapFileOverride = '',
+    # [giip 4429] 2시간 초과 실행 처리 규칙 모드: Off | Shadow(기본, 로그만) | Live(코멘트·서브 이슈·종료·DONE 실제 수행).
+    # 미지정이면 환경변수 GISSUE_OVERTIME_SPLIT_MODE, 그것도 없으면 Shadow. Live 는 사람이 명시적으로 켠다.
+    [string]$OvertimeSplitMode = ''
 )
 $ErrorActionPreference = 'Stop'
 
@@ -1324,6 +1327,16 @@ $HeartbeatCfg = Get-GissueHeartbeatConfig $mapRoot
 # csn-projects.json 최상위 softBudgetMin 이 환경변수 GISSUE_SOFT_BUDGET_MIN 보다 우선한다(정본·사유: lib/soft-budget.ps1).
 . (Join-Path $Root 'lib/soft-budget.ps1')
 $SoftBudgetMin = Resolve-GissueSoftBudgetMin $mapRoot.softBudgetMin $env:GISSUE_SOFT_BUDGET_MIN
+
+# [giip 4429] 2시간 초과 실행 처리 규칙 — 러너 자기 마감시각 + 원인 보고/서브 이슈 분할/종료·정리/원본 DONE.
+# 정본 로직은 lib/overtime-split.ps1(순수 로직 + 포트 주입), 호출은 아래 Phase 2 의 Invoke-GissueOvertimeCheck.
+# 기준은 **프로세스 시작 시각**이다: RunTimeoutMin(105)은 잡 launch 시각 기준이라 사전 단계(자기 갱신·guard·merge-sweep·
+# reaper 1~21분)만큼 밀려 작업 스케줄러 ExecutionTimeLimit(PT2H)보다 늦게 걸렸다(giip 4428 실측).
+# 기본 Shadow = 로그만. Live 는 -OvertimeSplitMode Live 또는 GISSUE_OVERTIME_SPLIT_MODE=Live 로 명시해야 한다.
+. (Join-Path $Root 'lib/overtime-split.ps1')
+$OvertimeSettings = Get-GissueOvertimeSettings $OvertimeSplitMode
+$script:RunnerStartedAtUtc = (Get-Date).ToUniversalTime()
+try { $script:RunnerStartedAtUtc = (Get-Process -Id $PID).StartTime.ToUniversalTime() } catch { }
 
 # ── 프로세스 트리 헬퍼 (이름을 빌트인과 겹치지 않게 지어 재귀 함정 회피) ──
 # [giip Docker/Linux 이식] Win32_Process(CIM)는 Windows 전용이라 pwsh/Linux 에는 provider 자체가
@@ -3512,6 +3525,8 @@ foreach ($csn in $map.PSObject.Properties.Name) {
             # [giip #3555] REVIEW/TESTED 재검증 전용 짧은 캡 적용.
             $effectiveDeadlineMin = if ($issue.Status -eq 'REVIEW' -or $issue.Status -eq 'TESTED') { $reviewEngineDeadlineMin } else { $issueEngineDeadlineMin }
             Write-Output "[ISSUE] isn=$($issue.Isn) status=$($issue.Status) elapsed=$($issue.ElapsedMin)분 cap=${effectiveDeadlineMin}분 처리 시작"
+            # [giip 4429] 과시간 검사용 표식 — 메인 프로세스(Phase 2)가 Receive-Job -Keep 으로 읽어 "지금 처리 중인 이슈와 그 시작 시각"을 안다.
+            Write-Output "[ISSUE-T0] isn=$($issue.Isn) status=$($issue.Status) utc=$((Get-Date).ToUniversalTime().ToString('o'))"
             $runProcessed++
             # 회차가 105분 예산으로 TIMEOUT 되면 잡이 강제 중단되어 맨 끝의 [RUN-COUNTS] 가 출력되지 않는다 — 그러면 종료 기록의 처리 건수가 0 으로 남는다
             # (2026-10-06 실측: 일을 하고도 TIMED_OUT/처리 0). 이슈마다 출력해 중단되어도 마지막 값이 남게 한다(Complete-Run 은 마지막 일치를 쓴다).
@@ -3614,6 +3629,7 @@ ${function:Invoke-GissueEngine}
                 'REVIEW'           { $statusTimeReview += $issueElapsed; $statusCountReview++ }
                 'TESTED'           { $statusTimeTested += $issueElapsed; $statusCountTested++ }
             }
+            Write-Output "[ISSUE-END] isn=$($issue.Isn)"   # [giip 4429] 이 이슈 처리 종료 표식(과시간 검사가 "처리 중 이슈 없음"을 알게 한다)
         }
         # [giip #3554] 회차 종료 로그에 상태별 처리 건수/소요 한 줄 요약
         $totalElapsedMin = [math]::Round(((Get-Date) - $loopStartTime).TotalMinutes, 1)
@@ -3631,6 +3647,7 @@ ${function:Invoke-GissueEngine}
         NoEngineSince = $null  # [giip #1550] 좀비 조기감지용 — 엔진 프로세스 연속 부재 시작 시각
         Sk = $csnSk            # [giip #1558] 스케줄러 상태 기록용
         RunIdKey = $runIdKey; ProcessedCount = 0; SkippedCount = 0; FailedCount = 0
+        OvertimeHandled = $false; OvertimeNextCheck = [datetime]::MinValue   # [giip 4429] 과시간 검사 상태
     }
 }
 
@@ -3710,8 +3727,129 @@ function Complete-Run($r, $status) {
     Repair-GissueRootOwnedFiles $r.Csn
     $r.Done = $true
 }
+# ── [giip 4429] 2시간 초과 실행 처리 규칙 — Phase 2 검사 (lib/overtime-split.ps1 의 포트 구현) ──
+# 모든 쓰기는 포트를 통한다. 포트는 $script:OvertimeCtxRun(지금 검사 중인 잡)을 본다 — 스크립트블록은 클로저가 아니다.
+function Get-GissueOvertimeIssueDetail($isn, $csn) {
+    # get-issue.sh 출력("=== Issue ===" JSON + "=== Comments ===" JSON)을 파싱한다. 실패하면 $null.
+    $out = (& $BashExe $GetIssueScript "$isn" "$csn" 2>&1 | Out-String)
+    $m = [regex]::Match($out, '(?s)=== Issue ===\s*(.*?)\s*=== Comments ===\s*(.*)$')
+    if (-not $m.Success) { return $null }
+    $iss = ($m.Groups[1].Value | ConvertFrom-Json).issue
+    $cms = @(); try { $cms = @(($m.Groups[2].Value | ConvertFrom-Json).comments) } catch { }
+    [pscustomobject]@{ Title = "$($iss.title)"; Status = "$($iss.status)"; Content = "$($iss.content)"; Comments = $cms }
+}
+
+function Invoke-GissueOvertimeCheck($r) {
+    # 반환 $true = Live 에서 이 잡을 직접 정리·종료했다(호출부는 이번 회차 처리를 건너뛴다).
+    $mode = $OvertimeSettings.Mode
+    if ($mode -eq 'Off' -or $r.OvertimeHandled) { return $false }
+    $now = Get-Date
+    if ($now -lt $r.OvertimeNextCheck) { return $false }
+    $nowUtc = $now.ToUniversalTime()
+    # 값싼 사전 판정: 이슈 기준 임계도 프로세스 시작 이후에만 성립하므로 둘 중 작은 값 전에는 잡 출력을 읽지 않는다.
+    $floorMin = [math]::Min($OvertimeSettings.RunDeadlineMin, $OvertimeSettings.IssueMin)
+    if (($nowUtc - $script:RunnerStartedAtUtc).TotalMinutes -lt $floorMin) { return $false }
+    $r.OvertimeNextCheck = $now.AddSeconds(60)
+    $script:OvertimeCtxRun = $r
+    $lines = @()
+    try { $lines = @(Receive-Job $r.Job -Keep -ErrorAction SilentlyContinue | ForEach-Object { "$_" }) } catch { }
+    $ports = @{
+        Log = { param($m) Write-Log $script:OvertimeCtxRun.Csn $m }
+        FindOpenChildren = {
+            param($origin)
+            $json = (& node $ListIssuesScript --csn $script:OvertimeCtxRun.Csn --status 'PENDING,READY,IN_PROGRESS,REVIEW,TESTED,NEEDS_DECISION' --json 2>&1 | Out-String)
+            $rows = @($json | ConvertFrom-Json)   # 파싱 실패는 예외 -> 오케스트레이터가 fail-closed(중복 등록 위험이면 분할 보류)
+            return @($rows | ForEach-Object { [pscustomobject]@{ Isn = $_.isn; Status = $_.status; Title = $_.title } })
+        }
+        PostComment = {
+            param($isn, $body)
+            $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("gissue_overtime_{0}_{1}.md" -f $isn, [guid]::NewGuid().ToString('N'))
+            try {
+                [System.IO.File]::WriteAllText($tmp, $body, (New-Object System.Text.UTF8Encoding $false))
+                $o = (& $BashExe $GetIssueScript "$isn" "$($script:OvertimeCtxRun.Csn)" --comment-file ($tmp -replace '\\', '/') 2>&1 | Out-String)
+                return ($LASTEXITCODE -eq 0 -and $o -match '"success":\s*true')
+            } finally { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
+        }
+        RegisterChild = {
+            param($title, $content)
+            $tp = Join-Path ([System.IO.Path]::GetTempPath()) ("gissue_overtime_t_{0}.txt" -f [guid]::NewGuid().ToString('N'))
+            $cp = Join-Path ([System.IO.Path]::GetTempPath()) ("gissue_overtime_c_{0}.md" -f [guid]::NewGuid().ToString('N'))
+            try {
+                [System.IO.File]::WriteAllText($tp, $title, (New-Object System.Text.UTF8Encoding $false))
+                [System.IO.File]::WriteAllText($cp, $content, (New-Object System.Text.UTF8Encoding $false))
+                $o = & node $RegisterIssueScript --title-file $tp --content-file $cp --status READY --csn $script:OvertimeCtxRun.Csn 2>&1
+                foreach ($line in @($o)) { if ("$line" -match 'giip issue #(\d+)') { return [int]$Matches[1] } }
+                return $null
+            } finally { Remove-Item -LiteralPath $tp, $cp -Force -ErrorAction SilentlyContinue }
+        }
+        StopJob = { Stop-Job $script:OvertimeCtxRun.Job -ErrorAction SilentlyContinue }
+        ListLocks = {
+            $rr = $script:OvertimeCtxRun
+            $recs = @()
+            try {
+                if (Test-Path -LiteralPath $rr.Lock) {
+                    $raw = (Get-Content -LiteralPath $rr.Lock -Raw -ErrorAction Stop).Trim()
+                    if ($raw -match '^(\d+)') { $recs += [pscustomobject]@{ Kind = 'csn-lock'; Path = $rr.Lock; Csn = $rr.Csn; Pid = [int]$Matches[1] } }
+                }
+            } catch { }
+            try {
+                $dir = Join-Path (Split-Path -Parent (Split-Path -Parent $Root)) '.agent/locks'
+                if (Test-Path -LiteralPath $dir) {
+                    foreach ($lf in @(Get-ChildItem -LiteralPath $dir -Filter '*.lock' -File -ErrorAction SilentlyContinue)) {
+                        $j = Get-Content -LiteralPath $lf.FullName -Raw -ErrorAction Stop | ConvertFrom-Json
+                        $recs += [pscustomobject]@{ Kind = 'repo-lock'; Path = $lf.FullName; Holder = "$($j.holder)"; Pid = [int]$j.pid }
+                    }
+                }
+            } catch { }
+            return $recs
+        }
+        RemoveLocks = {
+            param($targets)
+            foreach ($t in @($targets)) {
+                if ($t.Kind -eq 'repo-lock') {
+                    # 지우기 직전에 holder 가 그대로인지 다시 확인한다(그 사이 다른 실행이 새로 잡았을 수 있다).
+                    try { $j = Get-Content -LiteralPath $t.Path -Raw -ErrorAction Stop | ConvertFrom-Json; if ("$($j.holder)" -ne "$($t.Holder)") { continue } } catch { continue }
+                }
+                Remove-Item -LiteralPath $t.Path -Force -ErrorAction SilentlyContinue
+            }
+        }
+        SetStatus = {
+            param($isn, $status, $why)
+            $null = & $BashExe $GetIssueScript "$isn" "$($script:OvertimeCtxRun.Csn)" --status $status 2>&1
+            return ($LASTEXITCODE -eq 0)
+        }
+    }
+    $base = @{
+        NowUtc = $nowUtc; ProcessStartUtc = $script:RunnerStartedAtUtc; OutputLines = $lines; Settings = $OvertimeSettings
+        Csn = $r.Csn; RunnerPid = $PID; JobPids = @()
+        IsAlive = { param($p) [bool](Get-Process -Id $p -ErrorAction SilentlyContinue) }
+        IssueUrlBase = 'https://giip.littleworld.net/ko/admin/giip-issues/'
+        LoadIssue = { param($isn) Get-GissueOvertimeIssueDetail $isn $script:OvertimeCtxRun.Csn }
+    }
+    $g = Invoke-GissueOvertimeGuard $base $mode $ports
+    if (-not $g.Over) { return $false }
+    $r.OvertimeHandled = $true
+    $res = $g.Result
+    Write-Log $r.Csn "[OVERTIME] 결과 mode=$mode reason=$($g.Reason) steps=$(@($res.Steps) -join ',') final=$($res.FinalStatus) children=$(@($res.ChildIsns) -join ',') writes=$($res.WriteCalls) errors=$(@($res.Errors).Count)"
+    foreach ($e in @($res.Errors)) { Write-Log $r.Csn "[OVERTIME][WARN] $e" }
+    if ($mode -ne 'Live') { return $false }
+    if ($res.NeedsRunnerTimeout) {
+        # 처리 중인 이슈가 없다(저장소 정비 등): 기존 TIMEOUT 경로가 같은 회차에서 Stop-Job + Complete-Run 한다.
+        $r.Deadline = Get-Date
+        return $false
+    }
+    Complete-Run $r "OVERTIME-SPLIT (giip 4429: 자기 마감시각 초과 -> 최종 $($res.FinalStatus), 서브 이슈 $(@($res.ChildIsns) -join ','))"
+    return $true
+}
+
 while ($runs | Where-Object { -not $_.Done }) {
     foreach ($r in @($runs | Where-Object { -not $_.Done })) {
+        # [giip 4429] 작업 스케줄러 제한(PT2H)에 걸려 외부에서 죽기 전에 자기 마감시각에서 규칙 1~4 를 수행한다(Shadow 기본).
+        if ($r.Job.State -eq 'Running' -and -not $r.OvertimeHandled) {
+            $otDone = $false
+            try { $otDone = Invoke-GissueOvertimeCheck $r } catch { Write-Log $r.Csn "[OVERTIME][WARN] 과시간 검사 오류(무시하고 계속): $($_.Exception.Message)" }
+            if ($otDone) { continue }
+        }
         if ($r.Job.State -ne 'Running') {
             Complete-Run $r 'DONE'
         } elseif ((Get-Date) -gt $r.Deadline) {

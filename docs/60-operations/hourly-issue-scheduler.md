@@ -854,6 +854,71 @@ Shadow 가 쌓이지 않던 원인(수정됨): `review-done-audit.ps1` 은 `pr-g
 
 범위 밖: 동시 세션이 같은 이슈를 중복 수행하는 문제(세션 간 작업 가시성)는 이 디바운스로 해소되지 않는다. 디바운스는 게이트가 활동 중인 이슈를 건드리지 않게 할 뿐, 세션 시작 시 같은 isn 의 활성 세션을 확인하는 지점은 별도 후속 이슈로 다룬다.
 
+## 13-5) 2시간 초과 실행 처리 규칙 — 러너 자기 마감시각 + 원인 보고/분할/종료/DONE (giip 4429)
+
+> 근거 이슈: giip 4428(복구 후 실가동 검증에서 발견된 강제 종료 원인 조사) → giip 4429(규칙 구현).
+> 코드: `scripts/gissue/lib/overtime-split.ps1`(순수 로직 + 포트 주입), `scripts/gissue/run-gissue-claude.ps1`(Phase 2 `Invoke-GissueOvertimeCheck`),
+> `scripts/gissue/gissue-audit-lib.ps1`(`Test-HasSplitCloseMarker`), `scripts/gissue/review-done-audit.ps1`(감사 면제).
+> 테스트: `scripts/gissue/tests/test-overtime-split.ps1`.
+
+### 왜 필요한가 (실측)
+
+매시 :07 인스턴스가 작업 스케줄러 `ExecutionTimeLimit=PT2H` 에 걸려 **외부에서** 강제 종료됐다(이벤트 329, 완료 코드 `0x8007050B`).
+외부 종료는 러너가 CSN 락·클레임을 정리할 기회가 없다. 원인은 세 가지가 겹친 구조 결함이었다.
+
+1. **마감 기준 어긋남** — CSN 잡 마감 `RunTimeoutMin`(105분)은 *잡 launch 시각* 기준인데 작업 스케줄러 제한은 *프로세스 시작 시각* 기준이다.
+   launch 전 사전 단계(자기 갱신, guard, merge-sweep, reaper)가 인스턴스마다 1~21분 걸려 마감이 제한보다 늦게 걸렸다.
+2. **직렬 후처리가 TIMEOUT 판정을 막음** — Phase 2 는 한 CSN 이 끝나면 `Complete-Run`(게이트 스윕·감사·귀속 스윕·worktree 정리)을 직렬로 돌린다.
+   그 동안 다른 CSN 잡의 마감 판정이 멈춘다.
+3. **저장소 정비 세션에는 시간 캡이 없다** — 이슈별 40분 캡(`[TIMEBOX]`)은 이슈 순회에만 걸려 있다.
+
+### 규칙 (사용자 지시 2026-11-02)
+
+1. 단일 이슈 처리 실행이 한도를 넘기면 먼저 **원인을 그 이슈 코멘트에 보고**한다(무엇을 하다 어디서 시간이 걸렸는지, 모르면 "미상").
+2. 남은 작업을 나눌 수 있으면 **서브 이슈로 쪼개 등록**한다(원본 체크리스트 잔여 항목 기준, 최대 5건, 제목 `(원본 giip <isn> 분해 i/N)`,
+   `## 완료조건` 에 ` ```verify ` 블록). 같은 원본의 미해결 서브/후속 이슈가 이미 있으면 새로 만들지 않는다(rule 69-4). 기존 서브 이슈 조회가
+   실패하면 중복 등록 위험이 있으므로 분할을 보류한다(fail-closed). 나눌 수 없으면 사유 코멘트(`[OVERTIME-NOSPLIT]`) 후 **READY 로 복귀**하고 DONE 하지 않는다.
+3. 그 뒤 **과시간 잡을 종료(Stop-Job)** 하고 이 러너가 만든 락만 정리한다: CSN 락 파일은 *락의 PID 가 이 러너 프로세스일 때만*,
+   repo 락은 holder 가 `gissue-csn<이 CSN>:<pid>` 이고 pid 가 죽었을 때만(또는 이 잡 소유일 때만). 다른 CSN·다른 인스턴스(생존 PID)의 락과
+   worktree 는 건드리지 않는다.
+4. 원본에 **서브 이슈 번호를 코멘트로 달고 DONE** 한다. 코멘트 첫 줄은 `[SPLIT-CLOSE]`, 본문에 "분할 이전" 문구와 서브 이슈 번호를 반드시 넣는다.
+
+실행 순서는 **원인 코멘트 → 서브 이슈 등록 → 잡 종료·락 정리 → 원본 `[SPLIT-CLOSE]` 코멘트 → DONE** 이며, 앞 단계가 실패하면 DONE 으로 가지 않는다
+(원인 코멘트 실패 시 분할·DONE 보류, 서브 이슈 일부 등록 실패 시 DONE 보류, 종결 코멘트 실패 시 DONE 보류; 종료·락 정리는 항상 수행).
+
+**rule 57("완료 판정은 실행 결과로만")과의 관계**: 이 DONE 은 "구현 완료"가 아니라 "남은 작업이 DB 에 등록된 서브 이슈로 이전됨"이다.
+rule 69-5 가 분해 완료 판정을 *DB 에 실제로 등록된 자식 이슈*로 하도록 정했으므로, 원본 DONE 의 근거는 자식 이슈의 존재다.
+각 서브 이슈는 자신의 verify 블록으로 rule 57 을 따로 통과해야 한다(원본에 verify 블록이 있으면 승계하고, 없으면 *의도적으로 실패하는* 블록을 넣어
+착수 세션이 교체하게 한다 — 검증 없이 DONE 되는 것을 막기 위해서다).
+
+**감사 면제**: `review-done-audit.ps1` 이 DONE + `[SPLIT-CLOSE]`(첫 줄 마커 + "분할 이전" + 서브 이슈 번호 참조, 3조건)를 확인하면 PR 유무·체크리스트
+재판정 *전에* 반환한다. 면제하지 않으면 "PR 없음"으로 되돌려져 분할 → DONE → 되돌림 → 재처리 무한루프가 된다(`[NO-PR-REASON]` 선례, giip 2415).
+
+### 모드와 설정값
+
+| 설정 | 기본값 | 근거 |
+| --- | --- | --- |
+| `-OvertimeSplitMode` / `GISSUE_OVERTIME_SPLIT_MODE` | `Shadow` | `Off` / `Shadow` / `Live`. 알 수 없는 값은 Shadow. **Live 는 사람이 명시적으로 켠다.** |
+| `GISSUE_OVERTIME_RUN_DEADLINE_MIN` | 105 | 태스크 제한 120분에서 직렬 후처리·정리용 15분을 뺀 값(giip 1572 의 105 와 같은 근거). **프로세스 시작 시각** 기준 |
+| `GISSUE_OVERTIME_ISSUE_MIN` | 105 | 이슈 1건 처리 시작(`[ISSUE-T0]`) 기준 경과 임계 |
+| `GISSUE_TASK_LIMIT_MIN` | 120 | 작업 스케줄러 `ExecutionTimeLimit` 을 러너에 알려준다. 위 두 값은 `제한 - 10분` 이하로 강제 보정된다 |
+
+- **Shadow(기본)**: 검사는 수행하되 `[OVERTIME] 결과 mode=Shadow …` / `[OVERTIME-SHADOW] would: …` 로그만 남긴다. 코멘트·서브 이슈 등록·종료·락 정리·상태전이 쓰기는 0건이다.
+  기존 `RunTimeoutMin`/TIMEOUT/ZOMBIE 경로는 그대로 동작한다.
+- **Live**: 자기 마감시각에 규칙 1~4 를 수행한다. 처리 중인 이슈가 없으면(저장소 정비·대기 단계) 규칙 1·2·4 대상이 없으므로 원인만 기록하고,
+  기존 TIMEOUT 경로가 *외부 강제 종료보다 먼저* 같은 회차에서 잡을 종료한다.
+- 처리 중 이슈는 잡 출력의 `[ISSUE-T0] isn=<n> status=<S> utc=<iso>` / `[ISSUE-END] isn=<n>` 표식으로 안다(`Receive-Job -Keep`).
+
+### 운영 가이드 (유저가이드)
+
+- 켜기(사람 결정): 작업 스케줄러 실행 환경에 `GISSUE_OVERTIME_SPLIT_MODE=Live` 를 주거나 러너에 `-OvertimeSplitMode Live` 를 준다. 먼저 Shadow 로 며칠 돌려
+  `[OVERTIME-SHADOW] would:` 로그가 의도와 맞는지 확인한 뒤 전환한다.
+- Live 전환 전 확인할 것: ① `[OVERTIME] 결과` 로그의 `steps`/`final` ② 서브 이슈 verify 블록이 자동 생성 불가한 경우 *의도적 실패 블록*이 들어가므로 착수 세션이 교체해야 함
+  ③ 분할이 잔여 체크리스트 항목 단위의 *결정적 분할*이라 항목 간 독립성은 보장하지 않음.
+- 이 규칙은 태스크 정의(`ExecutionTimeLimit`, `MultipleInstancesPolicy`)를 바꾸지 않는다.
+- **한계(알려진 미해결)**: ① 외부 종료 시 잡 출력이 유실된다(`Receive-Job` 이 `Complete-Run` 에서만 호출됨) ② Phase 2 의 직렬 `Complete-Run` 자체는 그대로다
+  ③ 저장소 정비 세션의 시간 캡은 없다. 셋은 별도 후속으로 다룬다.
+
 ## 14) 연결 문서
 
 - **Docker 배포(auto clone + csn/sk/login_id 자동 등록 + Linux/pwsh 이식)**: `./docker-deployment.md`
