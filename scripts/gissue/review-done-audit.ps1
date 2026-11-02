@@ -665,6 +665,14 @@ function Invoke-AuditIssue($iss, $repos) {
         return
     }
 
+    # giip 4429: 2시간 초과 실행을 서브 이슈로 분할한 뒤 스케줄러가 남긴 [SPLIT-CLOSE] 종결은 감사 면제.
+    # 이 DONE 의 근거는 PR 이 아니라 "서브 이슈가 DB 에 등록됨"(rule 69-5)이다 — 면제하지 않으면 PR 없음으로
+    # 되돌려져 분할 → DONE → 되돌림 → 재처리 무한루프가 된다.
+    if ($status -eq 'DONE' -and (Test-HasSplitCloseMarker $comments)) {
+        Write-AuditLog "isn=${isn}: DONE + [SPLIT-CLOSE](분할 이전 종결, 서브 이슈 등록됨) 확인 — 감사 면제(giip 4429, rule 69-5)."
+        return
+    }
+
     # 요건 3: 멱등성 — 이미 확정 처리됐고 그 이후 새 외부(비-감사) 코멘트가 없으면 재감사 스킵.
     if (Test-AlreadyFinalized $comments) {
         Write-AuditLog "isn=${isn}: 이미 확정 처리됨(최신 코멘트가 감사 자신) — 재감사 스킵(요건 3 멱등성)."
