@@ -272,6 +272,32 @@ $g = Invoke-GissueOvertimeGuard (New-Base $noIssueOut 106) 'Live' $fp.Ports
 Assert ($g.Over -and (Get-Writes $fp.Calls).Count -eq 0) '이슈 없음 -> 코멘트/등록/상태전이 0건'
 Assert ($g.Result.NeedsRunnerTimeout) 'Live 에서는 러너의 기존 TIMEOUT 경로로 종료하도록 표시'
 
+Write-Host '[M2] 포트 출력 혼입 회귀 — Write-Log 가 Write-Output 하는 Log 포트(러너 실제 동작)에서도 errors=0, 빈 [OVERTIME][WARN] 없음'
+# 2026-11-02 18:52 실측: 러너 Log 포트(Write-Log)가 Write-Output 으로 문자열을 흘려 결과 객체가 [문자열…, 결과] 배열이 되었고,
+# 러너의 @($res.Errors).Count 가 Shadow 에서 errors=1 + 내용 없는 [OVERTIME][WARN] 을 찍었다.
+foreach ($pm in 'Shadow', 'Live') {
+    $fp = New-FakePorts @{}
+    $leakCalls = $fp.Calls
+    $fp.Ports.Log = { param($m) [void]$script:FakeCalls.Add("log:$m"); Write-Output "[leaked] $m" }   # Write-Log 와 같이 출력을 흘린다
+    $g = Invoke-GissueOvertimeGuard (New-Base $noIssueOut 106) $pm $fp.Ports
+    $res = $g.Result
+    Assert ($res -isnot [array] -and $res.PSObject.Properties['Steps']) "$pm 결과는 단일 객체(포트 출력이 섞이지 않는다)"
+    Assert (@($res.Errors).Count -eq 0) "$pm no-issue-in-flight: 러너 식 @(`$res.Errors).Count == 0"
+    $emptyWarn = @(foreach ($e in @($res.Errors)) { if (-not "$e".Trim()) { 'EMPTY' } })
+    Assert ($emptyWarn.Count -eq 0) "$pm 빈 [OVERTIME][WARN] 줄 0건"
+    Assert ((Get-Writes $fp.Calls).Count -eq 0 -and $res.WriteCalls -eq 0) "$pm no-issue-in-flight: 코멘트/서브이슈/kill/락정리/DONE 쓰기 포트 호출 0건"
+    Assert ($res.FinalStatus -eq 'NONE' -and @($res.ChildIsns).Count -eq 0) "$pm FinalStatus=NONE, 서브 이슈 0건"
+    Assert (@($res.Steps) -contains 'no-issue-in-flight') "$pm steps 에 no-issue-in-flight"
+    if ($pm -eq 'Live') { Assert ($res.NeedsRunnerTimeout) 'Live: 러너 TIMEOUT 경로 위임 표시 유지' }
+}
+# 이슈 처리 중 경로도 로그 누출에 영향받지 않는다(순서·fail-closed 불변): 기존 [D]~ 순서 테스트와 같은 입력
+$fp = New-FakePorts @{}
+$fp.Ports.Log = { param($m) [void]$script:FakeCalls.Add("log:$m"); Write-Output "[leaked] $m" }
+$g = Invoke-GissueOvertimeGuard (New-Base $jobOut 106) 'Live' $fp.Ports
+$w = (Get-Writes $fp.Calls) -join ' > '
+Assert ($g.Result -isnot [array] -and $w -match '^write:comment:cause > write:register-child:\d+ > .*write:stop-job > write:remove-locks:\d+ > write:comment:close > write:set-status:DONE$') "Live 이슈 처리 중 순서 불변(로그 누출 있어도): $w"
+Assert (@($g.Result.Errors).Count -eq 0) 'Live 이슈 처리 중 errors=0'
+
 Write-Host '[N] 분할 계획 — 항목 수/상한/verify'
 $items7 = 1..7 | ForEach-Object { [pscustomobject]@{ Text = "항목 $_"; Source = 'body' } }
 $plan = New-GissueOvertimeSplitPlan 500 '제목' $items7 @() 'u' 'c' 5
