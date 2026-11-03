@@ -22,8 +22,39 @@ else
   echo "[entrypoint] cloned ($(git -C "$REPO_DIR" rev-parse --short HEAD))"
 fi
 
+# giip #2855 T4: 기동 요약 블록용 상태 변수. 각 단계에서 갱신하고, 마지막에 'ready.' 직전 한 블록으로
+# 출력한다(개별 skip 메시지는 위에 흩어져 tail -F 출력에 묻히므로, 사용자가 "왜 안 뜨나" 를 이 한
+# 블록만 보고 판정할 수 있게 한다). set -u 때문에 읽기 전에 반드시 초기화한다.
+FETCH_STATUS="unused (GIIP_INSTANCE_TOKEN 미설정)"
+SLACK_STATUS="off"
+SCHED_STATUS="off"
+AGENT_STATUS="off"
+AGENT_CRON_LOG=""   # 에이전트 블록이 실제로 돌면 그 cron.log 경로가 들어간다(tail 대상 조건부 포함용)
+
 # ── optional: pull env from GIIP web (giip 2665 "Docker 생성") instead of per-field env vars ──
-eval "$(/fetch-instance-env.sh)"
+# giip #2855 T3: fetch 실패를 삼키지 않는다. 명령치환을 바로 eval 하면 fetch-instance-env.sh 가
+# exit 1(curl 실패 / RstVal!=200)로 끝나도 `eval ""` 의 종료코드가 0 이라 set -e 가 발동하지 않아,
+# env 를 하나도 못 받은 채 기동이 계속되고 GIIP_SK 가 비어 phantom clone 경로로 들어갔다(이 이슈의
+# 2차 원인). stdout(=export 줄)만 캡처하고 종료코드를 명시적으로 검사한다(진행 메시지는 stderr).
+FETCH_ENV=""
+FETCH_RC=0
+if FETCH_ENV="$(/fetch-instance-env.sh)"; then
+  FETCH_RC=0
+else
+  FETCH_RC=$?
+fi
+if [ "$FETCH_RC" -eq 0 ]; then
+  eval "$FETCH_ENV"
+  if [ -n "${GIIP_INSTANCE_TOKEN:-}" ]; then
+    FETCH_STATUS="ok (dockerInstanceFetch 적용됨)"
+  fi
+else
+  FETCH_STATUS="failed (fetch-instance-env.sh exit $FETCH_RC) — env 미수신, 이후 단계가 값 부족으로 건너뜀"
+  echo "[entrypoint] WARN: 인스턴스 env fetch 실패(exit $FETCH_RC) — GIIP_INSTANCE_TOKEN 이 설정됐는데 dockerInstanceFetch 가 실패했습니다. GIIP_SK 등이 비어 giip agent 가 건너뛰어질 수 있습니다(요약 블록에서 다시 알립니다)." >&2
+  if [ "${GIIP_STRICT_FETCH:-false}" = "true" ]; then
+    echo "[entrypoint] GIIP_STRICT_FETCH=true — 인스턴스 env fetch 실패로 기동 중단"; exit 1
+  fi
+fi
 
 # ── giip #2949: optional target project repo clone (zero-touch remote clone) ──
 # GIIP web의 docker-instances 생성 폼에 프로젝트 레포 URL을 넣으면 dockerInstanceFetch env로
@@ -114,6 +145,7 @@ fi
 
 # ── slack-bot (optional — only if Slack tokens are supplied) ──
 if [ -n "${SLACK_BOT_TOKEN:-}" ] && [ -n "${SLACK_APP_TOKEN:-}" ]; then
+  SLACK_STATUS="on (pm2 giipclaude-bot, user: $GIIP_RUNTIME_USER)"
   echo "[entrypoint] starting slack-bot via pm2 (user: $GIIP_RUNTIME_USER)"
   if [ "$GIIP_RUNTIME_USER" = "root" ]; then
     (cd "$REPO_DIR/slack-bot" && npm install --omit=dev --no-audit --no-fund)
@@ -131,11 +163,13 @@ if [ -n "${SLACK_BOT_TOKEN:-}" ] && [ -n "${SLACK_APP_TOKEN:-}" ]; then
     fi
   fi
 else
+  SLACK_STATUS="off (SLACK_BOT_TOKEN/SLACK_APP_TOKEN 미설정)"
   echo "[entrypoint] SLACK_BOT_TOKEN/SLACK_APP_TOKEN not set — skipping slack-bot"
 fi
 
 # ── hourly-issue-scheduler (optional — cron replaces Windows Task Scheduler) ──
 if [ "${GIIP_ENABLE_SCHEDULER:-true}" = "true" ]; then
+  SCHED_STATUS="on (:07/:27/:47, pwsh)"
   ONLY_CSN_ARG=""
   if [ -n "${EFFECTIVE_CSN:-}" ]; then
     ONLY_CSN_ARG=" -OnlyCsn ${EFFECTIVE_CSN}"
@@ -199,6 +233,7 @@ if [ "${GIIP_ENABLE_SCHEDULER:-true}" = "true" ]; then
     fi
   fi
 else
+  SCHED_STATUS="off (GIIP_ENABLE_SCHEDULER=false)"
   echo "[entrypoint] GIIP_ENABLE_SCHEDULER=false — skipping scheduler cron"
 fi
 
@@ -237,9 +272,21 @@ if [ "${GIIP_ENABLE_AGENT:-true}" = "true" ] && [ -n "$AGENT_SK" ]; then
     git -C "$GIIP_AGENT_DIR" checkout main
     git -C "$GIIP_AGENT_DIR" merge --ff-only origin/main
   else
+    # giip #2855 T2: .git 이 없는데 디렉터리가 비어있지 않게 남아 있으면 `git clone` 이
+    # "destination path ... already exists and is not an empty directory" 로 거부하고, 5행
+    # set -euo pipefail 때문에 entrypoint 가 그 자리에서 종료한다 → 한 번 이 상태(예: 과거의
+    # phantom log/ 잔해)에 빠지면 원인을 고쳐 재기동해도 스스로 회복하지 못했다(이 이슈의 핵심).
+    # 사용자 데이터일 수 있으므로 조용히 지우지 않고, 타임스탬프 백업으로 退避(rename)한 뒤 clone
+    # 한다 — 무엇을 왜 했는지 로그에 남긴다(ls -A 로 비어있는지 판정).
+    if [ -d "$GIIP_AGENT_DIR" ] && [ -n "$(ls -A "$GIIP_AGENT_DIR" 2>/dev/null)" ]; then
+      GIIP_AGENT_BAK="${GIIP_AGENT_DIR}.bak-$(date +%Y%m%d%H%M%S)"
+      echo "[entrypoint] WARN: $GIIP_AGENT_DIR 에 .git 이 없는데 비어있지 않습니다(이전 기동의 잔해로 추정). clone 이 'not an empty directory' 로 거부되어 기동이 멈추는 것을 막기 위해 $GIIP_AGENT_BAK 로 退避(rename)합니다 — 데이터는 지우지 않았습니다. 불필요하면 사람이 그 백업 경로를 삭제하십시오."
+      mv "$GIIP_AGENT_DIR" "$GIIP_AGENT_BAK"
+    fi
     git clone --branch main "$GIIP_AGENT_URL" "$GIIP_AGENT_DIR"
   fi
   mkdir -p "$GIIP_AGENT_DIR/log"
+  AGENT_CRON_LOG="$GIIP_AGENT_DIR/log/cron.log"   # giip #2855 T1: tail 대상에 조건부로 넣는다(하드코딩 금지)
 
   if [ ! -f "$GIIP_AGENT_CNF" ]; then
     # lssn=0 → giipAgent3.sh 첫 실행 시 자기 CSN 아래 새 lssn으로 자동 등록되고, 발급받은 lssn을
@@ -293,7 +340,14 @@ CNFEOF
   echo "*/5 * * * * root cd $GIIP_AGENT_DIR && bash cqe/giipCQE.sh >> /tmp/giip_cqe_logs/cqe_cron.log 2>&1" > /etc/cron.d/giip-cqe
   chmod 0644 /etc/cron.d/giip-cqe
   echo "[entrypoint] registered giipCQE.sh cron (every 5 min)"
+  AGENT_STATUS="on (giipAgentLinux + CQE, csn=$EFFECTIVE_CSN)"
 else
+  # giip #2855 T4: 건너뛴 사유를 요약 블록에서 구분해 보여준다(SK 미해결 vs. 명시적 비활성).
+  if [ "${GIIP_ENABLE_AGENT:-true}" != "true" ]; then
+    AGENT_STATUS="off (GIIP_ENABLE_AGENT=false)"
+  else
+    AGENT_STATUS="off (SK 미해결 — SSOT giip-accounts.json / GIIP_SK 모두 없음)"
+  fi
   echo "[entrypoint] GIIP_ENABLE_AGENT=false or no SK resolvable (SSOT giip-accounts.json / GIIP_SK) — skipping giip agent (container state will not be visible in GIIP web)"
 fi
 
@@ -316,7 +370,27 @@ if [ -f "$REPO_DIR/scripts/bootstrap-instance.sh" ]; then
   bash "$REPO_DIR/scripts/bootstrap-instance.sh" || echo "[entrypoint] WARN: bootstrap-instance.sh 실패(무시)"
 fi
 
+# giip #2855 T4: 기동 요약 — 이번 기동에서 무엇이 켜졌는지 한 블록으로. "giip agent: on|off + 사유"
+# 를 포함해, 사용자가 "왜 lsvrlist 에 안 뜨나" 를 이 블록만 보고 판정할 수 있게 한다.
+echo "[entrypoint] summary:"
+echo "[entrypoint]   slack-bot: $SLACK_STATUS"
+echo "[entrypoint]   scheduler: $SCHED_STATUS"
+echo "[entrypoint]   giip agent: $AGENT_STATUS"
+echo "[entrypoint]   fetch: $FETCH_STATUS"
+
 echo "[entrypoint] ready. tailing logs."
 touch "$REPO_DIR/scripts/gissue/logs/cron.log"
-mkdir -p /work/giipAgentLinux/log && touch /work/giipAgentLinux/log/cron.log
-exec tail -F "$REPO_DIR/scripts/gissue/logs/cron.log" /work/giipAgentLinux/log/cron.log "$GIIP_RUNTIME_HOME/.pm2/logs/giipclaude-bot-out.log" "$GIIP_RUNTIME_HOME/.pm2/logs/giipclaude-bot-error.log" 2>/dev/null
+# giip #2855 T1: 블록 밖에서 /work/giipAgentLinux/log 를 무조건 만들던 줄을 제거했다(에이전트를 안
+# 쓰는 구성에서 "빈 껍데기" 디렉터리가 생겨 다음 clone 을 막던 원인). agent log 는 에이전트 블록이
+# 실제로 돌아 AGENT_CRON_LOG 이 세팅됐을 때만 tail 대상에 넣는다. REPO 로그는 바로 위 touch 로 존재가
+# 보장되므로 tail 인자가 0개가 되는 일은 없다(인자 0개면 tail 이 usage 오류로 죽는다).
+TAIL_TARGETS=("$REPO_DIR/scripts/gissue/logs/cron.log")
+if [ -n "$AGENT_CRON_LOG" ]; then
+  TAIL_TARGETS+=("$AGENT_CRON_LOG")
+fi
+TAIL_TARGETS+=("$GIIP_RUNTIME_HOME/.pm2/logs/giipclaude-bot-out.log" "$GIIP_RUNTIME_HOME/.pm2/logs/giipclaude-bot-error.log")
+# 어떤 파일이 tail 대상인지(존재 여부 포함) 남긴다 — tail -F 는 없는 파일도 받지만 2>/dev/null 이 경고를 숨기므로.
+for _t in "${TAIL_TARGETS[@]}"; do
+  if [ -f "$_t" ]; then echo "[entrypoint]   tail + $_t (존재)"; else echo "[entrypoint]   tail + $_t (아직 없음 — tail -F 가 생성되면 따라감)"; fi
+done
+exec tail -F "${TAIL_TARGETS[@]}" 2>/dev/null
