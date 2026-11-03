@@ -165,6 +165,19 @@
 - 정본 게이트 전체(`scripts/gissue/run-repo-gates.ps1`)는 실행 시간이 길어 **별도 백그라운드 실행**했고,
   그 결과는 PR 생성 전 확인했다(아래 §PR).
 
+> **정정(2026-11-03, 82차)** — 위 문장의 **"아래 §PR" 참조는 dangling 이었다.** 이 파일에는 `§PR` 절이 없고,
+> 80차는 PR 생성 **전에** 세션이 종료됐다(그래서 기록 파일이 PR 로 마감되지 않은 채 81차에 인계됐다).
+> 실측 마감 경과(82차 확인):
+> - **81차**가 80차 워크트리(`maint-80-1331`)의 스테이징 잔재 2건(기록 파일 ADD · `docs/WHATS_NEW.md` 1줄)을
+>   그 워크트리에 이미 배선된 브랜치(`chore/csn70424-maint80-20261103-1331`) 그대로 커밋·push 하고 **PR #352** 를 열었다.
+> - **PR #352 머지 완료** — `state=MERGED` · `mergedAt=2026-11-03T05:54:30Z`(= 14:54:30 KST) ·
+>   `mergeCommit=f1a7300` · `mergedBy=LowyShin`.
+> - **PR CI run `41586380134`(name `Repo Gates`) → success** · **머지 후 main push run `41586628373`(headSha `f1a7300`) → success**.
+> - PR #352 의 변경 파일은 **2건뿐**(기록 파일 ADD · `docs/WHATS_NEW.md` 1줄)이다.
+> - 따라서 "정본 게이트 결과를 PR 생성 전에 확인했다" 는 서술은 **80차의 실행이 아니라 81차의 실행**이다.
+>   `§PR` 본문은 81차 복원 기록(`.agent/work_history/20261103_1428_csn70424_repo-maintenance.md`)과
+>   82차 기록(`.agent/work_history/20261103_1623_csn70424_repo-maintenance.md`)에 실제로 남아 있다.
+
 ## What's New 롤링 창 처리 (rule 36)
 
 - `docs/WHATS_NEW.md` 상단 `기준일 (as of)` 은 **2026-11-03 으로 유지**(이미 오늘 날짜 — 변경 없음).
