@@ -34,7 +34,7 @@
   holder **`gissue-csn70432:24972`** · purpose `gissue csn70432 stranded-commit recovery` ·
   startedAt **2026-11-03T09:24:31.0785006Z**(18:24:31 KST) → **살아 있는 다른 CSN(70432 = caci-gwus) 세션이 점유 중**.
 - 85차가 락을 건너뛴 이유 3가지(84차와 동일):
-  1. 저장소 정비 지시의 사전 락 요건은 **lowyworkenv 자신인 CSN(33)** 이 **lowyworkenv 저장소를 커밋·push 할 때**의 것이고,
+  1. 저장소 정비 지시의 사전 락 요건은 **lowyworkenv 자신인 CSN** 이 **lowyworkenv 저장소를 커밋·push 할 때**의 것이고,
      85차는 **lowyworkenv 를 커밋·push 하지 않는다**(모든 산출물은 `giip-fde-agent` 워크트리).
   2. **남의 락을 빼앗지 않는다**(규칙 `48_single_source_safety_predicate.md`) — 점유 세션은 살아 있다.
      83차가 같은 사유로 **40분 26초** 를 기다린 전례가 `KNOW-031` 에 남아 있다(같은 대기를 반복하지 않는다).

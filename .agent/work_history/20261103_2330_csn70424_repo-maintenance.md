@@ -38,7 +38,7 @@
 
 ### 사전 락 — **87차는 락을 획득하지 않았다**(사유 기록)
 
-- 저장소 정비 지시의 사전 락 요건은 **lowyworkenv 자신인 CSN(33) 이 lowyworkenv 저장소를 커밋·push 할 때**의 것이고,
+- 저장소 정비 지시의 사전 락 요건은 **lowyworkenv 자신인 CSN 이 lowyworkenv 저장소를 커밋·push 할 때**의 것이고,
   **87차는 lowyworkenv 를 커밋·push 하지 않는다**(모든 산출물은 `giip-fde-agent` 워크트리).
 - 확인 근거: `scripts/gissue/csn-projects.json` — `"33"` → project `lowyworkenv` / workdir
   `C:\Users\lowys\Downloads\projects\lowyworkenv`, `"70424"` → project `giip-fde-agent` / workdir

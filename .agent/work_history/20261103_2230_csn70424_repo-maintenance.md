@@ -47,7 +47,7 @@
 
 ### 사전 락 — **86차는 락을 획득하지 않았다**(사유 기록)
 
-- 저장소 정비 지시의 사전 락 요건은 **lowyworkenv 자신인 CSN(33) 이 lowyworkenv 저장소를 커밋·push 할 때**의 것이고,
+- 저장소 정비 지시의 사전 락 요건은 **lowyworkenv 자신인 CSN 이 lowyworkenv 저장소를 커밋·push 할 때**의 것이고,
   **86차는 lowyworkenv 를 커밋·push 하지 않는다**(모든 산출물은 `giip-fde-agent` 워크트리).
 - 실측 시점(2026-11-03 22:4x KST) `C:\Users\lowys\Downloads\projects\lowyworkenv\.agent\locks\lowyworkenv-repo.lock` 은
   **다른 CSN 의 gissue 세션이 점유 중**이었다(시작 2026-11-03T13:38:10Z). 86차는 그 CSN 의 산출물을 건드리지 않는다
