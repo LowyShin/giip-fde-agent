@@ -121,6 +121,18 @@ GIIP agent를 기동해 GIIP와 통신하게 합니다.
   제가 임의로 만들 수 없어 사용자 쪽에서 실제 `GIIP_SK`로 `docker compose up -d --build` 후
   `lsvrlist`에서 새 lssn이 뜨는지 확인이 필요합니다.
 
+**이 "미검증 구간"에서 나온 첫 실사용 보고와 그 수정(giip #2855, 2026-11-04)**: 위 ❌ 경로(실 SK로의
+최초 기동)에서, `GIIP_SK`가 비는 구성(토큰 fetch 실패 또는 미설정)인데도 `entrypoint.sh`가 **에이전트
+블록 밖에서 `/work/giipAgentLinux/log`를 무조건 만들어** "빈 껍데기 clone"처럼 보이게 하고, 영속 볼륨에
+남은 그 잔해가 다음 clone을 `not an empty directory`로 영구히 막는 결함이 실사용에서 보고됐습니다.
+- 수정: 블록 밖 무조건 생성 제거(T1), clone 전 `.git` 없는 비어있지 않은 디렉터리를 `.bak-<타임스탬프>`로
+  退避 후 clone해 자가회복(T2), 토큰 fetch 실패를 종료코드로 명시 검사(T3, `GIIP_STRICT_FETCH`),
+  `ready.` 직전 기동 요약 블록 추가(T4). 사양: [`docker-entrypoint-spec.md`](./docker-entrypoint-spec.md) §5 단계 2/8/12.
+- 검증 상태: ✅ 정적 — `bash -n` 구문 + 작업지시서 Test Procedure (1)~(5) grep/awk 판정 PASS(2026-11-04 실측).
+  ❌ **미검증(런타임)** — 이 호스트에 docker가 없어 작업지시서 verify (6)(7)의 `docker build/run`(SK 없이
+  기동 시 phantom 디렉터리 미생성, 잔해 退避 후 clone)은 실행하지 못했습니다. docker 있는 환경에서 그 두
+  블록을 돌려 최종 확인이 필요합니다.
+
 ### 2-3) 대상 프로젝트 레포 무인 자동 clone (giip 2949)
 
 §2-1의 흐름은 컨테이너가 `giip-fde-agent`(자기 자신)와 `giipAgentLinux`만 clone합니다 — scheduler가

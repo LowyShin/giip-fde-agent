@@ -17,7 +17,7 @@ docker compose logs -f
 | 파일 | 역할 |
 |---|---|
 | `Dockerfile` | pwsh 7 + Node.js + git + claude CLI + pm2 런타임 |
-| `entrypoint.sh` | clone/pull → (선택) 대상 프로젝트 레포 auto clone(`GIIP_PROJECT_REPO_URL`, giip #2949) → 등록 스크립트 실행 → slack-bot(pm2) + scheduler(cron) 기동 | 사양: [`docs/60-operations/docker-entrypoint-spec.md`](../docs/60-operations/docker-entrypoint-spec.md)
+| `entrypoint.sh` | clone/pull → (선택) 대상 프로젝트 레포 auto clone(`GIIP_PROJECT_REPO_URL`, giip #2949) → 등록 스크립트 실행 → slack-bot(pm2) + scheduler(cron) 기동. giip #2855: 에이전트 블록을 건너뛰면 `/work/giipAgentLinux` 를 만들지 않음(phantom 디렉터리 금지), clone 잔해는 `.bak-<ts>` 退避 후 재clone, 토큰 fetch 실패 시 경고(`GIIP_STRICT_FETCH=true` 면 중단), `ready.` 직전 기동 요약 블록 | 사양: [`docs/60-operations/docker-entrypoint-spec.md`](../docs/60-operations/docker-entrypoint-spec.md)
 | `setup-registration.js` | env var → `csn-projects.json` / `giip-accounts.json` 생성 (이미 있으면 건드리지 않음) |
 | `docker-compose.yml` | 볼륨 영속화 포함 기동 정의 |
 | `.env.example` | env var 계약(정본) |
