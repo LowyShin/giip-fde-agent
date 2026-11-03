@@ -92,3 +92,5 @@
   - `.agent/k_layer/notes/INDEX.md` — KNOW-010 행의 tKB kbSn 칸 `6631` 로 갱신
   - `docs/WHATS_NEW.md` — `## 2026-10-25` 절 최상단 1줄 추가
 - 소비처: 다음 회차 세션의 인수 매체
+
+> **정정(2026-11-03, 79차 저장소 정비):** 위 규칙 인용 중 `61_klayer_registration_must_be_committed.md` · `72_klayer_in_project_tkb_via_sk.md` 는 **이 저장소 `.agent/rules/` 에 존재하지 않는 파일명**이다 — 실측: `ls .agent/rules/`(53개) 목록에 없음, `git log --all --diff-filter=A -- .agent/rules/<파일명>` 로 저장소 이력 전체에도 추가된 적 없음. 이 저장소에서의 실제 대응은 `61_klayer_registration_must_be_committed.md` → `35_commit_push_per_task.md` + `55_information_lookup_order_and_feedback.md` · `72_klayer_in_project_tkb_via_sk.md` → `55_information_lookup_order_and_feedback.md` 이다. 본 기록은 **lowyworkenv 측 규칙 목록**을 그대로 옮긴 것으로, 근거·전체 대응표는 `.agent/k_layer/notes/KNOW-028_rule_citations_must_resolve_in_this_repo.md` 를 본다.
