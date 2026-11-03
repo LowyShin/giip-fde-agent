@@ -205,3 +205,5 @@ PR 로 마감했다. `KNOW-015`("열린 PR 0건"은 "할 일 없음"의 증거�
 3. **`KNOW` 노트 신규 등록 0건** — 이번 회차의 교훈(원격에 남은 죽은 세션 브랜치 회수)은 `KNOW-015` 가 이미 담고 있고,
    "기록의 후속 서술도 실행되지 않을 수 있다" 는 `KNOW-013` 의 범주다. **중복 노트를 만들지 않았다.**
    tKB 등록·갱신도 **0건**(신규 노트 없음).
+
+> **정정(2026-11-03, 79차 저장소 정비):** 위 규칙 인용 중 `36_no_md_in_nongit.md` · `41_branch_lifecycle_pr.md` · `55_destructive_cleanup_incident_gate.md` 는 **이 저장소 `.agent/rules/` 에 존재하지 않는 파일명**이다 — 실측: `ls .agent/rules/`(53개) 목록에 없음, `git log --all --diff-filter=A -- .agent/rules/<파일명>` 로 저장소 이력 전체에도 추가된 적 없음. 이 저장소에서의 실제 대응은 `36_no_md_in_nongit.md` → 동등 규칙 없음 — `33_artifact_hygiene.md`(정본 분리)가 가장 가까움 · `41_branch_lifecycle_pr.md` → `41_issue_session_safety_index.md` + `35_commit_push_per_task.md` · `55_destructive_cleanup_incident_gate.md` → `47_auto_cleanup_safety_requirements.md` 이다. 본 기록은 **lowyworkenv 측 규칙 목록**을 그대로 옮긴 것으로, 근거·전체 대응표는 `.agent/k_layer/notes/KNOW-028_rule_citations_must_resolve_in_this_repo.md` 를 본다.
