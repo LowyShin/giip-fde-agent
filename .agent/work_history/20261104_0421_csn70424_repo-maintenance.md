@@ -29,7 +29,7 @@
 
 ### 저장소 락 — **90차는 락을 획득하지 않았다**(사유 기록)
 
-- 저장소 정비 지시의 사전 락 요건은 **lowyworkenv 자신인 CSN(33) 이 lowyworkenv 저장소를 커밋·push 할 때**의 것이고,
+- 저장소 정비 지시의 사전 락 요건은 **lowyworkenv 자신인 CSN 이 lowyworkenv 저장소를 커밋·push 할 때**의 것이고,
   **90차는 lowyworkenv 를 커밋·push 하지 않는다**(모든 산출물은 `giip-fde-agent` 워크트리).
 - **남의 락을 빼앗지 않는다**(rule 48) — 83·84·85차와 동일한 판단.
 - read-only 조회는 이 PC 의 정본 스크립트가 lowyworkenv 에만 있어(저장소 밖) lowyworkenv 공유 체크아웃 cwd 에서 실행했다
