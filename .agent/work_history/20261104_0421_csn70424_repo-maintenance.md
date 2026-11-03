@@ -243,3 +243,31 @@
    다른 KNOW 노트와(`KNOWLEDGE`) 다르다. 잔여 사항이며 tKB 스키마/SP 개정이 필요한 사안이다.
 6. **러너 105분 자기 마감 ↔ 커밋 단계 순서**(§근본원인) — lowyworkenv 러너 측 사안. 사람이 lowyworkenv 쪽에서
    저장소 정비 세션의 산출물 push 를 앞당기는 중간 산출 규칙을 검토할 사항이다.
+
+> **정정(2026-11-04, 90차 후속) — 위 "줄바꿈 주의" 절의 서술 대상**
+> 위 §What's New 롤링 창 처리의 "줄바꿈 주의" 는 **워크트리(체크아웃) 실측값**을 인용한 것이다.
+> 이 저장소는 `core.autocrlf=true` 라 **git 저장소(인덱스·origin/main) 는 전부 LF** 다 —
+> 90차 후속 실측(`git show origin/main:<path>` 원문 바이트):
+> `.agent/k_layer/notes/INDEX.md` = CRLF 0 · LF-only 36 ·
+> `KNOW-032_...md` = CRLF 0 · LF-only 70 ·
+> `KNOW-031_...md` = CRLF 0 · LF-only 55 ·
+> `docs/WHATS_NEW.md` = CRLF 0 · LF-only 55 ·
+> 신규 work_history 5건 = **모두 CRLF 0 · LF-only**(236·251·311·262·245줄).
+> → **"이 저장소의 파일은 CRLF 이다" 는 워크트리 뷰의 착시**이며, 커밋 단위로 CRLF 를 관리할 대상이 아니다.
+> CRLF 로 만든 파일도 커밋 시 LF 로 정규화되므로 **커밋 diff 는 깨끗하다**.
+> 실제로 주의할 것은 **자동변환에 의한 diff 폭 과장**(표 변경이 +N/-N 으로 부풀어 보이는 것) 뿐이며,
+> 본 회차 PR #355 는 스테이징 대상 파일만 명시 경로로 `git add` 해 해당 현상을 피했다.
+>
+> **추기(2026-11-04, 90차 후속) — KNOW-032 등록 완료**
+> 위 §근본원인("러너 105분 자기 마감이 커밋 단계를 막는다")은 **k-layer 노트 + tKB** 로 등록됐다.
+> - 노트: `.agent/k_layer/notes/KNOW-032_runner_105min_deadline_kills_the_commit_step_commit_before_writing_records.md` (신규 70줄)
+> - INDEX: `.agent/k_layer/notes/INDEX.md` 에 **KNOW-032 행 추가** (kbSn **6897**) — `KNOW-029` 는 giip 4434 예약이라 비워둠
+> - tKB: `node scripts/gissue/tkb.js sync-klayer --csn 70424 --dir <worktree>/.agent/k_layer/notes --project giip-fde-agent --note "KNOW-032_*.md"`
+>   → `OK created kbSn=6897` · 합계 1건(created 1 / updated 0 / 실패·불일치 0) · csn 70424 · refType KNOWLEDGE · tags `sync, k-layer, ai-memory`
+> - **중복 사전 조회**: `tkb.js list --csn 70424 --search "KNOW-032" --json` → `[]`
+> - **본문 무결성**: 저장 본문 **3324자 = 소스 3324자 바이트 동일**(CRLF 70줄 그대로 보존) → 4000자 절단 미해당
+> - PR: **#356** → 머지 커밋 `1f9a7a3` · CI 3건 전건 SUCCESS(PS1 gates · MJS gates · GitGuardian) ·
+>   로컬 `scripts/gissue/run-repo-gates.ps1` → **exit 0**(ps1 28 · mjs 5 · 링크스캔 실제 결함 0)
+>
+> **이 추가 등록 PR 이 §근본원인의 대응 그 자체다** — 커밋·push 를 기록 작성보다 먼저 하는 순서를 그대로 지켰다.
+> 90차 본 기록(PR #355)도 커밋을 2단계로 쪼개 **먼저 push** 했으므로, 러너가 마감에 끊겨도 **원격에 남는다**.
