@@ -223,11 +223,29 @@ Slack 메시지는 `intent.js` 에서 아래 순서로 분류된다(앞 단계�
 1. `isForceTaskCmd` — 태스크 등록/구현·수정 명령형 등 쓰기 패턴이면 무조건 task.
 2. `isConfirmationQuery` — 쓰기 동사/명령형이 **없고** 확인·조회 표지(`알려줘`/`확인 가능해?`/`어때?` 등) 또는
    읽기 전용 조회(`isReadOnlyLookup`: URL/링크/경로/주소/위치/내용 + `찾아/보여/알려/확인`)이면 LLM 없이 question(즉답).
-3. 위에 해당하지 않으면 LLM 분류기(`classifyRequest`).
+3. **Jev 의도 분류(선택 단계, 기본 OFF)** — 위 두 단계로 확정되지 않은 메시지만 Jev 게이트웨이에 넘겨
+   `task`/`question` 을 확정한 뒤 그 결과를 그대로 쓴다. 확정하지 못하면(ambiguous·오류·타임아웃·신뢰도 부족) 다음 단계로 내려간다.
+4. LLM 분류기(`classifyRequest` 의 ③ 단계). 여기까지 실패하면 `question` + 안내문("작업 요청이면 '태스크 등록 …' 으로 다시 보내 주세요").
 
 쓰기 의도는 명사(`파일`/`폴더`/`처리`/`등록`/`추가`/`점검`) 단독이 아니라 **쓰기 동사/명령형**(`저장`/`작성`/`수정`/`삭제`,
 `등록해`/`처리해서` 등)으로 판정한다. 그래서 "처리 결과 파일의 github url 찾아서 보여줘" 같은 기존 파일 조회는 새 이슈를 만들지 않고,
 "찾아서 파일로 저장해줘" 는 task 로 간다. 테스트: `node --test slack-bot/tests/intent.test.js`(LLM 미호출).
+
+### Jev 의도 분류 단계(선택, 기본 OFF)
+
+`classifyRequest` 내부의 ③ 앞 단계로, **환경변수 `JEV_INTENT_ENABLED` 가 켜져 있을 때만** 동작한다.
+미설정/꺼짐이면 이 단계를 통째로 건너뛰므로 판정 결과는 위와 완전히 동일하다(현행 동작 불변).
+
+| 환경변수 | 기본값 | 뜻 |
+|---|---|---|
+| `JEV_INTENT_ENABLED` | (꺼짐) | `1`/`true`/`yes`/`on` (대소문자 무시) 일 때만 Jev 단계 수행 |
+| `GIIP_JEV_GATEWAY_URL` | (미설정) | Jev 게이트웨이 주소. **유일한 접속 경로**이며, 미설정이면 Jev 단계를 생략하고 LLM 으로 간다 |
+| `JEV_INTENT_TIMEOUT_MS` | `3000` | 게이트웨이 응답 타임아웃(ms). 초과 시 LLM 으로 폴백 |
+| `JEV_INTENT_T_HI` / `JEV_INTENT_P_HI` / `JEV_INTENT_P_LO` | `0.8` / `0.7` / `0.3` | 신뢰도 라우팅 임계값. **사양서 §5 제안값이며 확정값이 아니다**(평가 전). 값은 호출 시점에 읽는다 |
+
+- 전송 직전 `maskString()` 으로 마스킹한 본문만 보낸다(원문·키 미전송). Jev 키는 봇이 아니라 게이트웨이 앱설정에 있다.
+- 판정 결과는 봇 프로세스 stdout(`console.log`) 에 남는다 — 원문 대신 `maskString` 통과본의 sha256 앞 8자 해시와 길이만 기록한다.
+- 회귀 테스트: `node --test slack-bot/tests/intent-jev.test.js`(Jev 호출은 전부 모킹, 네트워크 없음).
 
 ## 개인용 체크리스트 대시보드 (`SLACKBOT_DASHBOARD`, 기본 끔)
 
@@ -237,7 +255,7 @@ Slack 메시지는 `intent.js` 에서 아래 순서로 분류된다(앞 단계�
 공용 레포 체크아웃에서는 켜지 말 것(레포 루트가 오염된다). `node dashboard.js` CLI 수동 실행은 스위치와 무관하게 동작한다.
 테스트: `node --test slack-bot/tests/dashboard.test.js`.
 
-Jev 를 활용한 의도 분류 권장 구조(제안, 미구현): [docs/INTENT_ROUTING_JEV_SPEC.md](docs/INTENT_ROUTING_JEV_SPEC.md)
+Jev 를 활용한 의도 분류 구조(구현 완료 — 단, 스위치 기본 OFF): [docs/INTENT_ROUTING_JEV_SPEC.md](docs/INTENT_ROUTING_JEV_SPEC.md)
 
 ## 작업 브랜치 생성 시 untracked 충돌 자가치유
 
