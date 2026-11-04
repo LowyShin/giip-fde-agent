@@ -1,4 +1,4 @@
-# gissue-stash-unblock-lib.ps1 — auto-unblock 의 stash 단계 정본 로직 (예약장치명 부분 성공 + untracked 잔해 폴백)
+﻿# gissue-stash-unblock-lib.ps1 — auto-unblock 의 stash 단계 정본 로직 (예약장치명 부분 성공 + untracked 잔해 폴백)
 #
 # 이 파일이 정본인 이유:
 #   auto-unblock 의 stash 단계는 run-gissue-claude.ps1 안의 **두 호출부**(병합 확인된 [AUTO-UNBLOCK] 경로와
