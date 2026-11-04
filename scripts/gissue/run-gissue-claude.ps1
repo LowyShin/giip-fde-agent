@@ -170,6 +170,11 @@ $BusyPollSec = 60
 # 강제 정리(Stop-Job) 후 스크립트 레벨로만(LLM 재호출 없이) 후속 이슈 등록 + note + READY 복귀한다.
 $IssueEngineDeadlineMin = 40
 $IssueEnginePollMin = 10
+# [giip 4431 항목 2] REPO-MAINT(저장소 정비) 세션 시간 캡. 이슈 순회엔 위 per-issue 캡이 있지만 정비
+# 세션은 Invoke-GissueEngine 를 시간박스 없이 호출해, 엔진이 멈추면 정비 세션이 러너 전체 예산(105분)을
+# 삼켰다(giip 4428 실측). 이 캡(분)을 넘기면 정비 잡을 Stop-Job 후 이슈 순회로 진행한다(정비는 멱등 —
+# 다음 :07 이 이어서 수행). GISSUE_REPO_MAINT_CAP_MIN 으로 덮어쓸 수 있다.
+$RepoMaintDeadlineMin = if ($env:GISSUE_REPO_MAINT_CAP_MIN -and ($env:GISSUE_REPO_MAINT_CAP_MIN -as [int]) -gt 0) { [int]$env:GISSUE_REPO_MAINT_CAP_MIN } else { 20 }
 # [giip #3555] REVIEW/TESTED 재검증 전용 캡. READY/PENDING/stale 실작업은 $IssueEngineDeadlineMin(40분) 유지.
 # 근거: REVIEW 재검증(PR 병합 여부·코멘트 확인)은 대부분 수 분 내 완료, 40분 캡은浪费. 제안값 15분.
 $reviewEngineDeadlineMin = 15
@@ -2667,7 +2672,8 @@ foreach ($csn in $map.PSObject.Properties.Name) {
               $restBranch, $repoMaintenancePrompt, $pendingIssuePrompt, $readyIssuePrompt, $staleIssuePrompt,
               $reviewIssuePrompt, $testedIssuePrompt, $runTimeoutMin, $registerIssueScript, $listIssuesScript,
               $issueEngineDeadlineMin, $reviewEngineDeadlineMin, $issueEnginePollMin, $logDir, $csnSk, $runIdKey, $reviewRecheckCooldownHours,
-              $projectLang, $divergeFailAlertThreshold, $bashExe, $presweepScript, $reviewTestedMaxAgeHours, $softBudgetMin)
+              $projectLang, $divergeFailAlertThreshold, $bashExe, $presweepScript, $reviewTestedMaxAgeHours, $softBudgetMin,
+              $repoMaintDeadlineMin)
         Set-Location -Path $workdir
         # [ENCODING][giip #1204 버그 B] Start-Job 은 별도 프로세스라 바깥 스코프의 콘솔 인코딩 설정이
         # 상속되지 않는다 — 한글 프롬프트를 stdin 파이프로 넘기기 전에 이 잡 스코프에서도 UTF-8 로 고정한다.
@@ -2790,6 +2796,7 @@ foreach ($csn in $map.PSObject.Properties.Name) {
         # 디스패처가 무시하고 help 를 실행했고, 응답도 검사하지 않아 에이전트 등록·이력이 조용히 실패했다.
         . (Join-Path $root 'lib/scheduler-state.ps1')
         . (Join-Path $root 'lib/soft-budget.ps1')   # giip 3615: 소프트 예산 판정(잡 스코프는 메인 함수를 상속하지 않는다)
+        . (Join-Path $root 'lib/capped-wait.ps1')    # giip 4431 항목 2: REPO-MAINT 세션 시간 캡 판정(잡 스코프 전용)
         function Record-SchedulerState([string]$Action, [string]$Sk, [string]$ApiUrl, [string]$Csn, [string]$AgentKey, [string]$RunIdKey, [string]$ExecutionMode, [string]$Status, [int]$Processed, [int]$Skipped, [int]$Failed, [string]$Phase, [string]$IssueNum, [string]$Summary) {
             if (-not $Sk) { return }
             try {
@@ -3315,12 +3322,43 @@ foreach ($csn in $map.PSObject.Properties.Name) {
 
         # (A) 저장소 정비 — CSN 당 1회, MiniMax 우선(강제 claude 아님). [0]/[E]/[F]/[H] 규칙을 한 세션에서
         # 처리한다. 실패해도 이슈별 처리(B/C)는 계속 진행한다(저장소 정비 실패가 스케줄러 전체를 막지 않는다).
-        Write-Output "[REPO-MAINT] CSN $csn 저장소 정비 세션 시작"
+        # [giip 4431 항목 2] 엔진 호출을 내부 Start-Job 으로 감싸 ${repoMaintDeadlineMin}분 캡을 둔다(per-issue
+        # timebox giip #1565 와 동일 패턴). 캡 초과 시 Stop-Job 후 이슈 순회로 진행한다 — 정비는 멱등이라
+        # 후속 이슈 등록 없이 note 만 남기고 다음 :07 이 이어서 수행한다. (Start-Job 은 부모 스코프의 함수를
+        # 상속하지 않으므로 엔진 함수 본문을 -InitializationScript 로 명시 전달한다.)
+        Write-Output "[REPO-MAINT] CSN $csn 저장소 정비 세션 시작 (캡 ${repoMaintDeadlineMin}분)"
+        $repoMaintInit = [scriptblock]::Create(@"
+function Invoke-GissueMinimaxAttempt {
+${function:Invoke-GissueMinimaxAttempt}
+}
+function Invoke-GissueEngine {
+${function:Invoke-GissueEngine}
+}
+"@)
+        $repoMaintJob = Start-Job -InitializationScript $repoMaintInit -ScriptBlock {
+            param($promptTextInner, $rootInner, $modelInner, $minimaxApiKeyInner, $minimaxModelInner, $minimaxBaseUrlInner, $minimaxContextTokensInner)
+            if ([Console]::OutputEncoding.WebName -ne 'utf-8') { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 }
+            if ($OutputEncoding.WebName -ne 'utf-8') { $OutputEncoding = [System.Text.Encoding]::UTF8 }
+            Invoke-GissueEngine -PromptText $promptTextInner -ForceClaude:$false -IssueContextLine '' -ForceReason '' `
+                -Root $rootInner -Model $modelInner -MinimaxApiKey $minimaxApiKeyInner -MinimaxModel $minimaxModelInner -MinimaxBaseUrl $minimaxBaseUrlInner -MinimaxContextTokens $minimaxContextTokensInner
+        } -ArgumentList $repoMaintenancePrompt, $agentRepo, $model, $minimaxApiKey, $minimaxModel, $minimaxBaseUrl, $minimaxContextTokens
         try {
-            Invoke-GissueEngine -PromptText $repoMaintenancePrompt -ForceClaude:$false -IssueContextLine '' -ForceReason '' `
-                -Root $agentRepo -Model $model -MinimaxApiKey $minimaxApiKey -MinimaxModel $minimaxModel -MinimaxBaseUrl $minimaxBaseUrl -MinimaxContextTokens $minimaxContextTokens
+            $repoMaintWait = Invoke-GissueCappedJobWait $repoMaintDeadlineMin $issueEnginePollMin @{
+                IsRunning = { $repoMaintJob.State -eq 'Running' }
+                Wait      = { param($sec) Wait-Job $repoMaintJob -Timeout $sec | Out-Null }
+            }
+            if ($repoMaintWait.TimedOut) {
+                # 캡 초과 — 강제 정리 후 이슈 순회로 진행한다. detach 된 엔진 자식은 고아로 남을 수 있고
+                # 다음 :07 실행의 Phase 0 reaper 가 회수한다(per-issue timebox 와 동일).
+                Write-Output "[REPO-MAINT] CSN $csn 정비 세션이 ${repoMaintDeadlineMin}분 캡 초과 — 강제 정리 후 이슈 순회로 진행 (멱등, 다음 :07 이 이어서 수행)"
+                Stop-Job $repoMaintJob -ErrorAction SilentlyContinue
+            } else {
+                try { Receive-Job $repoMaintJob } catch { Write-Output "[WARN] 저장소 정비 세션 출력 회수 오류($($_.Exception.Message)) — 이슈별 처리는 계속 진행" }
+            }
         } catch {
             Write-Output "[WARN] 저장소 정비 세션 오류($($_.Exception.Message)) — 이슈별 처리는 계속 진행"
+        } finally {
+            Remove-Job $repoMaintJob -Force -ErrorAction SilentlyContinue
         }
 
         # ── REVIEW/TESTED 재검증 쿨다운(2026-09-04, 사용자 지시: "재검증 주기를 줄인다") ──────────────
@@ -3658,7 +3696,8 @@ ${function:Invoke-GissueEngine}
                     $restBranch, $repoMaintenancePromptSub, $pendingIssuePromptSub, $readyIssuePromptSub, $staleIssuePromptSub,
                     $reviewIssuePromptSub, $testedIssuePromptSub, $RunTimeoutMin, $RegisterIssueScript, $ListIssuesScript,
                     $IssueEngineDeadlineMin, $ReviewEngineDeadlineMin, $IssueEnginePollMin, $LogDir, $csnSk, $runIdKey, $ReviewRecheckCooldownHours,
-                    $projectLang, $DivergeFailAlertThreshold, $BashExe, $PresweepScript, $reviewTestedMaxAgeHours, $SoftBudgetMin
+                    $projectLang, $DivergeFailAlertThreshold, $BashExe, $PresweepScript, $reviewTestedMaxAgeHours, $SoftBudgetMin,
+                    $RepoMaintDeadlineMin
     $runs += [pscustomobject]@{
         Csn = $csn; Job = $job; Lock = $lock; Done = $false; Workdir = $workdir
         Deadline = (Get-Date).AddMinutes($RunTimeoutMin)
