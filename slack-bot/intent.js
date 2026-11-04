@@ -1,9 +1,17 @@
 // intent.js — コマンド判定 + 意図分類（task / question）
 // index.js から behavior-preserving で切り出し（ロジック変更なし）。
 
+const crypto = require('crypto');
+const http = require('http');
+const https = require('https');
+const path = require('path');
+const { URL } = require('url');
 const { spawnAsync } = require('./claude-cli');
 const accounts = require('./claude-accounts');
-const { BASE_DIR } = require('./config');
+// claude-accounts とは別物(giip 채널별 SK)なので名前で切り分ける。
+const giipAccounts = require('./giip-accounts');
+const { maskString } = require('./secret-mask');
+const { BASE_DIR, resolveLangForProject } = require('./config');
 
 // ── 確認コマンド判定 ──────────────────────────────────────────────────────────
 const GO_WORDS = ['go', 'start', '시작', '실행', '진행', 'ok', 'yes', '예', '응', '開始', 'はい', 'よし', '実行', '進める'];
@@ -99,17 +107,281 @@ function isConfirmationQuery(text) {
   return CONFIRM_QUERY_MARKERS.some(re => re.test(t)) || isReadOnlyLookup(t);
 }
 
+// ── ② Jev 意図分類アダプタ (仕様 slack-bot/docs/INTENT_ROUTING_JEV_SPEC.md §4·§5·§6.2) ──
+// チェーン上の位置: ①(決定規則) → ②(Jev) → ③(既存 LLM 分類器) → ④(案内文) のフォールバック。
+//   スイッチがオフなら ② は丸ごとスキップする(現行と完全に同一にすること — 仕様 §7)。
+//
+// スイッチ·閾値·タイムアウトは **呼び出し時** に env から読む(モジュールロード時定数は禁止)。
+//   - JEV_INTENT_ENABLED        : 1/true/yes/on(大小文字無視)。既定は OFF。
+//   - GIIP_JEV_GATEWAY_URL      : ゲートウェイ URL。接続はこの環境変数だけ(ハードコード禁止)。
+//                                  未設定なら ② は省略される。
+//   - JEV_INTENT_TIMEOUT_MS     : 既定 3000ms(仕様 §4.5「初期提案 3 秒 — 根拠未検証」)。
+//   - JEV_INTENT_T_HI/P_HI/P_LO : 既定 0.8 / 0.7 / 0.3 — これらは **仕様 §5 の提案値であって確定値ではない**
+//                                  (§10-10: 確定値として引用禁止)。(C) のコーパス評価で確定する。
+//
+// 優先順位(仕様 §3-1·§5): ①(特に isForceTaskCmd)が常に優先。呼び出し側が isForceTaskCmd を先に評価するため、
+//   Jev が受け取るのは「isForceTaskCmd が false のメッセージ」だけ(構造的に保証)。
+//   Jev の question 判定が isForceTaskCmd の結果をひっくり返すことはできない。
+const JEV_ENABLED_ENV = 'JEV_INTENT_ENABLED';
+const JEV_GATEWAY_ENV = 'GIIP_JEV_GATEWAY_URL';
+const JEV_TIMEOUT_ENV = 'JEV_INTENT_TIMEOUT_MS';
+const JEV_T_HI_ENV = 'JEV_INTENT_T_HI';
+const JEV_P_HI_ENV = 'JEV_INTENT_P_HI';
+const JEV_P_LO_ENV = 'JEV_INTENT_P_LO';
+
+// 既定値は仕様 §5 の提案値 — 確定値ではない(§10-10)。(C) の評価で確定する。
+const JEV_T_HI_DEFAULT = 0.8;
+const JEV_P_HI_DEFAULT = 0.7;
+const JEV_P_LO_DEFAULT = 0.3;
+const JEV_TIMEOUT_DEFAULT_MS = 3000;
+
+function jevEnabled() {
+  const v = String(process.env[JEV_ENABLED_ENV] || '').trim().toLowerCase();
+  return v === '1' || v === 'true' || v === 'yes' || v === 'on';
+}
+
+function jevNumberEnv(name, dflt) {
+  const raw = process.env[name];
+  if (raw == null || String(raw).trim() === '') return dflt;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : dflt;
+}
+
+function jevTimeoutMs() {
+  const n = jevNumberEnv(JEV_TIMEOUT_ENV, JEV_TIMEOUT_DEFAULT_MS);
+  return n > 0 ? n : JEV_TIMEOUT_DEFAULT_MS;
+}
+
+// lang 判定(簡易ヒューリスティック): かな(漢字·ひらがな·カタカナ)優勢 → ja、
+// ハングル優勢 → ko、ラテン文字優勢 → en、それ以外 → unknown。
+function detectLang(text) {
+  const t = String(text == null ? '' : text);
+  const kana = (t.match(/[぀-ゟ゠-ヿ]/g) || []).length;
+  const han = (t.match(/[一-鿿]/g) || []).length;
+  const hangul = (t.match(/[가-힣ᄀ-ᇿ㄰-㆏]/g) || []).length;
+  const latin = (t.match(/[A-Za-z]/g) || []).length;
+  const ja = kana + han;
+  if (ja > 0 && ja >= hangul && ja >= latin) return 'ja';
+  if (hangul > 0 && hangul >= latin) return 'ko';
+  if (latin > 0) return 'en';
+  return 'unknown';
+}
+
+// Jev ゲートウェイ送信 — Node 内蔵の http/https だけを使う(外部パッケージ追加なし)。
+//   giip-api.js はここでは require しない(循環/結合リスク) — 小さな helper をローカルに持つ。
+function postForm(urlStr, params, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    let u;
+    try { u = new URL(urlStr); } catch (e) { reject(e); return; }
+    const body = Object.entries(params || {})
+      .filter(([, v]) => v != null)
+      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+      .join('&');
+    const mod = u.protocol === 'http:' ? http : https;
+    const req = mod.request({
+      method: 'POST',
+      hostname: u.hostname,
+      port: u.port || (u.protocol === 'http:' ? 80 : 443),
+      path: u.pathname + u.search,
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': Buffer.byteLength(body),
+      },
+    }, (res) => {
+      let raw = '';
+      res.setEncoding('utf8');
+      res.on('data', (d) => { raw += d; });
+      res.on('end', () => {
+        let parsed = raw;
+        try { parsed = JSON.parse(raw); } catch { /* keep raw string */ }
+        resolve({ status: res.statusCode, body: parsed, raw });
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(timeoutMs, () => req.destroy(new Error('jev request timeout')));
+    req.write(body);
+    req.end();
+  });
+}
+
+// ゲートウェイの要求ボディ(仕様 §4.3)。
+//   text_masked は maskString() 通過後の値。
+//   **クライアントでは長さを切り詰めない** — 切り詰めはゲートウェイが Jev state を作る時に行う
+//   (要求ボディ自体は呼び出し側が送ったまま受け取る — 仕様 §4.3)。
+function buildJevJsondata(text, opts) {
+  return {
+    v: 1,
+    kind: 'intent_route',
+    ts: new Date().toISOString(),
+    text_masked: maskString(text),
+    lang: detectLang(text),
+    in_thread: !!opts.inThread,
+    mentions_task_id: !!opts.mentionsTaskId,
+    mentions_issue_ref: !!opts.mentionsIssueRef,
+  };
+}
+
+function jevProb(v) {
+  return (typeof v === 'number' && Number.isFinite(v)) ? v : 0.0;
+}
+
+/**
+ * ② Jev 段。
+ * @returns {{intent:'task'|'question'|null, source:'jev'|null, reason:string, latencyMs:number, detail:object|null}}
+ *   intent が null のときは呼び出し側が ③(既存 LLM 分類器) へフォールバックする。
+ */
+async function classifyWithJev(text, opts = {}) {
+  const started = Date.now();
+  const done = (intent, reason, detail = null) => ({
+    intent,
+    source: intent ? 'jev' : null,
+    reason,
+    latencyMs: Date.now() - started,
+    detail,
+  });
+
+  // フォールバック順(各段で即 null を返す)。
+  if (!jevEnabled()) return done(null, 'switch_off');
+
+  const url = String(process.env[JEV_GATEWAY_ENV] || '').trim();
+  if (!url) return done(null, 'no_gateway_url');
+
+  // チャンネルにアカウントが無ければ Jev 段を省略して ③ へ(仕様 §7)。
+  let acct = null;
+  try {
+    const resolver = opts.accountResolver || ((cid) => giipAccounts.resolve(cid));
+    acct = resolver(opts.channelId) || null;
+  } catch { acct = null; }
+  const sk = acct && acct.sk;
+  if (!sk) return done(null, 'no_sk');
+
+  const jsondata = buildJevJsondata(text, opts);
+  let res;
+  try {
+    const sender = opts.jevRequest || postForm;
+    res = await sender(url, { token: sk, jsondata: JSON.stringify(jsondata) }, jevTimeoutMs());
+  } catch {
+    return done(null, 'jev_error');   // タイムアウトも含む
+  }
+
+  const status = res && typeof res.status === 'number' ? res.status : 0;
+  if (status !== 200) return done(null, `jev_http_${status}`);
+
+  const body = res.body;
+  if (!body || typeof body !== 'object' || Array.isArray(body) || body.success !== true) {
+    return done(null, 'jev_not_success');
+  }
+
+  const jevIntent = body.intent;
+  if (jevIntent !== 'task' && jevIntent !== 'question') {
+    return done(null, jevIntent === 'ambiguous' ? 'jev_ambiguous' : 'jev_bad_intent');
+  }
+
+  // 「分類値をでっち上げるとボットがその値を権威として信頼してしまう」(仕様 §4.5) — 推定してはいけない。
+  const conf = body.intent_confidence;
+  if (typeof conf !== 'number' || !Number.isFinite(conf)) return done(null, 'jev_no_confidence');
+
+  // 値なし = 保守側(仕様 §4.5) → 0.0。
+  const rfc = jevProb(body.requires_file_change);
+  const lookup = jevProb(body.is_status_or_lookup);
+  const detail = {
+    intent: jevIntent,
+    confidence: conf,
+    requiresFileChange: rfc,
+    isStatusOrLookup: lookup,
+    engine: body.engine || null,
+  };
+
+  // ルーティング(仕様 §5 の表そのまま)。2 つの信号が矛盾する場合や信頼度が不足する場合は ③ へフォールバック。
+  const tHi = jevNumberEnv(JEV_T_HI_ENV, JEV_T_HI_DEFAULT);
+  const pHi = jevNumberEnv(JEV_P_HI_ENV, JEV_P_HI_DEFAULT);
+  const pLo = jevNumberEnv(JEV_P_LO_ENV, JEV_P_LO_DEFAULT);
+
+  let intent = null;
+  let reason = 'jev_low_confidence';
+  if (conf >= tHi) {
+    if (jevIntent === 'task' && rfc >= pHi) { intent = 'task'; reason = 'jev_task'; }
+    else if (jevIntent === 'question' && rfc <= pLo) { intent = 'question'; reason = 'jev_question'; }
+  }
+  // is_status_or_lookup はルーティングには使わない(仕様 §5 の表に無い) — 判定ログにだけ残す。
+  //   新しい判定ルールは作らない。
+  return done(intent, reason, detail);
+}
+
+// ── 判定ログ (仕様 §6.2) ──────────────────────────────────────────────────────
+// 保存先: ボットプロセスの stdout(console.log) — 新しい保存先は作らない(§6.2)。
+// 原文は出さない: メッセージ本文はログに残さない。maskString() 通過後の sha256(先頭 8 hex)と
+//   長さだけを残す。
+// source: rule(決定規則) | jev | llm(③ 成功) | fallback(③ 失敗 → question + 案内文)。
+// スイッチ OFF でも出る(ログは判定結果に影響しない)。
+function logIntentDecision({ source, intent, reason, detail, latencyMs, text }) {
+  const masked = maskString(text);
+  const textHash = crypto.createHash('sha256').update(masked, 'utf8').digest('hex').slice(0, 8);
+  const parts = [
+    '[Bot] intent-classify',
+    `source=${source}`,
+    `intent=${intent}`,
+    `reason=${reason}`,
+  ];
+  if (detail) {
+    parts.push(`jevIntent=${detail.intent}`);
+    parts.push(`jevConf=${detail.confidence}`);
+    parts.push(`jevRfc=${detail.requiresFileChange}`);
+    parts.push(`jevLookup=${detail.isStatusOrLookup}`);
+    parts.push(`jevEngine=${detail.engine || ''}`);
+  }
+  parts.push(`latencyMs=${latencyMs}`);
+  parts.push(`maskedLen=${masked.length}`);
+  parts.push(`textHash=${textHash}`);
+  console.log(parts.join(' '));
+}
+
+// ④ フォールバック案内文(仕様 §3-4) — ③ が実際に失敗したときだけ付ける。
+function emitFallbackHint(text, workDir, opts) {
+  const cb = opts && opts.onFallbackHint;
+  if (typeof cb !== 'function') return;
+  let hint = '';
+  try {
+    const lang = resolveLangForProject(path.basename(workDir));
+    hint = require('./i18n-ui').t(lang, 'classifyFallbackHint');
+  } catch { return; }
+  if (!hint) return;
+  try { cb(hint); } catch { /* 案内文の失敗が判定結果を変えることはない */ }
+}
+
 // ── 意図分類 (task / question) ────────────────────────────────────────────────
 // 「タスク登録」「task登録」等の明記、または明確な作業依頼 → "task"
 // 曖昧・質問・情報照会 → "question"
-async function classifyRequest(text, workDir = BASE_DIR) {
+async function classifyRequest(text, workDir = BASE_DIR, opts = {}) {
+  const started = Date.now();
   // git push / pull / stash などの単純操作はタスク不要 → 即 question
   if (/^\s*(git\s+(push|pull|stash|fetch|merge|rebase|status|log|diff)|タスク(?:一覧|リスト|確認|状況)|tasklist|task7d)/i.test(text.replace(/[^\x00-\x7Fぁ-ん亜-熙ー]/g, ' '))) {
+    logIntentDecision({ source: 'rule', intent: 'question', reason: 'rule_leading_regex', latencyMs: Date.now() - started, text });
     return 'question';
   }
 
   // 純粋な確認/照会依頼は LLM を呼ばず決定的に question へ（#622: 확인 요청が task 誤分類）。
-  if (isConfirmationQuery(text)) return 'question';
+  if (isConfirmationQuery(text)) {
+    logIntentDecision({ source: 'rule', intent: 'question', reason: 'rule_confirmation_query', latencyMs: Date.now() - started, text });
+    return 'question';
+  }
+
+  // ② Jev 段(仕様 §3·§4·§5)。スイッチがオフなら丸ごとスキップする(現行と同一)。
+  //   Jev が intent を確定したら LLM は呼ばない。
+  let jevResult = null;
+  try {
+    jevResult = await classifyWithJev(text, opts);
+  } catch {
+    jevResult = { intent: null, source: null, reason: 'jev_error', latencyMs: 0, detail: null };
+  }
+  if (jevResult.intent === 'task' || jevResult.intent === 'question') {
+    logIntentDecision({
+      source: 'jev', intent: jevResult.intent, reason: jevResult.reason,
+      detail: jevResult.detail, latencyMs: jevResult.latencyMs, text,
+    });
+    return jevResult.intent;
+  }
+
 
   const prompt = `You are an assistant that classifies the intent of Slack messages.
 
@@ -158,7 +430,7 @@ Reply with only one word: "task" or "question". No explanation needed.`;
   try {
     const acct = accounts.pickAccount();
     // giip-1063: 분류(task/question 1단어 판정)에 최상위 모델을 쓰지 않는다 — MODEL_CLASSIFIER.
-    const result = await spawnAsync('claude', ['-p', '--model', require('./model-config').classifierModel()], {
+    const result = await (opts.spawn || spawnAsync)('claude', ['-p', '--model', require('./model-config').classifierModel()], {
       cwd: workDir,
       timeout: 60000,
       env: accounts.envFor(acct),
@@ -168,12 +440,20 @@ Reply with only one word: "task" or "question". No explanation needed.`;
       // 한도 메시지가 stdout에 찍히는 경우가 있어(giip-759) 두 스트림 모두 확인한다.
       const combinedOut = `${result.stdout || ''}\n${result.stderr || ''}`;
       if (accounts.isUsageLimit(combinedOut)) accounts.noteUsageLimit(acct, combinedOut);
+      // 仕様 §3-4: ③ まで失敗したら question + 案内文(現行は黙って question だった)。
+      logIntentDecision({ source: 'fallback', intent: 'question', reason: 'llm_failed', detail: jevResult.detail, latencyMs: Date.now() - started, text });
+      emitFallbackHint(text, workDir, opts);
       return 'question';
     }
     const out = (result.stdout || '').trim().toLowerCase();
-    return out.startsWith('task') ? 'task' : 'question';
+    const intent = out.startsWith('task') ? 'task' : 'question';
+    logIntentDecision({ source: 'llm', intent, reason: 'llm_output', detail: jevResult.detail, latencyMs: Date.now() - started, text });
+    return intent;
   } catch {
-    return 'question'; // timeout·오류 시 질문으로 폴백
+    // timeout·エラー時は質問へフォールバック + 案内文(仕様 §3-4)。
+    logIntentDecision({ source: 'fallback', intent: 'question', reason: 'llm_error', detail: jevResult.detail, latencyMs: Date.now() - started, text });
+    emitFallbackHint(text, workDir, opts);
+    return 'question';
   }
 }
 

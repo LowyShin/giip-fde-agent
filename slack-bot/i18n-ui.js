@@ -169,6 +169,8 @@ const MESSAGES = {
     gitPullOk: () => '✅ git pull 완료',
     gitPullFail: ({ stderr }) => `❌ git pull 실패\n\`\`\`${stderr}\`\`\``,
     gcIssueUntitled: () => '(무제)',
+    // [giip 4221] 의도 분류 폴백 안내문 — ③(LLM 분류기)까지 실패해 question 으로 떨어질 때 붙인다.
+    classifyFallbackHint: () => '💡 작업 요청이면 "태스크 등록 …" 으로 다시 보내 주세요.',
   },
   en: {
     qnaAck: () => '💬 Got your question. Preparing an answer…',
@@ -299,6 +301,9 @@ Move or remove those files (back them up first), then run \`go ${taskId}\` again
     gitPullOk: () => '✅ git pull complete',
     gitPullFail: ({ stderr }) => `❌ git pull failed\n\`\`\`${stderr}\`\`\``,
     gcIssueUntitled: () => '(no title)',
+    // [giip 4221] intent-classification fallback hint — attached when ③ (LLM classifier) fails and
+    // the request falls back to question.
+    classifyFallbackHint: () => '💡 If this is a work request, please send it again as "task 등록 …".',
   },
   ja: {
     qnaAck: () => '💬 質問を確認しました。回答を準備中です…',
@@ -429,6 +434,8 @@ Move or remove those files (back them up first), then run \`go ${taskId}\` again
     gitPullOk: () => '✅ git pull 完了',
     gitPullFail: ({ stderr }) => `❌ git pull 失敗\n\`\`\`${stderr}\`\`\``,
     gcIssueUntitled: () => '(無題)',
+    // [giip 4221] 意図分類のフォールバック案内文 — ③(LLM 分類器)まで失敗して question に落ちた時に付ける。
+    classifyFallbackHint: () => '💡 作業のご依頼なら「タスク登録 …」の形式でもう一度お送りください。',
   },
 };
 
