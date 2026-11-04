@@ -268,6 +268,133 @@ function Find-GissueOpenSplitChildren($Rows, $OriginIsn) {
     })
 }
 
+# ── 출력 모드 무관 행 파서 (giip 4434) ─────────────────────────────────────
+# 왜 있는가 (giip 4434 실측):
+#   `execSQLFile.ps1` 는 **출력 모드가 둘**이다 — SqlServer 모듈이 있으면 `Invoke-Sqlcmd` 분기(결과가
+#   PowerShell 객체), 없으면 `sqlcmd` 분기(텍스트, 첫 컬럼명이 'line'). 운영 러너(lowyworkenv)는
+#   텍스트 헤더 정규식으로 성공을 판정해서 **객체 모드에서는 exit=0 인데 "조회 실패" 로 오판**했다.
+#   그 결과 find-children 조회가 항상 실패해 rule 69-4 중복 서브이슈 감지가 무력화되었다.
+#   → **성공 판정 근거를 출력 모양(헤더)으로 삼지 않는다.** 아래 헬퍼는 모양을 먼저 판별해 행으로
+#     정규화하고, 판별할 수 없으면 예외(fail-closed)로 남긴다.
+#
+# 입력 $Output : 쿼리 명령의 원시 출력(문자열 / 문자열 배열 / 객체 배열 중 무엇이든)
+#     $Delimiter: 텍스트 표 구분자(미지정 시 '|' 있으면 '|', 아니면 공백 2개 이상)
+# 반환 : [pscustomobject]@{ Mode = 'Object'|'Json'|'Text'|'Empty'; Rows = @({Isn,Status,Title}) }
+#   · 'Empty'   = 출력이 비었다 = "결과 없음"(조회 실패 아님)
+#   · 판별 불가 = **예외**. 호출부는 조회 실패로 보고 분해를 보류해야 한다(fail-closed).
+#
+# 주의 — 이 헬퍼는 **아직 런타임 호출자가 없다.** 이 저장소에는 DB 직접접근 수단이 없고 이슈 조회·
+#       코멘트·상태전이는 전부 giipfaw API(get-issue.sh / list-issues.js)로만 한다(러너 헤더의
+#       "DB 직접접근 없음 / 혼용 금지" 규칙). "정본에 DB 조회 경로를 쓰게 될 경우" 대비 정규본으로
+#       미리 둔 것이므로, 그때는 반드시 이 헬퍼를 경유시켜야 한다.
+
+# 한 행에서 필드 하나를 뽑는다(컬럼명 대소문자 무관). 못 찾으면 $null.
+function Get-GissueRowField {
+    param($Row, [string[]]$Names)
+    if ($null -eq $Row) { return $null }
+    if ($Row -is [System.Collections.IDictionary]) {
+        foreach ($k in $Row.Keys) {
+            foreach ($n in $Names) { if ("$k" -eq $n) { return $Row[$k] } }
+        }
+        return $null
+    }
+    foreach ($p in $Row.PSObject.Properties) {
+        foreach ($n in $Names) { if ("$($p.Name)" -eq $n) { return $p.Value } }
+    }
+    return $null
+}
+
+# 한 행(어느 모양이든)을 {Isn,Status,Title} 로 정규화한다. isn 이 없으면 **예외**(fail-closed).
+function ConvertTo-GissueIssueRow {
+    param($Row)
+    $isn = Get-GissueRowField $Row @('isn', 'issue_no', 'issuenumber')
+    if ($null -eq $isn -or "$isn".Trim() -eq '') {
+        throw "행 파서 실패: isn 컬럼이 없는 행이 있다 — 이슈 행이 아니다(조회 실패로 취급)"
+    }
+    $status = Get-GissueRowField $Row @('status', 'issue_status')
+    $title = Get-GissueRowField $Row @('title', 'subject')
+    [pscustomobject]@{ Isn = $isn; Status = "$status"; Title = "$title" }
+}
+
+# 텍스트 한 줄을 표 값 배열로 나눈다(구분자 미지정 시 '|' → 없으면 공백 2개 이상).
+function Split-GissueTableLine {
+    param([string]$Line, [string]$Delimiter = '')
+    $parts = @()
+    if ($Delimiter) { $parts = @($Line -split [regex]::Escape($Delimiter)) }
+    elseif ($Line -match '\|') { $parts = @($Line -split '\|') }
+    else { $parts = @($Line -split '\s{2,}') }
+    $out = @()
+    foreach ($p in $parts) { $out += "$p".Trim() }
+    return @($out)
+}
+
+# 텍스트 표(sqlcmd 출력) → 이슈 행. 헤더 줄의 컬럼명으로 행을 만든다.
+#   헤더에 isn/title 이 없으면 **예외** — "조회 실패" 를 헤더 모양으로 판정하지 않는다.
+function Get-GissueIssueRowsFromTextTable {
+    param([string]$Text, [string]$Delimiter = '')
+    $lines = @()
+    foreach ($l in ($Text -split "`r?`n")) { if ($l.Trim() -ne '') { $lines += $l.TrimEnd() } }
+    if ($lines.Count -eq 0) { return @() }
+
+    $cols = @(Split-GissueTableLine $lines[0] $Delimiter)
+    while ($cols.Count -gt 1 -and $cols[$cols.Count - 1] -eq '') { $cols = @($cols[0..($cols.Count - 2)]) }
+    if ($cols.Count -eq 1 -and $cols[0] -eq '') { $cols = @() }
+    if ($cols.Count -eq 0) { throw "행 파서 실패: 텍스트 출력의 헤더 줄을 인식할 수 없다(열 0개)" }
+
+    $isnIdx = -1; $statusIdx = -1; $titleIdx = -1
+    for ($c = 0; $c -lt $cols.Count; $c++) {
+        $k = $cols[$c].ToLowerInvariant()
+        if ($isnIdx -lt 0 -and @('isn', 'issue_no', 'issuenumber') -contains $k) { $isnIdx = $c }
+        if ($statusIdx -lt 0 -and @('status', 'issue_status') -contains $k) { $statusIdx = $c }
+        if ($titleIdx -lt 0 -and @('title', 'subject') -contains $k) { $titleIdx = $c }
+    }
+    if ($isnIdx -lt 0 -or $titleIdx -lt 0) {
+        throw "행 파서 실패: 텍스트 출력에 필요한 컬럼(isn/title) 이 없다 — 헤더=$($cols -join ',')"
+    }
+
+    $rows = @()
+    for ($i = 1; $i -lt $lines.Count; $i++) {
+        $line = $lines[$i]
+        if ($line -match '^[\s\-:|]+$') { continue }   # 구분선(sqlcmd 의 '---- ----')
+        $vals = @(Split-GissueTableLine $line $Delimiter)
+        if ($vals.Count -eq 0) { continue }
+        $row = [ordered]@{}
+        for ($c = 0; $c -lt $cols.Count; $c++) {
+            $row[$cols[$c]] = if ($c -lt $vals.Count) { $vals[$c] } else { $null }
+        }
+        $rows += ConvertTo-GissueIssueRow ([pscustomobject]$row)
+    }
+    return @($rows)
+}
+
+# 쿼리 명령의 원시 출력 → 이슈 행. 모드는 Object(Invoke-Sqlcmd) / Json(API) / Text(sqlcmd) / Empty.
+function Get-GissueIssueRowsFromQueryOutput {
+    param($Output, [string]$Delimiter = '')
+    $items = @()
+    if ($null -ne $Output) { $items = @($Output) }
+    if ($items.Count -eq 0) { return [pscustomobject]@{ Mode = 'Empty'; Rows = @() } }
+
+    $first = $items[0]
+    if ($first -isnot [string]) {
+        $rows = @()
+        foreach ($it in $items) { $rows += ConvertTo-GissueIssueRow $it }
+        return [pscustomobject]@{ Mode = 'Object'; Rows = @($rows) }
+    }
+
+    $text = (($items | ForEach-Object { "$_" }) -join "`n").Trim()
+    if ($text -eq '') { return [pscustomobject]@{ Mode = 'Empty'; Rows = @() } }
+
+    if ($text.StartsWith('[') -or $text.StartsWith('{')) {
+        $parsed = $null
+        try { $parsed = ConvertFrom-Json $text } catch { throw "행 파서 실패: JSON 으로 읽을 수 없다 ($($_.Exception.Message))" }
+        $rows = @()
+        foreach ($it in @($parsed)) { $rows += ConvertTo-GissueIssueRow $it }
+        return [pscustomobject]@{ Mode = 'Json'; Rows = @($rows) }
+    }
+
+    return [pscustomobject]@{ Mode = 'Text'; Rows = @(Get-GissueIssueRowsFromTextTable $text $Delimiter) }
+}
+
 # 규칙 3: 정리 대상 락 선별(순수). Records = {Kind:'csn-lock'|'repo-lock', Path, Csn, Pid, Holder}.
 #   csn-lock : 같은 CSN 이고 락의 PID 가 이 러너 프로세스(RunnerPid)인 것만(다른 인스턴스의 락은 건드리지 않는다).
 #   repo-lock: holder 가 gissue-csn<이 CSN>:<pid> 이고 pid 가 이 잡 소유(JobPids)이거나 죽은 것만.
