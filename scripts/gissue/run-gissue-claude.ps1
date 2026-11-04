@@ -3705,6 +3705,7 @@ ${function:Invoke-GissueEngine}
         Sk = $csnSk            # [giip #1558] 스케줄러 상태 기록용
         RunIdKey = $runIdKey; ProcessedCount = 0; SkippedCount = 0; FailedCount = 0
         OvertimeHandled = $false; OvertimeNextCheck = [datetime]::MinValue   # [giip 4429] 과시간 검사 상태
+        OutLogWritten = 0      # [giip 4431 항목 3] 이미 gissue_csn<N>.out.log 에 증분 기록한 잡 출력 줄 수
     }
 }
 
@@ -3737,10 +3738,35 @@ function Send-GissueLogsToConsole($csn) {
 }
 
 . (Join-Path $Root 'lib/scheduler-state.ps1')   # giip #3563: Complete-Run 의 runEnd 호출용(잡 안에서는 별도로 로드)
+. (Join-Path $Root 'lib/job-out-tail.ps1')      # [giip 4431 항목 3] 잡 출력 증분 보존 꼬리 선별(순수 로직)
+
+# [giip 4431 항목 3] 잡 출력을 gissue_csn<N>.out.log 에 증분 append 한다. 외부 PT2H 강제 종료로 러너가
+# Complete-Run 에 도달하지 못하고 죽어도, 직전 flush 까지의 내부 단계가 로그에 남게 하려는 것이다.
+#   - 평상시(running 잡): Receive-Job -Keep 으로 버퍼를 보존하며 읽어, OutLogWritten 기준 꼬리만 append.
+#     -Keep 은 매번 전체 버퍼를 돌려주므로 Split-GissueJobOutTail 로 이미 쓴 줄을 빼야 이중 기록을 막는다.
+#   - -Final(Complete-Run): Receive-Job(-Keep 없음)으로 버퍼를 소비하며 읽어 남은 꼬리를 flush 하고,
+#     Remove-Job 전에 버퍼를 비운다. 반환하는 전체 출력 배열은 호출부가 RUN-COUNTS 파싱에 재사용한다.
+# 반환: 이번에 읽은 전체 출력 줄 배열(실패 시 빈 배열).
+function Write-GissueJobOutIncremental($r, [switch]$Final) {
+    $all = @()
+    try {
+        if ($Final) { $all = @(Receive-Job $r.Job -ErrorAction SilentlyContinue | ForEach-Object { "$_" }) }
+        else        { $all = @(Receive-Job $r.Job -Keep -ErrorAction SilentlyContinue | ForEach-Object { "$_" }) }
+    } catch { return @() }
+    $tail = Split-GissueJobOutTail -AllLines $all -WrittenCount ([int]$r.OutLogWritten)
+    if (@($tail.NewLines).Count -gt 0) {
+        try { $tail.NewLines | Out-File -FilePath (Join-Path $LogDir "gissue_csn$($r.Csn).out.log") -Append -Encoding UTF8 } catch {
+            Write-Log $r.Csn "[OUT-LOG-INCR][WARN] out.log append 실패: $($_.Exception.Message)"
+        }
+    }
+    $r.OutLogWritten = $tail.WrittenCount
+    return $all
+}
 
 function Complete-Run($r, $status) {
     $jobOut = $null
-    try { $jobOut = Receive-Job $r.Job; $jobOut | Out-File -FilePath (Join-Path $LogDir "gissue_csn$($r.Csn).out.log") -Append -Encoding UTF8 } catch {
+    # [giip 4431 항목 3] 증분 경로가 아직 안 쓴 꼬리를 최종 flush 하고 버퍼를 소비한다(이중 기록 없음).
+    try { $jobOut = Write-GissueJobOutIncremental $r -Final } catch {
         Write-Log $r.Csn "[RECEIVE-JOB-ERROR] JobState=$($r.Job.State) Reason=$($r.Job.ChildJobs[0].JobStateInfo.Reason.Message) Exception=$($_.Exception.Message)"
     }
     Write-Log $r.Csn $status
@@ -3928,6 +3954,11 @@ function Invoke-GissueOvertimeCheck($r) {
 
 while ($runs | Where-Object { -not $_.Done }) {
     foreach ($r in @($runs | Where-Object { -not $_.Done })) {
+        # [giip 4431 항목 3] running 잡의 출력을 매 바퀴 out.log 에 증분 보존한다. 외부 PT2H 강제 종료로
+        # Complete-Run 에 도달 못 하고 러너가 죽어도 직전 flush 까지의 내부 단계가 로그에 남는다.
+        if ($r.Job.State -eq 'Running') {
+            try { $null = Write-GissueJobOutIncremental $r } catch { }
+        }
         # [giip 4429] 작업 스케줄러 제한(PT2H)에 걸려 외부에서 죽기 전에 자기 마감시각에서 규칙 1~4 를 수행한다(Shadow 기본).
         if ($r.Job.State -eq 'Running' -and -not $r.OvertimeHandled) {
             $otDone = $false
