@@ -122,6 +122,27 @@ AK 버전(`pApiKbCreatebyAk`)은 `extRefId` 로 여러 번 돌려도 안전한 u
 
 → 이미 있는 항목을 못 찾고 새로 만들어 **중복이 쌓입니다.** `[` 를 `[[]` 로 escape 하십시오(이 스크립트가 그렇게 합니다).
 
+### 6. `list --search` 는 **제목만** 찾습니다 (2026-11-04 실측)
+
+`--search` 는 `LIKE '%' + @searchKeyword + '%'` 를 **title 컬럼에** 건다. **본문(content)은 검색 대상이 아니다.**
+
+실측 (csn 70424 · kbSn 6968, 본문에만 있는 단어로 조회):
+
+| 검색어 | 결과 |
+|---|---|
+| `node24` (제목에 있음) | 1건 |
+| `UNDETERMINED` (제목에 있음) | 1건 |
+| `MODULE_NOT_FOUND` (본문에만 있음) | **0건** |
+| `NEEDS_DECISION` (본문에만 있음) | **0건** |
+
+→ rule 55 §3("유사 질문이 tPrivateKB 에서 바로 찾아지도록")을 만족하려면 **검색할 사람이 칠 키워드를 제목에 넣어야 한다.**
+k_layer 노트라면 **노트 파일명(= `sync-klayer` 가 쓰는 title) 자체가 검색 색인**이므로, 파일명 슬러그에 핵심 검색어를 넣으십시오.
+(본문에 아무리 답을 상세히 적어도 제목에 그 단어가 없으면 못 찾습니다.)
+
+> `put` 의 `--ref-type` 은 **신규 생성에만** 적용됩니다. 갱신 경로(`KbUpdate`)는 title·content·tags 만 넘기므로
+> refType 을 바꿀 수 없습니다 — 잘못된 refType 으로 만들었다면 title 을 바꿔 새로 만드는 수 밖입니다.
+> 기본값은 `put` = `GENERAL`, `sync-klayer` = `KNOWLEDGE` 입니다. k_layer 노트는 `sync-klayer` 경로가 정본입니다.
+
 ---
 
 ## 검증 기록
