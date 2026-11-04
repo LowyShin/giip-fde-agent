@@ -2675,6 +2675,12 @@ foreach ($csn in $map.PSObject.Properties.Name) {
         if ($OutputEncoding.WebName -ne 'utf-8') { $OutputEncoding = [System.Text.Encoding]::UTF8 }
         $script:DivergeFailAlertThreshold = $divergeFailAlertThreshold
 
+        # [giip 4518] auto-unblock 의 stash 단계 정본 로직(예약장치명 부분성공 + untracked 잔해 폴백)을
+        #   별도 lib 한 벌로 공유한다. run-gissue-claude.ps1 의 두 호출부([AUTO-UNBLOCK]/[AUTO-UNBLOCK-FORCED])가
+        #   같은 판정·실행 코드를 쓰게 해 복붙 격차를 막고, 회귀 테스트가 러너와 동일 코드를 닷소싱해 검증한다.
+        #   $root 는 scripts/gissue 루트(ArgumentList 첫 인자 $Root). 잡은 별도 프로세스라 여기서 닷소싱한다.
+        . (Join-Path $root 'lib/gissue-stash-unblock-lib.ps1')
+
         # [ENCODING][giip #1073] watchdog 코멘트 안전 등록 헬퍼 — giipfaw API 경유(DB 직접 접근 불필요).
         # watchdog note 들은 모두 한글을 포함한다. 커맨드라인 인자로 직접 넘기면 무인(headless) 실행
         # 체인에서 시스템 기본 코드페이지 파싱을 타서 mojibake 가 될 수 있다(giip #581 → #1030 재발,
@@ -3109,10 +3115,15 @@ foreach ($csn in $map.PSObject.Properties.Name) {
                 $unblockOk = $false
                 $errDetail = ''
                 try {
-                    $stashOut = git -C $stillBusy.Repo stash push -u -m $stashMsg 2>&1
-                    $stashExit = $LASTEXITCODE
-                    if ($stashExit -ne 0) {
-                        $errDetail = "stash push 실패(exit=$stashExit): $($stashOut | Out-String)"
+                    # [giip 4518] stash 단계 정본 폴백(lib) — Windows 예약장치명(nul 등) 부분성공 / untracked
+                    #   잔해(경로길이 초과)를 분류해 tracked 전용 stash 로 워킹트리를 리셋하고 base 복귀를 계속
+                    #   진행한다. 예약장치명 파일은 지우지 않고(파괴적 금지) 수동 제거 명령을 LogLines 로 남긴다.
+                    $stashRes = Invoke-GissueAutoUnblockStash $stillBusy.Repo $stashMsg
+                    foreach ($ln in @($stashRes.LogLines)) { Write-Output $ln }
+                    if (-not $stashRes.Ok) {
+                        $errDetail = $stashRes.ErrDetail
+                        # [giip 4518] stash 연속 실패 카운트 + 임계 도달 시 gissue_ALERT.log 에스컬레이션.
+                        $null = Step-GissueFailCount $logDir $csn $stillBusy.Repo $stillBusy.Branch 'autounblockfail' "auto-unblock(stash)" $false
                     } elseif ($isWorktree) {
                         $primaryRepo = Get-GissuePrimaryRepoPath $stillBusy.Repo
                         if (-not $primaryRepo) {
@@ -3217,10 +3228,12 @@ foreach ($csn in $map.PSObject.Properties.Name) {
                 $forcedOk = $false
                 $errDetail = ''
                 try {
-                    $stashOut = git -C $stillBusy.Repo stash push -u -m $stashMsg 2>&1
-                    $stashExit = $LASTEXITCODE
-                    if ($stashExit -ne 0) {
-                        $errDetail = "stash push 실패(exit=$stashExit): $($stashOut | Out-String)"
+                    # [giip 4518] stash 단계 정본 폴백(lib) — 위 [AUTO-UNBLOCK] 경로와 동일 로직 공유(복붙 금지).
+                    $stashRes = Invoke-GissueAutoUnblockStash $stillBusy.Repo $stashMsg
+                    foreach ($ln in @($stashRes.LogLines)) { Write-Output $ln }
+                    if (-not $stashRes.Ok) {
+                        $errDetail = $stashRes.ErrDetail
+                        $null = Step-GissueFailCount $logDir $csn $stillBusy.Repo $stillBusy.Branch 'autounblockfail' "auto-unblock-forced(stash)" $false
                     } else {
                         $coOut = git -C $stillBusy.Repo checkout $stillBusy.Base 2>&1
                         $coExit = $LASTEXITCODE

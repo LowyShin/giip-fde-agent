@@ -346,6 +346,21 @@ Get-Content -Tail 20 -Encoding UTF8 .\scripts\gissue\logs\gissue_csn<CSN번호>.
   레포 자신에도 동일 취지의 방어 로직을 이식했다. 이 레포는 DB 직접 접근이 없어(§4 참고), isn 상태
   조회를 giipfaw API(`scripts/gissue/lib/get-isn-status.js`, 신규)로 대체한 것이 lowyworkenv 판과의
   유일한 구조적 차이다.
+- **giip 4518** (2026-11-04, 원본 giip #2406): 같은 `stash -u` 자동언블록 경로에서 **Windows
+  예약장치명**(`nul`·`CON`·`COM1` 등) untracked 파일이 있으면 위 "Filename too long"과 **원인이 다른
+  또 하나의 실패 모드**가 나온다. `git stash push -u`가 stash는 정상 생성하면서(= tracked 변경 보존
+  성공) untracked 정리만 `warning: failed to remove nul: Permission denied` / `Ignoring path nul`로
+  실패해 **exit=1**로 끝나는 **부분 성공**이다(경로길이 초과 계열은 stash 자체가 실패하지만, 예약장치명은
+  보존은 성공하고 워킹트리만 리셋되지 않는다). exit 코드만 보고 실패로 판정하면 base 복귀를 포기해 매
+  `:07` 무한 반복한다(원본 로그 302건). 처리 책임: **구현=lowyworkenv**(스케줄러 정본 코드가 사는
+  저장소 — `scripts/gissue/stash-unblock.ps1` 의 예약장치명 부분성공 판정 + 연속 실패 **이슈 코멘트**
+  에스컬레이션), **이식=giip-fde-agent**(이 저장소 — `scripts/gissue/lib/gissue-stash-unblock-lib.ps1`
+  한 벌로 두 자동언블록 호출부(`[AUTO-UNBLOCK]`/`[AUTO-UNBLOCK-FORCED]`)가 판정·tracked 전용 폴백을
+  **공유**해 복붙 격차를 막는다). 이식판은 DB 직접 접근이 없어(§4) 연속 실패 에스컬레이션이 이슈
+  코멘트가 아니라 `gissue_ALERT.log` + `Step-GissueFailCount` 카운터 기반인 점이 lowyworkenv 판과의
+  차이다. 예약장치명 파일은 **지우거나 옮기지 않고** 워킹트리에 그대로 둔 채(일반 삭제도 실패하는
+  장치명이라 파괴적 작업 금지) 수동 제거 명령(`cmd /c del \\.\<이름>`)을 로그로 안내한다. 회귀 테스트:
+  `scripts/gissue/tests/test-stash-unblock-lib.ps1`.
 
 READY/PENDING/IN_PROGRESS/REVIEW/TESTED 상태의 이슈에 연결된 워크트리, 그리고 `git worktree list`에
 정식 등록된 워크트리는 이 로직이 **절대** 건드리지 않는다 — 사람이 지금 그 워크트리에서 작업 중일 수
