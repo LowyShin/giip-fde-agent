@@ -1,0 +1,38 @@
+{"id":"A-ko-1","text":"이슈 N 의 처리 결과 파일의 저장소 URL 찾아서 보여줘","lang":"ko","expected":"question","note":"A: 읽기전용 조회(기존 결과 파일 URL)인데 '파일/결과/보여줘' 명사 때문에 task 로 오분류되던 유형"}
+{"id":"A-ko-2","text":"지난주 배포 결과 로그가 어디 있는지 알려줘","lang":"ko","expected":"question","note":"A: 기존 로그 위치 조회 — 파일 변경 없음"}
+{"id":"A-ko-3","text":"그 작업 결과 파일 경로만 확인해줘","lang":"ko","expected":"question","note":"A: 경로 확인 요청(읽기전용)"}
+{"id":"A-ko-4","text":"대시보드에서 지금 상태 좀 보여줘","lang":"ko","expected":"question","note":"A: 상태 조회(읽기전용)"}
+{"id":"A-ko-5","text":"현재 배포 버전이 뭔지 알려줄래","lang":"ko","expected":"question","note":"A: 버전 조회"}
+{"id":"A-ja-1","text":"課題 N の処理結果ファイルのリポジトリ URL を探して見せて","lang":"ja","expected":"question","note":"A: 既存結果ファイル URL の照会(読み取り専用)"}
+{"id":"A-ja-2","text":"先週のデプロイ結果ログはどこにあるか教えて","lang":"ja","expected":"question","note":"A: ログ所在の照会"}
+{"id":"A-ja-3","text":"その作業結果ファイルのパスだけ確認して","lang":"ja","expected":"question","note":"A: パス確認(読み取り専用)"}
+{"id":"A-ja-4","text":"ダッシュボードで今の状態を見せて","lang":"ja","expected":"question","note":"A: 状態照会"}
+{"id":"A-en-1","text":"find and show me the repository url of the result file for issue N","lang":"en","expected":"question","note":"A: read-only lookup of an existing result file url"}
+{"id":"A-en-2","text":"tell me where last week's deployment log is","lang":"en","expected":"question","note":"A: log location lookup"}
+{"id":"A-en-3","text":"just check the path of that task's result file","lang":"en","expected":"question","note":"A: path check, read-only"}
+{"id":"A-en-4","text":"show me the current status on the dashboard","lang":"en","expected":"question","note":"A: status lookup"}
+{"id":"B-ko-1","text":"비용 페이지에 이번 달 예상 금액을 계산해서 보여줘","lang":"ko","expected":"task","note":"B: '계산해서 보여줘' 지만 페이지에 계산 기능 추가 필요 → 코드 변경(task)"}
+{"id":"B-ko-2","text":"이 문서 일본어로 업데이트 해줘","lang":"ko","expected":"task","note":"C: 문서 갱신 → 파일 수정(task). question 으로 가면 미커밋으로 남음"}
+{"id":"B-ko-3","text":"로그인 안 되는 버그 체크하고 해결해줘","lang":"ko","expected":"task","note":"B: 버그 수정 → 코드 변경 필요(task)"}
+{"id":"B-ko-4","text":"리포트에 합계 행을 추가해서 보여줘","lang":"ko","expected":"task","note":"B: 합계 행 추가 = 코드/템플릿 변경(task)"}
+{"id":"B-ko-5","text":"설정 파일에서 타임아웃 값을 늘려줘","lang":"ko","expected":"task","note":"B: 설정 파일 수정(task)"}
+{"id":"B-ja-1","text":"コストページに今月の予想金額を計算して見せて","lang":"ja","expected":"task","note":"B: ページに計算機能追加 → コード変更(task)"}
+{"id":"B-ja-2","text":"このドキュメントを日本語に更新して","lang":"ja","expected":"task","note":"C: ドキュメント更新 → ファイル修正(task)"}
+{"id":"B-ja-3","text":"ログインできない不具合を調べて直して","lang":"ja","expected":"task","note":"B: バグ修正 → コード変更(task)"}
+{"id":"B-ja-4","text":"レポートに合計行を追加して見せて","lang":"ja","expected":"task","note":"B: 合計行追加 = コード/テンプレ変更(task)"}
+{"id":"B-en-1","text":"add this month's projected amount to the cost page and show it","lang":"en","expected":"task","note":"B: adding a calculation to a page = code change (task)"}
+{"id":"B-en-2","text":"update this document to Japanese","lang":"en","expected":"task","note":"C: document update = file modification (task)"}
+{"id":"B-en-3","text":"look into the login failure bug and fix it","lang":"en","expected":"task","note":"B: bug fix = code change (task)"}
+{"id":"B-en-4","text":"add a totals row to the report and show it","lang":"en","expected":"task","note":"B: totals row = code/template change (task)"}
+{"id":"M-ko-1","text":"그거 좀","lang":"ko","expected":"ambiguous","note":"모호: 지시 대상·동작 불명(안전 폴백 기대)"}
+{"id":"M-ko-2","text":"확인 후 수정?","lang":"ko","expected":"ambiguous","note":"모호: 확인·수정 둘 다 섞여 의도 불명"}
+{"id":"M-ko-3","text":"이거 어떻게 할까","lang":"ko","expected":"ambiguous","note":"모호: 대상 불명"}
+{"id":"M-ko-4","text":"음 그 건 말이야","lang":"ko","expected":"ambiguous","note":"모호: 내용 없음"}
+{"id":"M-ja-1","text":"あれちょっと","lang":"ja","expected":"ambiguous","note":"曖昧: 対象·動作が不明"}
+{"id":"M-ja-2","text":"確認して修正?","lang":"ja","expected":"ambiguous","note":"曖昧: 確認と修正が混在"}
+{"id":"M-ja-3","text":"これどうしよう","lang":"ja","expected":"ambiguous","note":"曖昧: 対象不明"}
+{"id":"M-ja-4","text":"うーん その件","lang":"ja","expected":"ambiguous","note":"曖昧: 内容なし"}
+{"id":"M-en-1","text":"that thing please","lang":"en","expected":"ambiguous","note":"ambiguous: no actionable target"}
+{"id":"M-en-2","text":"check then fix?","lang":"en","expected":"ambiguous","note":"ambiguous: check/fix mixed, intent unclear"}
+{"id":"M-en-3","text":"what about this one","lang":"en","expected":"ambiguous","note":"ambiguous: unclear target"}
+{"id":"M-en-4","text":"hmm about that","lang":"en","expected":"ambiguous","note":"ambiguous: no content"}
