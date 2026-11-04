@@ -1355,6 +1355,13 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
 
   // ── 既存タスクIDへの言及 → 3分岐: 質問=回答 / 修正依頼=再実行 / ID単独=状態表示 ──
   //   注意: ここでの分類結果は下流の intent 判定でも再利用し、二重の classifyRequest 呼び出しを避ける。
+  // 意図分類のフォールバック通知(仕様 §3-4) — ③(LLM 分類器)まで失敗すると question に落ちる。
+  //   そのとき「作業依頼なら '태스크登録 …' として送り返してください」の案内を付ける(現状は沈黙のまま question)。
+  //   受け渡しは classifyRequest の opts.onFallbackHint コールバック — モジュール水準のサイドチャネルは使わない。
+  const postFallbackHint = (hint) => {
+    if (!hint) return;
+    try { postMessage(channelId, hint, replyTs).catch(() => {}); } catch {}
+  };
   let preIntent = null;        // この分岐で確定した意図（下流で再分類しないため）
   let refTaskContext = '';     // 修正依頼時に本文へ付加する親タスク文脈
   let reuseTaskId = null;      // 既存タスクID言及の修正依頼 → 新規発給せずこのIDを更新する
@@ -1389,7 +1396,7 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
     }
 
     // ID以外の指示を含む → 意図を判定（下流と共有するため preIntent に保持）
-    preIntent = isForceTaskCmd(text) ? 'task' : await classifyRequest(text, workDir);
+    preIntent = isForceTaskCmd(text) ? 'task' : await classifyRequest(text, workDir, { channelId, inThread: !!threadTs, mentionsTaskId: true, mentionsIssueRef: false, onFallbackHint: postFallbackHint });
     if (preIntent === 'question') {
       // ② 質問 → その場で回答（タスクファイルのパスをコンテキストとして付加）
       const taskContext = activeFile
@@ -1422,7 +1429,7 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
     const isn = extractGiipIssueRef(text);
     if (isn) {
       const forcedGiip = isForceTaskCmd(text);
-      const gIntent = forcedGiip ? 'task' : (preIntent || await classifyRequest(text, workDir));
+      const gIntent = forcedGiip ? 'task' : (preIntent || await classifyRequest(text, workDir, { channelId, inThread: !!threadTs, mentionsTaskId: false, mentionsIssueRef: true, onFallbackHint: postFallbackHint }));
       preIntent = gIntent; // 下流の再分類を避けるため確定意図を共有
       if (gIntent === 'task') {
         linkedIsn = isn;
@@ -1464,7 +1471,7 @@ async function handleChannelMention({ channelId, ts, threadTs, text, workDir = B
   // （質問形で始まる複合文の question 誤分類 → 番号未発給を防ぐ）
   const forcedTask = isForceTaskCmd(text);
   // preIntent（既存タスクID分岐で確定済み）があれば再分類せず流用する
-  const intent = forcedTask ? 'task' : (preIntent || await classifyRequest(text, workDir));
+  const intent = forcedTask ? 'task' : (preIntent || await classifyRequest(text, workDir, { channelId, inThread: !!threadTs, mentionsTaskId: false, mentionsIssueRef: false, onFallbackHint: postFallbackHint }));
   console.log(`[Bot] intent="${intent}"${forcedTask ? ' (forced)' : preIntent ? ' (reused)' : ''} text="${text.slice(0, 60)}"`);
 
   if (intent === 'question') {
