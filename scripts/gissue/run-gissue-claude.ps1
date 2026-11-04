@@ -1335,6 +1335,11 @@ $SoftBudgetMin = Resolve-GissueSoftBudgetMin $mapRoot.softBudgetMin $env:GISSUE_
 # 기본 Shadow = 로그만. Live 는 -OvertimeSplitMode Live 또는 GISSUE_OVERTIME_SPLIT_MODE=Live 로 명시해야 한다.
 . (Join-Path $Root 'lib/overtime-split.ps1')
 $OvertimeSettings = Get-GissueOvertimeSettings $OvertimeSplitMode
+# [giip 4431 항목 1] 잡 종료 후처리(5~7개 사후 스윕)를 마감 판정 루프와 분리하는 순수 로직 + 반복당
+# 시간예산. Complete-Run 은 선점 해제/종료 기록만 즉시 하고 스윕은 큐에 쌓아 Phase 2 가 예산 안에서
+# 처리한다(한 스윕이 길어도 다른 잡의 과시간/TIMEOUT 판정을 막지 않게). 정본·사유: lib/run-finalize.ps1.
+. (Join-Path $Root 'lib/run-finalize.ps1')
+$PostProcessBudgetSec = Resolve-GissuePostProcessBudgetSec $env:GISSUE_POSTPROC_BUDGET_SEC
 $script:RunnerStartedAtUtc = (Get-Date).ToUniversalTime()
 try { $script:RunnerStartedAtUtc = (Get-Process -Id $PID).StartTime.ToUniversalTime() } catch { }
 
@@ -3723,22 +3728,49 @@ function Complete-Run($r, $status) {
     }
     Remove-Job $r.Job -Force -ErrorAction SilentlyContinue
     Remove-Item $r.Lock -Force -ErrorAction SilentlyContinue
-    # 세션 종료(정상 DONE / TIMEOUT / ZOMBIE) 직후 강제 후처리 스윕:
-    # (1) PR 완료 게이트(giip #1077) — PR 없이 REVIEW 로 잘못 전이한 이슈를 READY 로 되돌린다.
-    Invoke-GissuePrGateSweep $r.Csn $r.Workdir
-    # (2) REVIEW/DONE 사후검증(giip #1123/#1364) — "DONE 인데 PR 미머지" 등을 추가로 훑는다.
-    Invoke-GissueReviewDoneAudit $r.Csn $r.Workdir
-    # (3) 귀속 안내(giip #2459) — 머지된 PR 이 다른 이슈 소관 파일을 함께 담았으면 상호 참조 코멘트.
-    Invoke-GissuePrAttributionSweep $r.Csn $r.Workdir
-    # (4) 정식 등록 worktree 정리(giip #2220) — 이번 처리 사이클 안에서 만들어졌을 수 있는 worktree 를
-    #     clean+머지 확인 후에만 제거한다. 실패해도 이 함수 자체가 삼켜서 종료 흐름을 막지 않는다.
-    Invoke-GissueWorktreeCleanup $r.Csn $r.Workdir
-    # (5) 스코프 갭(giip #2440 원인 3) — 어느 CSN 의 workdir 에도 직계로 들어있지 않은 레포는 (4)가
-    #     영원히 도달하지 못하므로 하루 1회만 전체 스윕을 추가로 돈다.
-    Invoke-GissueWorktreeDailySweep $r.Csn
-    Send-GissueLogsToConsole $r.Csn
-    Repair-GissueRootOwnedFiles $r.Csn
+    # [giip 4431 항목 1] 여기까지(선점 해제 + 종료 기록)는 즉시 수행하고 Done 으로 표시한다. 세션 종료
+    # 직후 강제 후처리 스윕(아래 Invoke-GissuePostProcessStep 의 7단계)은 **동기로 연달아 돌리지 않고**
+    # 큐에 쌓아, Phase 2 루프가 반복당 시간예산 안에서 처리한다. 예전엔 이 스윕 합계가 1h+ 걸리면(CSN 47
+    # 실측 02:50~04:09) 그동안 다른 잡의 과시간/TIMEOUT/좀비 판정이 통째로 멈췄다.
     $r.Done = $true
+    foreach ($item in (Get-GissuePostProcessItems $r.Csn $r.Workdir)) { [void]$script:PostProcessQueue.Add($item) }
+}
+
+# [giip 4431 항목 1] 종료한 잡의 사후 스윕 1단계 실행(큐 Run 포트의 본체). Label 로 분기한다 —
+# 스크립트블록에 $r 를 가두지 않으려고 Csn/Workdir 를 값으로 받는다(lib/run-finalize.ps1 주석 참고).
+# 각 스윕 함수 자체가 실패를 삼키지만(fail-open), 혹시 던지면 Step-GissuePostProcessQueue 가 Errors 에 담는다.
+function Invoke-GissuePostProcessStep($item) {
+    switch ($item.Label) {
+        # (1) PR 완료 게이트(giip #1077) — PR 없이 REVIEW 로 잘못 전이한 이슈를 READY 로 되돌린다.
+        'PrGateSweep'        { Invoke-GissuePrGateSweep $item.Csn $item.Workdir }
+        # (2) REVIEW/DONE 사후검증(giip #1123/#1364) — "DONE 인데 PR 미머지" 등을 추가로 훑는다.
+        'ReviewDoneAudit'    { Invoke-GissueReviewDoneAudit $item.Csn $item.Workdir }
+        # (3) 귀속 안내(giip #2459) — 머지된 PR 이 다른 이슈 소관 파일을 함께 담았으면 상호 참조 코멘트.
+        'PrAttributionSweep' { Invoke-GissuePrAttributionSweep $item.Csn $item.Workdir }
+        # (4) 정식 등록 worktree 정리(giip #2220) — clean+머지 확인 후에만 제거.
+        'WorktreeCleanup'    { Invoke-GissueWorktreeCleanup $item.Csn $item.Workdir }
+        # (5) 스코프 갭(giip #2440 원인 3) — 하루 1회 전체 스윕.
+        'WorktreeDailySweep' { Invoke-GissueWorktreeDailySweep $item.Csn }
+        'LogShip'            { Send-GissueLogsToConsole $item.Csn }
+        'RepairRootOwned'    { Repair-GissueRootOwnedFiles $item.Csn }
+        default              { Write-Log $item.Csn "[POST-PROC][WARN] 알 수 없는 스윕 단계: $($item.Label)" }
+    }
+}
+
+# [giip 4431 항목 1] Phase 2 가 한 바퀴 돌 때마다/루프 종료 후 호출하는 큐 처리. 반복당 예산
+# $PostProcessBudgetSec 안에서만 처리하고(최소 1건 보장) 양보한다. -Drain 은 루프 종료 후 남은 전부.
+$script:PostProcessQueue = New-Object System.Collections.ArrayList
+$PostProcessPorts = @{
+    Now = { Get-Date }
+    Run = { param($item) Invoke-GissuePostProcessStep $item }
+}
+function Invoke-GissuePostProcessPump([switch]$Drain) {
+    if (@($script:PostProcessQueue).Count -eq 0) { return }
+    $res = Step-GissuePostProcessQueue $script:PostProcessQueue $PostProcessBudgetSec $PostProcessPorts -Drain:$Drain
+    if (@($res.Ran).Count -gt 0) {
+        Write-Output "[POST-PROC] 사후 스윕 $(@($res.Ran).Count)건 처리 (남음 $($res.Remaining), drain=$([bool]$Drain)): $(@($res.Ran) -join ', ')"
+    }
+    foreach ($e in @($res.Errors)) { Write-Output "[POST-PROC][WARN] $e" }
 }
 # ── [giip 4429] 2시간 초과 실행 처리 규칙 — Phase 2 검사 (lib/overtime-split.ps1 의 포트 구현) ──
 # 모든 쓰기는 포트를 통한다. 포트는 $script:OvertimeCtxRun(지금 검사 중인 잡)을 본다 — 스크립트블록은 클로저가 아니다.
@@ -3889,8 +3921,13 @@ while ($runs | Where-Object { -not $_.Done }) {
             }
         }
     }
+    # [giip 4431 항목 1] 종료한 잡이 큐에 쌓아 둔 사후 스윕을 반복당 예산 안에서 처리하고 양보한다.
+    # 한 스윕이 길어도 위 foreach 의 다른 잡 마감 판정이 다음 바퀴에 지체 없이 돈다.
+    Invoke-GissuePostProcessPump
     if ($runs | Where-Object { -not $_.Done }) { Start-Sleep -Seconds 5 }
 }
+# [giip 4431 항목 1] 모든 잡이 끝난 뒤 큐에 남은 사후 스윕을 예산 무시하고 전부 비운다(누락 방지).
+Invoke-GissuePostProcessPump -Drain
 } finally {
     # [giip #2087/#2384] heartbeat + 이번 실행의 CSN별 처리/실패 건수 실행 이력 발행.
     # 둘 다 실패해도 스케줄러 본 실행 결과에는 절대 영향을 주지 않는다(fail-open).
