@@ -1,8 +1,8 @@
 # Slack 봇 의도 분류(task / question) — Jev 활용 권장 구조 사양서
 
-> 상태: **§4(게이트웨이 계약) 는 (A) 에서 구현·확정** · **§5(임계값)·§7(롤아웃)·(B)(C) 는 아직 제안**.
+> 상태: **§4(게이트웨이 계약) 는 (A) 에서 구현·확정** · **§5(임계값)·§7(롤아웃 세부)·(C) 는 아직 제안** · **§3·§6.2·§9-B 는 (B) 에서 구현**(2026-11-04).
 > 이 문서는 봇 측 계약을 설계한 것이며, §4 는 (A) 구현 결과를 **실측 계약**으로 반영했다(2026-11-04 갱신).
-> 작성: 2026-10-27 · 갱신: 2026-11-04 (§4 확정 — 게이트웨이 구현 반영) · 기준: `origin/main` (PR #322 **머지 완료** 후. 읽기 전용 조회 결정적 경로 포함)
+> 작성: 2026-10-27 · 갱신: 2026-11-04 (§4 확정 — 게이트웨이 구현 반영 · §3·§6.2·§9-B — (B) 봇 연동 구현 반영) · 기준: `origin/main` (PR #322 **머지 완료** 후. 읽기 전용 조회 결정적 경로 포함)
 > 이 레포는 PUBLIC 범용 레포다([규칙 54](../../.agent/rules/54_generic_agent_no_customer_info.md)). 사례는 일반화했고 고객 식별 정보는 없다.
 > Jev 게이트웨이의 정본 설계는 giipdb 의 `SPEC_JEV_SQLI_DETECTION.md`(§2 개요, §6 질문 설계, §7 게이트 판정, §12 이식 설계,
 > §16 키 관리, §17 게이트웨이 요청 스키마)다. PUBLIC 레포이므로 **링크하지 않고 파일명만** 언급하며 내용을 베끼지 않는다.
@@ -96,6 +96,12 @@ Slack 메시지
 4. **③까지 실패하면 question 이되 안내를 붙인다.** 현행은 조용히 question 이라 작업이 묻힌다(§2.4-2). 안내문 문구는 구현 이슈에서 확정(`i18n-ui.js` 키 신설 필요 여부는 미확인).
 5. 호출 지점 3곳(§2.3)은 **개별로 바꾸지 않고** `classifyRequest` 내부(③ 앞)에 Jev 단계를 넣어 한 곳에서 처리한다. 호출부 시그니처는 유지한다(§9 B).
 6. 봇은 Jev 를 **직접 호출하지 않는다**. 반드시 giip 게이트웨이 경유(§4).
+
+**(B) 구현 반영(2026-11-04)** — 위 권장 구조는 그대로 두고, ② 를 실제로 넣었다.
+- ② 는 `classifyRequest` **내부**의 ①-a(선두 정규식)·①-b(`isConfirmationQuery`) **뒤**, ③(기존 LLM 분류기) **앞**에 들어간다.
+- 스위치(`JEV_INTENT_ENABLED`)가 꺼져 있으면 ② 를 **통째로 건너뛰고** ① → ③ 으로 가므로 판정 결과가 현행과 완전히 동일하다(§7).
+- ② 가 `task`/`question` 을 확정하면 ③(LLM)은 호출하지 않는다. 확정하지 못하면(ambiguous·오류·타임아웃·응답 형식 불일치·신뢰도 부족) ③ 으로 내려가고, ③ 까지 실패하면 ④(안내문)를 붙여 `question` 으로 끝난다.
+- **핵심 결정 5 의 "호출부 시그니처는 유지한다"는 그대로 지켜졌다**: 새 인자는 **선택 인자**(`opts = {}`)이고 기존 2인자 호출 `classifyRequest(text, workDir)` 은 그대로 동작한다(하위 호환). 호출부 3곳(§2.3)은 `opts` 를 붙이는 것만 했고 `isForceTaskCmd` 선평가 순서도 그대로다 — 따라서 §2.3 의 라우팅 호출 지점 구조는 바뀌지 않았다.
 
 ---
 
@@ -201,6 +207,7 @@ secwatch 의 `secevt_*` 와 구분되는 이름. **결과 테이블 적재 없�
 | 오류·타임아웃·응답 형식 불일치 | ③ 으로 폴백 |
 
 - 초기 제안: T_hi = 0.8, P_hi = 0.7, P_lo = 0.3. (정본 §7 의 게이트가 `is_injection` ≥0.9 / 0.4~0.9 경계 / ≤0.1 로 나눈 것과 같은 모양이라는 점만 참고했고, 숫자는 이 문제에 대해 검증된 것이 아니다.)
+- **(B) 구현 반영(2026-11-04)**: 코드(`slack-bot/intent.js`) 의 기본값은 위 **제안값 그대로** 0.8 / 0.7 / 0.3 이다. `JEV_INTENT_T_HI` · `JEV_INTENT_P_HI` · `JEV_INTENT_P_LO` 환경변수로 덮어쓸 수 있고, 값은 **호출 시점**에 읽는다(모듈 로드 시점 상수 아님). 이 숫자들은 **아직 확정값이 아니다**(§10-10) — (C) 의 코퍼스 평가 결과로 확정한다. **확정값으로 인용 금지.**
 - **비대칭 비용 고려**: 질문을 task 로 보내면 불필요한 이슈가 생기고(사고 유형 A), 작업을 question 으로 보내면 작업이 묻힌다(B·C). 어느 쪽이 더 비싼지는 운영 판단이므로 임계값을 분리(task 쪽/question 쪽)해 (C)에서 오류율을 보고 정한다.
 - 정본 §3 의 "Jev 의 정상 판정만으로 통지를 멈추지 않는다"에 대응하는 원칙: **Jev 의 question 판정만으로 `isForceTaskCmd` 를 뒤집지 않는다**(①이 항상 우선).
 
@@ -229,9 +236,10 @@ secwatch 의 `secevt_*` 와 구분되는 이름. **결과 테이블 적재 없�
 
 ### 6.2 로깅(재보정용)
 - 판정 결과(최종 intent, 어느 단계가 결정했는지: `rule|jev|llm|fallback`, Jev 응답값·confidence, 지연 ms)를 남겨야 (C) 의 재보정이 가능하다.
-- **저장 위치: 미정 — 구현 이슈에서 결정한다.** 후보는 기존 `console.log`(`handlers.js` 1438행) 확장, 기존 비용·진행 로그 파일(`cost-tracker.js`) 재사용이나 giip 측 저장이다. 새 저장소를 이 문서에서 창작하지 않는다.
-- 어느 쪽이든 **원문이 아니라 `maskString` 통과본**(또는 해시)만 남긴다.
-- 게이트웨이 쪽에는 보안 결과 테이블에 적재하지 않는다(§4.1). **(A) 확인: 이 라우트는 결과를 어디에도 저장하지 않는다** — 보안 결과 테이블에 안 쌓이고 별도 저장소도 없다. 함수의 표준 출력 로그에는 **오류 메시지만** 남고(성공 응답의 분류값은 게이트웨이 로그에 안 남는다). 보정용으로 분류값을 남길지는 (B) 가 결정한다.
+- **저장 위치: 봇 프로세스 stdout(`console.log`) 로 확정 — 새 저장소는 만들지 않는다.** (B) 구현이 2026-11-04 에 결정했다. 기존 `console.log`(`handlers.js` 1438행) 을 확장하는 쪽을 택했고, 기존 비용·진행 로그 파일(`cost-tracker.js`) 재사용이나 giip 측 저장은 **선택하지 않았다**(후보 목록은 여기서 폐기). 새 저장소를 이 문서에서 창작하지 않는다.
+- 로그 줄 형식: `[Bot] intent-classify source=<rule|jev|llm|fallback> intent=<task|question> reason=<사유> jevIntent=… jevConf=… jevRfc=… jevLookup=… jevEngine=… latencyMs=… maskedLen=… textHash=<sha256 앞 8 hex>`
+- **원문이 아니라 `maskString` 통과본의 해시·길이만** 남긴다(원문은 로그에 남기지 않는다). 스위치 OFF 상태에서도 로그는 남는다 — 로깅은 판정 결과에 영향 없으며, 판정 결과 자체는 현행과 동일하다.
+- 게이트웨이 쪽에는 보안 결과 테이블에 적재하지 않는다(§4.1). **(A) 확인: 이 라우트는 결과를 어디에도 저장하지 않는다** — 보안 결과 테이블에 안 쌓이고 별도 저장소도 없다. 함수의 표준 출력 로그에는 **오류 메시지만** 남고(성공 응답의 분류값은 게이트웨이 로그에 안 남는다). 보정용 분류값은 봇 쪽 stdout 에 남긴다(위 저장 위치 결정).
 
 ---
 
@@ -239,15 +247,15 @@ secwatch 의 `secevt_*` 와 구분되는 이름. **결과 테이블 적재 없�
 
 | 항목 | 제안 |
 |---|---|
-| 스위치 | 환경변수 `JEV_INTENT_ENABLED` (**제안명**). 기본 `0`(꺼짐) |
-| 꺼짐 동작 | ② 를 건너뛰고 현행과 완전히 동일(① → ③) |
-| 게이트웨이 주소 | **(A) 확정: 같은 Function·같은 URL** — `kind` 분기이므로 `GIIP_JEV_GATEWAY_URL` 규약을 재사용한다(별도 URL·별도 Function 없음) |
-| 인증 | 이 봇의 giip 계정 sk (`giip-accounts` 해석, `giip-task.js` 의 `accounts.resolve(channelId)` 와 같은 방식). 채널에 계정이 없으면 Jev 단계 생략 → ③ |
-| 타임아웃 | 짧게(초기 3초 제안, §4.5). 초과 시 ③ 으로 |
+| 스위치 | 환경변수 `JEV_INTENT_ENABLED` (**제안명**). 기본 `0`(꺼짐) — **(B) 구현: 이름 그대로 채택, 기본 OFF 유지** |
+| 꺼짐 동작 | ② 를 건너뛰고 현행과 완전히 동일(① → ③) — **(B) 구현 완료** |
+| 게이트웨이 주소 | **(A) 확정: 같은 Function·같은 URL** — `kind` 분기이므로 `GIIP_JEV_GATEWAY_URL` 규약을 재사용한다(별도 URL·별도 Function 없음). **(B) 추가: 봇은 이 환경변수만 읽는다** — URL 을 코드에 하드코딩하지 않고, 미설정이면 Jev 단계를 생략하고 ③ 으로 간다 |
+| 인증 | 이 봇의 giip 계정 sk (`giip-accounts` 해석, `giip-task.js` 의 `accounts.resolve(channelId)` 와 같은 방식). 채널에 계정이 없으면 Jev 단계 생략 → ③ — **(B) 구현 완료** |
+| 타임아웃 | 짧게(초기 3초 제안, §4.5). 초과 시 ③ 으로 — **(B) 구현: `JEV_INTENT_TIMEOUT_MS`, 기본 3000ms. 근거 미검증**(§4.5 의 초기 제안) |
 
 - **기본 끔은 단계적 배포용**이다(평가 전 임계값이 미확정이므로 켜기 전에 (C) 결과를 본다). 데이터 취급 심사 게이트가 아니다(§6.1).
 - 켜는 순서: (A) 게이트웨이 배포 → (B) 봇 코드 머지(꺼짐 상태) → (C) 섀도 모드 평가 → 임계값 확정 → 스위치 ON.
-  **(A) 는 구현 PR 완료**(giipfaw #234) — 머지·배포까지는 아직이다. 봇 스위치는 **기본 꺼짐**이므로 배포 순서가 뒤바뀌어도 트래픽은 없다.
+  **(A) 는 구현 PR 완료**(giipfaw #234) — 머지·배포까지는 아직이다. 봇 스위치는 **기본 꺼짐**이므로 배포 순서가 뒤바뀌어도 트래픽은 없다. **(B) 도 2026-11-04 에 구현 완료(PR 대기)** — 스위치 기본 꺼짐 상태로 머지되므로 트래픽은 없다.
 - **섀도 모드(제안)**: 스위치와 별개로 "Jev 를 호출해 로그만 남기고 결과는 쓰지 않는" 모드를 둘지 (B)/(C)에서 결정 — 켜기 전에 실제 트래픽으로 Jev 와 LLM 분류기를 대조할 수 있다.
 
 ---
@@ -269,11 +277,13 @@ secwatch 의 `secevt_*` 와 구분되는 이름. **결과 테이블 적재 없�
 | ID | 작업 | 대상 레포·경로 | 선행 |
 |---|---|---|---|
 | A | 게이트웨이에 의도 분류 입력 타입(`intent_route`)·질문 세트·응답 경로 추가(보안 결과 테이블 미적재) + 정본 사양서 보강 | giipfaw `giipJevGateway/`(기존 Function 내 `kind` 분기), giipdb `docs/30_Specs/` | — |
-| B | 봇 연동: `intent.js` 에 Jev 어댑터, 폴백(③), 스위치, 안내문, 판정 로그, 테스트 | giip-fde-agent `slack-bot/intent.js`, `slack-bot/tests/` | A (테스트는 모킹이라 병행 가능) |
+| B | 봇 연동: `intent.js` 에 Jev 어댑터, 폴백(③), 스위치, 안내문, 판정 로그, 테스트 — **구현 완료(PR 대기)** | giip-fde-agent `slack-bot/intent.js`, `slack-bot/tests/` | A (테스트는 모킹이라 병행 가능) |
 | C | 정확도 평가·임계값 확정 | giip-fde-agent(코퍼스·스크립트 위치는 이슈에서 결정) | A, B |
 | D | lowyworkenv `MODEL_USAGE_SPEC.md` 에 예외 항목 등록 | lowyworkenv(별도 PR 로 진행 중) | — |
 
-**(A) 상태: 구현 완료(PR 대기)** — giipfaw PR #234(게이트웨이: `giipJevGateway/IntentRoute.ps1` 신규 · `run.ps1` 의 `kind` 분기 · `tests/Test-JevIntentRoute.ps1` 회귀 테스트) · giipdb PR #556(정본 사양서 §18 신설). 배치 결정: **같은 Function 내 `kind` 분기**(§4.1). (B)(C)(D) 는 미구현.
+**(A) 상태: 구현 완료(PR 대기)** — giipfaw PR #234(게이트웨이: `giipJevGateway/IntentRoute.ps1` 신규 · `run.ps1` 의 `kind` 분기 · `tests/Test-JevIntentRoute.ps1` 회귀 테스트) · giipdb PR #556(정본 사양서 §18 신설). 배치 결정: **같은 Function 내 `kind` 분기**(§4.1). (C)(D) 는 미구현.
+
+**(B) 상태: 구현 완료(PR 대기)** — 2026-11-04 에 이 저장소에서 구현했다. `slack-bot/intent.js` 에 Jev 어댑터(`classifyWithJev`)·폴백(③)·스위치·안내문·판정 로그를 넣고 `slack-bot/handlers.js` 호출부 3곳에 `opts` 만 추가했으며, `slack-bot/i18n-ui.js` 에 `classifyFallbackHint` 키를 신설했다. 회귀 테스트는 `slack-bot/tests/intent-jev.test.js` (22 케이스). 스위치는 **기본 OFF** 이므로 머지되어도 트래픽은 없다. (C)(D) 는 미구현.
 
 D 의 배경: 이 저장소 정책상 새 AI 호출 지점은 `MODEL_USAGE_SPEC.md`(lowyworkenv 정본)에 예외 사유를 남겨야 한다
 (기본값은 MiniMax 메인 → Claude 폴백/QA). Jev 는 그 기본 경로가 아니므로 사유("형 지정 질문에 신뢰도 있는 구조화 응답, 자유문 생성 불필요")를 적는다.
@@ -298,11 +308,23 @@ git -C <giipfaw> grep -n "intent_route" origin/main -- giipJevGateway   # 기대
 
 **B. 봇**
 ```
-node --test slack-bot/tests/        # 기대: 전부 pass (Jev 호출은 모킹, 네트워크 0)
+node --test "slack-bot/tests/*.test.js"   # 기대: 전부 pass (Jev 호출은 모킹, 네트워크 0)
+node --test slack-bot/tests/intent-jev.test.js   # 신규 Jev 회귀 테스트만
+# Node 24 에서는 디렉터리 인자가 아니라 glob/파일 단위로 돌린다(실측: `node --test slack-bot/tests/` 는
+#   "Cannot find module" 로 죽는다 — 디렉터리 인자를 모듈로 로드하려 한다).
 # 스위치 꺼짐 동작 동일성: JEV_INTENT_ENABLED 미설정 시 classifyRequest 결과가 현행과 같음을 단위 테스트로 검증
 # 폴백: 모킹한 Jev 오류/타임아웃/ambiguous → ③ LLM 단계 호출됨, 모두 실패 시 question + 안내문
 git grep -n "isForceTaskCmd" slack-bot/intent.js slack-bot/handlers.js   # 기대: 호출 3곳(§2.3)에서 여전히 먼저 평가됨
 git diff origin/main -- slack-bot/handlers.js | grep -c '^[+-]'          # 기대: 호출부 변경 최소(0 이 이상적, 변경 시 사유)
+# 실제 구현 기준(2026-11-04, (B)):
+#   스위치       JEV_INTENT_ENABLED (기본 OFF)
+#   게이트웨이   GIIP_JEV_GATEWAY_URL (전용. 미설정 시 Jev 단계 생략 → ③)
+#   타임아웃     JEV_INTENT_TIMEOUT_MS (기본 3000 — 근거 미검증)
+#   임계값       JEV_INTENT_T_HI / JEV_INTENT_P_HI / JEV_INTENT_P_LO (기본 0.8 / 0.7 / 0.3 — 사양 §5 제안값, 확정 아님)
+#   판정 로그    stdout console.log — source=rule|jev|llm|fallback + intent + reason + latencyMs + maskedLen + textHash
+#   i18n 키      classifyFallbackHint (ko/en/ja)
+#   신규 테스트  slack-bot/tests/intent-jev.test.js (22 케이스)
+#   호출부 변경  slack-bot/handlers.js 는 opts 추가만 — 선택 인자(기존 2인자 호출과 하위 호환)·isForceTaskCmd 선평가 유지
 ```
 
 **C. 평가**
@@ -320,7 +342,7 @@ git -C <lowyworkenv> grep -n -i "jev" origin/main -- MODEL_USAGE_SPEC.md   # 기
 
 ## 10. 미결·리스크 (확인하지 못한 것은 "미확인")
 
-1. **기존 외부 AI 송신의 마스킹 부재**: 현행 `classifyRequest` LLM 프롬프트·`callClaude` 에는 `maskString` 이 적용되지 않는다(§6.1). 신규 Jev 송신만 마스킹하면 경로 간 불균형이 생긴다. 소급 적용 여부는 사용자 결정 사항 — 미결.
+1. **기존 외부 AI 송신의 마스킹 부재**: 현행 `classifyRequest` LLM 프롬프트·`callClaude` 에는 `maskString` 이 적용되지 않는다(§6.1). 신규 Jev 송신만 마스킹하면 경로 간 불균형이 생긴다. 소급 적용 여부는 사용자 결정 사항 — **미결**. (B) 구현은 **신규 Jev 송신 경로에만** 마스킹을 적용했고(§6.2), **기존 LLM 경로의 소급 마스킹은 손대지 않았다**(기존 동작 불변 원칙).
 2. **Jev 한국어·일본어 의도 분류 정확도: 미확인.** 정본 §2 도 "한국어·SQL·로그 형식 정확도"를 미확인으로 남긴다. (C) 전에는 정확도를 주장하지 않는다.
 3. **`confidence` 교정(calibration) 정의: 미확인**(정본 §2). 임계값이 모델 버전에 따라 흔들릴 수 있다 — **버전 고정 여부는 (A) 에서 해소**: 보안 경로와 동일하게 `jev-latest` 를 쓰되(버전 고정 아님) **해석된 모델 id 를 매 응답의 `engine` 으로 돌려준다**(§4.5). calibration 자체는 (C) 의 평가 대상이다.
 4. **Jev 송신 데이터의 보존·학습 이용·소재지: 미확인.** 사용자 결정으로 별도 심사 게이트는 두지 않았으나(§6.1), 사실이 확인된 것은 아니다.
@@ -329,15 +351,18 @@ git -C <lowyworkenv> grep -n -i "jev" origin/main -- MODEL_USAGE_SPEC.md   # 기
    - `shared/SecSignal.ps1` = **giip 자기방어용**(소스 리터럴 마스킹 + 결정론 전단필터 + IP 분류). 의도 분류 경로는 이 파일을 **거치지 않는다**(§4.1).
    - `giipJevGateway` = **배포되어 있음**(sk 없이 호출하면 401), 앱설정 `TYPESAFE_API_KEY` 도 **설정되어 있음**(이름만 조회 — 값 미노출).
 7. **봇의 giip 계정/sk 해석**: 채널에 계정이 없는 배포(`accounts.resolve` 가 null)에서는 Jev 단계가 항상 생략된다. 범용 배포에서 Jev 를 쓰려면 sk 가 필요하다는 의미 — 영향 범위 미확인.
-8. **`i18n-ui.js` 안내문 키 신설 필요 여부, 스레드 문맥(이전 메시지)을 state 에 넣을지: 미확인/미결.** 스레드 원문 전송은 데이터량·민감도 증가 때문에 초기 버전에서는 제외했다(§4.3).
-9. **`slack-bot-minimax/`, `slack-bot-openclaw/` 변형의 분류 경로**: 이 사양은 `slack-bot/` 만 다룬다. 변형의 동일 로직 여부는 `slack-bot/docs/BOT_VARIANTS.md` 로 확인 필요 — 미확인.
-10. **§4(게이트웨이 계약)는 (A) 로 확정** — 요청·응답 필드·질문 세트·오류 계약·배치 방식·스위치는 구현과 같다. **§5(임계값 T_hi/P_hi/P_lo)·§7(롤아웃 세부)·(B)(C) 는 여전히 제안**이며 (C) 결과 전에는 구현 근거로 인용하지 않는다.
+8. **`i18n-ui.js` 안내문 키 신설 필요 여부, 스레드 문맥(이전 메시지)을 state 에 넣을지: 절반 해소.**
+   - **(가) 안내문 키: (B) 에서 해소.** `i18n-ui.js` 에 `classifyFallbackHint` 를 ko/en/ja 로 신설했고, 폴백 발생 시에만 `opts.onFallbackHint` 로 전달한다(§3, §9-B).
+   - **(나) 스레드 문맥(이전 메시지)을 state 에 넣을지: 미결.** 스레드 원문 전송은 데이터량·민감도 증가 때문에 초기 버전에서는 제외했다(§4.3). (B) 는 `in_thread` 불리언만 보내며 스레드 원문은 전송하지 않는다.
+9. **`slack-bot-minimax/`, `slack-bot-openclaw/` 변형의 분류 경로**: `slack-bot/docs/BOT_VARIANTS.md` 를 읽어 확인했다 — `slack-bot-minimax/` 는 **별도 배포(하류 SmartOrder 용)** 이고 `slack-bot-openclaw/` 는 **게이트웨이 변형**이다. `slack-bot-minimax/` 는 `slack-bot/` 의 코드를 공유하지 않는 **자체 사본**(`slack-bot-minimax/intent.js` 에 독자 `classifyRequest` 존재)이라 (B) 변경이 자동 전파되지 않는다. `slack-bot-openclaw/` 에는 의도 분류 경로가 없다(`intent.js` 없음). 따라서 **이번 (B) 변경은 `slack-bot/` 에만 적용되며 변형 2종은 미변경**이다. 변형에 Jev 를 붙이려면 별도 작업이 필요하다.
+10. **§4(게이트웨이 계약)는 (A) 로 확정** — 요청·응답 필드·질문 세트·오류 계약·배치 방식·스위치는 구현과 같다. **§5(임계값 T_hi/P_hi/P_lo)·§7(롤아웃 세부)·(B)(C) 는 여전히 제안**이며 (C) 결과 전에는 구현 근거로 인용하지 않는다. **(B) 구현은 이 미확정 상태를 바꾸지 않는다** — §5 값은 코드의 **기본값**으로만 들어갔고(§9-B), 전부 환경변수(`JEV_INTENT_T_HI` / `JEV_INTENT_P_HI` / `JEV_INTENT_P_LO`)로 덮어쓸 수 있어 (C) 결과에 따라 조정 가능하다. 기본값은 "확정 임계값"이 아니라 **제안값의 자리표시자**로 취급한다.
 
 ---
 
 ## 11. 관련 파일
 
 - 판정 로직: `slack-bot/intent.js`, 라우팅: `slack-bot/handlers.js`, 이슈 등록: `slack-bot/giip-task.js`, 마스킹: `slack-bot/secret-mask.js`, 모델 설정: `slack-bot/model-config.js`
+- 회귀 테스트: `slack-bot/tests/intent-jev.test.js` (Jev 어댑터·폴백·스위치 — 신규), `slack-bot/tests/intent.test.js` (현행 분류기)
 - 현행 규칙 설명: `slack-bot/README.md` "의도 분류(task / question) 결정적 경로"
 - secwatch: `docs/60-operations/secwatch-agent.md`, `docs/60-operations/secwatch-ai-onboarding.md`, `scripts/secwatch/README.md`, `scripts/secwatch/secevt_agent.py`
 - 게이트웨이: giipfaw `giipJevGateway/run.ps1` · 정본 설계: giipdb `SPEC_JEV_SQLI_DETECTION.md` (파일명만 인용)
