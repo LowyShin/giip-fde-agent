@@ -935,8 +935,25 @@ rule 69-5 가 분해 완료 판정을 *DB 에 실제로 등록된 자식 이슈*
 - Live 전환 전 확인할 것: ① `[OVERTIME] 결과` 로그의 `steps`/`final` ② 서브 이슈 verify 블록이 자동 생성 불가한 경우 *의도적 실패 블록*이 들어가므로 착수 세션이 교체해야 함
   ③ 분할이 잔여 체크리스트 항목 단위의 *결정적 분할*이라 항목 간 독립성은 보장하지 않음.
 - 이 규칙은 태스크 정의(`ExecutionTimeLimit`, `MultipleInstancesPolicy`)를 바꾸지 않는다.
-- **한계(알려진 미해결)**: ① 외부 종료 시 잡 출력이 유실된다(`Receive-Job` 이 `Complete-Run` 에서만 호출됨) ② Phase 2 의 직렬 `Complete-Run` 자체는 그대로다
-  ③ 저장소 정비 세션의 시간 캡은 없다. 셋은 별도 후속으로 다룬다.
+- **위 세 한계는 giip 4431(4429 후속)에서 모두 해소됐다** — 아래 §13-5-1 참조.
+
+### 13-5-1) 2시간 강제 종료 잔여 원인 해소 (giip 4431, 4429 후속)
+
+> 근거 이슈: giip 4428(원인 판정) → giip 4429(러너 자기 마감시각 규칙) → **giip 4431**(4429 범위 밖으로 남겼던 구조 결함 3건 해소 + 조사 2건).
+
+giip 4429 의 "한계(알려진 미해결)" 3건을 각각 독립 PR 로 해소했다.
+
+| 항목 | 문제 | 해법 | 코드 / 테스트 |
+| --- | --- | --- | --- |
+| **1. 직렬 `Complete-Run` 이 마감 판정을 막음** | 한 CSN 의 사후 스윕(게이트·감사·귀속·worktree 정리) 5~7개가 동기로 연달아 돌아 1시간+ 걸리면(CSN 47 실측 02:50~04:09) 그동안 다른 잡의 과시간/TIMEOUT/좀비 판정이 통째로 멈췄다 | `Complete-Run` 은 선점 해제·종료 기록만 즉시 하고 `$r.Done=$true` 후 사후 스윕을 큐에 쌓는다. Phase 2 `while` 루프가 매 바퀴 **반복당 시간예산**(기본 90초, 최소 1건 보장) 안에서 큐를 펌프하고 양보 — 한 스윕이 길어도 다음 바퀴의 마감 판정을 막지 않는다. 루프 종료 후 `-Drain` 으로 잔여 전부 처리(Option A) | `lib/run-finalize.ps1`(순수 로직 + 포트), `run-gissue-claude.ps1`(`Invoke-GissuePostProcessStep`/`Invoke-GissuePostProcessPump`). 테스트 `tests/test-complete-run-nonblocking.ps1`(이 이슈 verify 블록). 예산 상수 `GISSUE_POSTPROC_BUDGET_SEC`(기본 90) |
+| **2. REPO-MAINT 세션에 시간 캡 없음** | 이슈별 40분 캡은 이슈 순회에만 있었다. TIMEOUT(105분)으로 회수된 잡 출력이 전부 저장소 정비 세션의 엔진 호출 줄에서 끝났다 | 정비 세션의 `Invoke-GissueEngine` 호출을 이슈 순회와 **동일한 내부 `Start-Job` + `Wait-Job -Timeout` 폴링**으로 감싸 캡(기본 20분)을 둔다. 초과 시 `Stop-Job`/`Remove-Job` 후 이슈 순회로 진행(정비 세션은 멱등) | `run-gissue-claude.ps1` REPO-MAINT 블록. 캡 상수 `$RepoMaintDeadlineMin`(기본 20, `GISSUE_REPO_MAINT_CAP_MIN` 로 덮어씀) |
+| **3. 외부 종료·마감 정리 시 잡 출력 유실** | `Receive-Job`→`out.log` 가 `Complete-Run` 에서만 호출돼 정상 종료 경로에서만 `gissue_csn<N>.out.log` 가 채워졌다. 외부 PT2H 종료로 러너가 죽으면 그 CSN 내부 단계가 사후에 전혀 남지 않았다 | Phase 2 `while` 루프가 running 잡마다 매 바퀴 `Receive-Job -Keep` 결과를 `out.log` 에 **증분 append**. `-Keep` 은 매번 전체 버퍼를 돌려주므로 `OutLogWritten` 카운터로 아직 안 쓴 꼬리만 골라 이중 기록 방지. `Complete-Run` 은 `-Final`(버퍼 소비)로 최종 flush — 증분 경로로 일원화 | `lib/job-out-tail.ps1`(순수 로직 `Split-GissueJobOutTail`), `run-gissue-claude.ps1`(`Write-GissueJobOutIncremental`). 테스트 `tests/test-job-out-incremental.ps1` |
+
+**조사 항목(코드/조치 근거는 이슈 코멘트에 기록)**:
+- **항목 4 — 06:07 인스턴스 120분 무기록 구간**: guard 이후 로그가 없던 구간. 1차 가설은 (a) 엔진(claude) 호출이 로그인/connectors 경고에서 블록, (b) `Start-Job` 출력 유실, (c) 외부 PT2H 종료가 `Receive-Job` 전에 발생. (c)는 **항목 3 구현으로 증분 보존돼 다음 회차부터 사후 재구성이 가능**해졌다 — 무기록 구간의 실제 원인 좁히기는 운영(lowyworkenv) 런타임 로그가 필요하다.
+- **항목 5 — reaper 직렬 종료가 사전 단계를 5~9분 늘림**: Phase 0 reaper 가 외부 종료가 남긴 claude 고아 10~15개를 순회 처리. 병목은 `Stop-Process` 자체가 아니라 PID 당 조상/자손/커맨드라인 조회(하위 프로세스 호출)다. 이미지명 기준 일괄 종료는 금지(PID 지정 `Stop-Process -Id` 만, giip #2673). 조치 후보는 reaper 사전 단계 시간 상한 — 상세는 이슈 코멘트 참조.
+
+**운영 이식**: 정본은 giip-fde-agent 이고 lowyworkenv 는 운영 사본이다. 위 3건은 정본에 먼저 머지됐고(PR #373/#375/#378), 운영 이식은 정본 머지 이후 추적 항목이다.
 
 ## 14) 연결 문서
 
