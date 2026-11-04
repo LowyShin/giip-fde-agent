@@ -2,7 +2,7 @@
 
 > 상태: **§4(게이트웨이 계약) 는 (A) 에서 구현·확정** · **§5(임계값) 는 (C) 평가로 확정**(T_hi=0.7/P_hi=0.5/P_lo=0.2, [EVAL](INTENT_ROUTING_JEV_EVAL.md)) · **§3·§6.2·§9-B 는 (B) 에서 구현** · **§7(롤아웃 세부) 는 제안**(2026-11-04).
 > 이 문서는 봇 측 계약을 설계한 것이며, §4 는 (A) 구현 결과를 **실측 계약**으로 반영했다(2026-11-04 갱신).
-> 작성: 2026-10-27 · 갱신: 2026-11-04 (§4 확정 — 게이트웨이 구현 반영 · §3·§6.2·§9-B — (B) 봇 연동 구현 반영) · 기준: `origin/main` (PR #322 **머지 완료** 후. 읽기 전용 조회 결정적 경로 포함)
+> 작성: 2026-10-27 · 갱신: 2026-11-04 (§4 확정 — 게이트웨이 구현 반영 · §3·§6.2·§9-B — (B) 봇 연동 구현 반영 · §9 서브 이슈 대응표·§10-2 — (A)~(D) 실측 상태 반영) · 기준: `origin/main` (PR #322 **머지 완료** 후. 읽기 전용 조회 결정적 경로 포함)
 > 이 레포는 PUBLIC 범용 레포다([규칙 54](../../.agent/rules/54_generic_agent_no_customer_info.md)). 사례는 일반화했고 고객 식별 정보는 없다.
 > Jev 게이트웨이의 정본 설계는 giipdb 의 `SPEC_JEV_SQLI_DETECTION.md`(§2 개요, §6 질문 설계, §7 게이트 판정, §12 이식 설계,
 > §16 키 관리, §17 게이트웨이 요청 스키마)다. PUBLIC 레포이므로 **링크하지 않고 파일명만** 언급하며 내용을 베끼지 않는다.
@@ -275,20 +275,25 @@ secwatch 의 `secevt_*` 와 구분되는 이름. **결과 테이블 적재 없�
 
 ## 9. 하위 작업 분해 (서브 이슈 대응표)
 
-| ID | 작업 | 대상 레포·경로 | 선행 |
-|---|---|---|---|
-| A | 게이트웨이에 의도 분류 입력 타입(`intent_route`)·질문 세트·응답 경로 추가(보안 결과 테이블 미적재) + 정본 사양서 보강 | giipfaw `giipJevGateway/`(기존 Function 내 `kind` 분기), giipdb `docs/30_Specs/` | — |
-| B | 봇 연동: `intent.js` 에 Jev 어댑터, 폴백(③), 스위치, 안내문, 판정 로그, 테스트 — **구현 완료(PR 대기)** | giip-fde-agent `slack-bot/intent.js`, `slack-bot/tests/` | A (테스트는 모킹이라 병행 가능) |
-| C | 정확도 평가·임계값 확정 | giip-fde-agent(코퍼스·스크립트 위치는 이슈에서 결정) | A, B |
-| D | lowyworkenv `MODEL_USAGE_SPEC.md` 에 예외 항목 등록 | lowyworkenv(별도 PR 로 진행 중) | — |
+| ID | 서브 이슈 | 작업 | 대상 레포·경로 | 선행 | 상태(2026-11-04) |
+|---|---|---|---|---|---|
+| A | [giip 4220](https://giip.littleworld.net/ko/admin/giip-issues/4220) | 게이트웨이에 의도 분류 입력 타입(`intent_route`)·질문 세트·응답 경로 추가(보안 결과 테이블 미적재) + 정본 사양서 보강 | giipfaw `giipJevGateway/`(기존 Function 내 `kind` 분기), giipdb `docs/30_Specs/` | — | **DONE** |
+| B | [giip 4221](https://giip.littleworld.net/ko/admin/giip-issues/4221) | 봇 연동: `intent.js` 에 Jev 어댑터, 폴백(③), 스위치, 안내문, 판정 로그, 테스트 | giip-fde-agent `slack-bot/intent.js`, `slack-bot/tests/` | A (테스트는 모킹이라 병행 가능) | **구현·머지 완료**(PR #368) — **DONE 미전환** |
+| C | [giip 4222](https://giip.littleworld.net/ko/admin/giip-issues/4222) | 정확도 평가·임계값 확정 | giip-fde-agent(코퍼스·스크립트 위치는 이슈에서 결정) | A, B | **DONE** |
+| D | 별도 이슈 없음 — 상위 [giip 4219](https://giip.littleworld.net/ko/admin/giip-issues/4219) 가 소유 | lowyworkenv `MODEL_USAGE_SPEC.md` 에 예외 항목 등록 | lowyworkenv | — | **MERGED**(PR #1101) |
 
-**(A) 상태: 구현 완료(PR 대기)** — giipfaw PR #234(게이트웨이: `giipJevGateway/IntentRoute.ps1` 신규 · `run.ps1` 의 `kind` 분기 · `tests/Test-JevIntentRoute.ps1` 회귀 테스트) · giipdb PR #556(정본 사양서 §18 신설). 배치 결정: **같은 Function 내 `kind` 분기**(§4.1). (C)(D) 는 미구현.
+**(A) 상태: DONE** — giipfaw PR #234(게이트웨이: `giipJevGateway/IntentRoute.ps1` 신규 · `run.ps1` 의 `kind` 분기 · `tests/Test-JevIntentRoute.ps1` 회귀 테스트) · giipdb PR #556(정본 사양서 §18 신설). 배치 결정: **같은 Function 내 `kind` 분기**(§4.1).
 
-**(B) 상태: 구현 완료(PR 대기)** — 2026-11-04 에 이 저장소에서 구현했다. `slack-bot/intent.js` 에 Jev 어댑터(`classifyWithJev`)·폴백(③)·스위치·안내문·판정 로그를 넣고 `slack-bot/handlers.js` 호출부 3곳에 `opts` 만 추가했으며, `slack-bot/i18n-ui.js` 에 `classifyFallbackHint` 키를 신설했다. 회귀 테스트는 `slack-bot/tests/intent-jev.test.js` (22 케이스). 스위치는 **기본 OFF** 이므로 머지되어도 트래픽은 없다. (C)(D) 는 미구현.
+**(B) 상태: 구현·머지 완료 / DONE 미전환** — 2026-11-04 에 이 저장소에서 구현해 PR #368(`a1fc168`)로 머지했다. `slack-bot/intent.js` 에 Jev 어댑터(`classifyWithJev`)·폴백(③)·스위치·안내문·판정 로그를 넣고 `slack-bot/handlers.js` 호출부 3곳에 `opts` 만 추가했으며, `slack-bot/i18n-ui.js` 에 `classifyFallbackHint` 키를 신설했다. 회귀 테스트는 `slack-bot/tests/intent-jev.test.js` (22 케이스). 스위치는 **기본 OFF** 이므로 머지되어도 트래픽은 없다.
+- 남은 2건: ① 해당 이슈의 완료조건 verify 블록이 `node --test <디렉터리>` 인자형이다 — Node v24 는 디렉터리 인자를 모듈로 로드해 `Cannot find module` 로 죽으므로 **거짓 실패**가 난다(아래 "완료조건" 절 주의). 그 결과 감사 게이트가 "완료조건 verify 실행" 항목을 판정불가로 처리해 이슈가 REVIEW → NEEDS_DECISION 에 머물러 있다. ② §10-1 마스킹 소급 여부는 **사용자 결정 대기**다.
+
+**(C) 상태: DONE** — 2026-11-04, PR #369(`d70cb91`)로 머지했다. 코퍼스 38건(ko14/ja12/en12)·평가 하니스(`slack-bot/eval/intent/`)·[EVAL](INTENT_ROUTING_JEV_EVAL.md) 신설, §5 임계값 확정(T_hi=0.7 / P_hi=0.5 / P_lo=0.2).
+
+**(D) 상태: MERGED** — lowyworkenv PR #1101(2026-11-04 머지)로 `MODEL_USAGE_SPEC.md` §3-A 에 계획 항목(미구현)을 등록했다.
 
 D 의 배경: 이 저장소 정책상 새 AI 호출 지점은 `MODEL_USAGE_SPEC.md`(lowyworkenv 정본)에 예외 사유를 남겨야 한다
 (기본값은 MiniMax 메인 → Claude 폴백/QA). Jev 는 그 기본 경로가 아니므로 사유("형 지정 질문에 신뢰도 있는 구조화 응답, 자유문 생성 불필요")를 적는다.
-**lowyworkenv `MODEL_USAGE_SPEC.md` 에 계획 항목 등록 필요 — 별도 PR 로 진행 중.**
+**등록 완료 — lowyworkenv PR #1101(2026-11-04 머지).**
 
 ### 완료조건 (기계 검증 가능한 형태 — 이슈 본문 ` ```verify ` 블록용 초안)
 
@@ -344,7 +349,7 @@ git -C <lowyworkenv> grep -n -i "jev" origin/main -- MODEL_USAGE_SPEC.md   # 기
 ## 10. 미결·리스크 (확인하지 못한 것은 "미확인")
 
 1. **기존 외부 AI 송신의 마스킹 부재**: 현행 `classifyRequest` LLM 프롬프트·`callClaude` 에는 `maskString` 이 적용되지 않는다(§6.1). 신규 Jev 송신만 마스킹하면 경로 간 불균형이 생긴다. 소급 적용 여부는 사용자 결정 사항 — **미결**. (B) 구현은 **신규 Jev 송신 경로에만** 마스킹을 적용했고(§6.2), **기존 LLM 경로의 소급 마스킹은 손대지 않았다**(기존 동작 불변 원칙).
-2. **Jev 한국어·일본어 의도 분류 정확도: 미확인.** 정본 §2 도 "한국어·SQL·로그 형식 정확도"를 미확인으로 남긴다. (C) 전에는 정확도를 주장하지 않는다.
+2. **Jev 한국어·일본어 의도 분류 정확도: 코퍼스 기준은 측정됨, 범용 정확도는 미확인.** (C) 평가(2026-11-04, PR #369)로 38건 코퍼스(ko14/ja12/en12) 기준 정확도 **89.5% → 92.1%**, Jev 가 실제 라우팅한 13건은 **전건 정답(오류 0)**, 같은 입력 3회 반복 판정 일치 **100%**(비-flaky), engine `jev-1.14.0` — 상세는 [EVAL](INTENT_ROUTING_JEV_EVAL.md). 다만 **코퍼스 규모(38건)와 실트래픽 분포가 작으므로 범용 한국어·일본어 정확도를 주장하지 않는다.** 정본 §2 도 "한국어·SQL·로그 형식 정확도"를 미확인으로 남긴다. 재평가 조건은 §10-10(engine 버전 변경·실트래픽 분포 변경).
 3. **`confidence` 교정(calibration) 정의: 미확인**(정본 §2). 임계값이 모델 버전에 따라 흔들릴 수 있다 — **버전 고정 여부는 (A) 에서 해소**: 보안 경로와 동일하게 `jev-latest` 를 쓰되(버전 고정 아님) **해석된 모델 id 를 매 응답의 `engine` 으로 돌려준다**(§4.5). calibration 자체는 (C) 의 평가 대상이다.
 4. **Jev 송신 데이터의 보존·학습 이용·소재지: 미확인.** 사용자 결정으로 별도 심사 게이트는 두지 않았으나(§6.1), 사실이 확인된 것은 아니다.
 5. **게이트웨이 레이트리밋·요청당 질문 수: 미확인**(정본 §2). **공유 사실은 (A) 에서 확인**: 이 게이트웨이는 Function App 1개 + Jev 키 1개이므로 봇 트래픽은 **보안 경로와 한도·키를 공유**한다(§4.1). **이번 범위에서는 분리하지 않기로 결정**했고(별도 Function App 신설은 인프라 변경이라 범위 밖), 대신 ① 게이트웨이 비상정지 스위치 ② 봇 스위치 기본 꺼짐 ③ 입력 2000자 상한으로 방어한다. **분리가 필요해지는 기준**(보안 경로 지연·실패율 저하, 키 사용량 임계 근접)은 정본 사양서에 기록했고, **실제 한도 수치는 여전히 미확인**이다(키 값 미노출 원칙상 실측 불가).
