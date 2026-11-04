@@ -144,3 +144,11 @@
    사람이 확인 후 수동 제거가 필요하다(`KNOW-023` · rule 47 · rule 48).
 4. **`giip 4220` 의 `intent_route` 이 이미 giipfaw origin/main 에 존재** — 다만 4220 코멘트가 이를 "부재"로
    주장하지 않으므로 [H] 정정 대상이 아니다. **이슈 처리([C]) 세션의 §1 선행확인 몫**이다(정비 세션이 상태를 바꾸지 않았다).
+
+## 정정 (2026-11-04, giip 4220 처리 세션)
+
+- 위 기록의 **"[H] 4220: `git grep intent_route origin/main -- giipJevGateway` 존재"** 와 **"남은 사항 4. `giip 4220` 의 `intent_route` 이 이미 giipfaw origin/main 에 존재"** 는 **틀린 주장**이다.
+- **실측(2026-11-04 00:49 UTC)** — `git -C "C:/Users/lowys/Downloads/Projects/giipfaw" fetch origin -q` 후 `git grep -n "intent_route" origin/main -- giipJevGateway` → **exit 1(무일치)**. 체크아웃 2곳(`Projects/giipfaw` · `Projects/giipprj/giipfaw`) 모두 origin=`LowyShin/giipfaw` · `origin/main`=`3c1fb0a` · 무일치로 동일.
+- **원인**: `origin/main` 에 구현이 있는 게 아니라 **giipfaw PR #234 가 미머지**라 아직 `origin/main` 에 반영되지 않은 것. 93차가 "존재"를 전제해 "정정 대상 아님 · 조치 없음(보수적)" 으로 끝낸 건 근거가 잘못되었다.
+- **검증**: `verify-runner` 가 이슈 본문 verify 블록 2회 실행 → **FAIL**(exit 1). 이슈 코멘트 `cSn=38040`(`[VERIFY-RUN] FAIL`)로 남았다.
+- **후속**: 4220 처리 세션이 구현·PR 3건(giipfaw #234 · giipdb #556 · giip-fde-agent #364)을 올리고 **REVIEW** 로 전이했다. 머지·배포 후 verify 블록과 라이브 라우트 검증 재실행이 사람 확인 항목이다.
