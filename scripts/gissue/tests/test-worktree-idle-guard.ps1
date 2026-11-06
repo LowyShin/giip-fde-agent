@@ -104,6 +104,8 @@ $wtRecent = Join-Path $root 'wt-recent'
 $wtOld    = Join-Path $root 'wt-old'
 Invoke-Git @('-C', $repo, 'worktree', 'add', '-q', '-b', 'feat/recent-merged', $wtRecent, 'main')
 Invoke-Git @('-C', $repo, 'worktree', 'add', '-q', '-b', 'feat/old-merged',    $wtOld,    'main')
+$wtDev    = Join-Path $root 'wt-dev'
+Invoke-Git @('-C', $repo, 'worktree', 'add', '-q', '-b', 'dev', $wtDev, 'main')
 
 # 두 worktree 모두 clean + (가상으로) push 완료 + PR 머지됨 — 즉 구 판정의 `clean+pushed` 다.
 # 차이는 오직 "마지막 활동 시각" 하나뿐이다.
@@ -133,6 +135,10 @@ function Set-TreeAge([string]$Path, [datetime]$Utc) {
 $oldUtc = [datetime]::UtcNow.AddHours(-5)
 Set-TreeAge $wtOld $oldUtc
 Set-TreeAge (Join-Path $repo '.git\worktrees\wt-old') $oldUtc
+# wt-dev: 오래됐고 dirty 이며 머지 목록에 있어도 보호 브랜치이므로 지우면 안 된다.
+Set-Content -LiteralPath (Join-Path $wtDev 'uncommitted.txt') -Value 'x' -Encoding UTF8
+Set-TreeAge $wtDev $oldUtc
+Set-TreeAge (Join-Path $repo '.git\worktrees\wt-dev') $oldUtc
 # wt-recent 는 "파일은 5시간 전, 커밋/push 는 방금" 인 giip #2445 상태를 재현한다.
 Set-TreeAge $wtRecent $oldUtc
 # (관리 디렉터리는 방금 만들어졌으므로 현재 시각 그대로 둔다)
@@ -144,6 +150,7 @@ function Get-GissueMergedBranchSet {
     $set = New-Object 'System.Collections.Generic.HashSet[string]'
     [void]$set.Add('feat/recent-merged')
     [void]$set.Add('feat/old-merged')
+    [void]$set.Add('dev')
     return [pscustomobject]@{ Ok = $true; OwnerRepo = 'test/idle-guard'; Branches = $set }
 }
 
@@ -172,6 +179,12 @@ Assert-True (($recentSkipLine -join ' ') -match 'MinIdleMinutes') 'B-1d SKIP 사
 # B-2 오래된 clean+pushed+머지됨 → 여전히 삭제 대상으로 잡혀야 한다(보호 과잉 방지)
 Assert-True ($removedPaths -contains $oldNorm) 'B-2 오래된 머지완료 worktree 는 삭제 대상' "Removed=$($removedPaths -join ', ')"
 Assert-True ($log -match '\[DRY-RUN\] 삭제 예정') 'B-2b DryRun 삭제 예정 로그 존재' ''
+
+# C-1 보호 브랜치는 오래됐고 dirty 이며 머지 목록에 있어도 삭제 대상이 아니다
+$devNorm = (Resolve-Path -LiteralPath $wtDev).Path.TrimEnd('\', '/')
+Assert-True ($removedPaths -notcontains $devNorm) 'C-1 dev 체크아웃 worktree 는 삭제 대상 아님' "Removed=$($removedPaths -join ',')"
+$devSkipLine = @($logLines | Where-Object { $_ -like "*$devNorm*" -and $_ -like 'SKIP(보호 브랜치)*' })
+Assert-True ($devSkipLine.Count -eq 1) 'C-1b dev worktree 가 보호 브랜치 SKIP 으로 기록됨' "lines=$($logLines -join ' || ')"
 
 # B-3 DryRun 이므로 실제로는 아무것도 사라지지 않아야 한다
 Assert-True (Test-Path -LiteralPath $wtOld) 'B-3 DryRun 은 실제 삭제하지 않음(old)' ''

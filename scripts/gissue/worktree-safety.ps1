@@ -327,6 +327,7 @@ function ConvertTo-GissueComparablePath([string]$p) {
 # 거부된 ScanRoot 는 경고를 남기고 건너뛴다(예외로 중단하지 않는다 — 다른 ScanRoot 의 정상 처리는 계속된다).
 # ---------------------------------------------------------------------------
 $script:GissueScanRootManagementDirNames = @('.git', '.agent', '.github', '.githooks', '.husky', '.claude')
+$script:GissueProtectedBranches = @('dev', 'stg', 'main', 'master')
 
 function Get-GissueLiveWorkdirs {
     param([string]$MapFile = (Join-Path $PSScriptRoot 'csn-projects.json'))
@@ -1157,6 +1158,13 @@ function Invoke-GissueWorktreeCleanupForRepo {
             continue
         }
         if (-not (Test-Path -LiteralPath $ePath)) { continue }   # 물리적으로 이미 없음 — 위 prune 이 회수
+
+        # 장기 브랜치는 "머지된 작업 브랜치"가 아니다. dev→master PR 이 있으면 머지 목록에 dev 가 들어가,
+        # dev 를 체크아웃한 worktree 를 --force 로 지우고 branch -D dev 까지 시도하게 된다.
+        if ($script:GissueProtectedBranches -contains $e.Branch) {
+            & $say "SKIP(보호 브랜치): $ePath (branch=$($e.Branch))"
+            continue
+        }
 
         # ── 머지판정(giip #2440 원인 1): ahead-count 금지, 머지된 PR 목록만 신뢰 ──
         if (-not $merged.Branches.Contains($e.Branch)) {
