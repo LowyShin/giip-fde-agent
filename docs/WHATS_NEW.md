@@ -6,9 +6,12 @@
 >
 > *(EN/JP 독자는 각 항목을 AI 에이전트에 번역 요청하세요. / Ask your AI assistant to translate entries.)*
 
-**기준일 (as of): 2026-11-04**
+**기준일 (as of): 2026-11-06**
 
 ---
+
+## 2026-11-06
+- **규칙 57 신설 — 작업 종료 시 worktree·작업 브랜치 정리 의무화 (giip 4699, CSN 70424)** — 에이전트 작업들이 만든 git worktree 를 종료 시 제거하지 않아 호스트 디스크 용량이 폭발한 사고의 재발 방지(사용자 직접 지시). 정본 [`.agent/rules/57_worktree_cleanup_on_completion.md`](../.agent/rules/57_worktree_cleanup_on_completion.md): 모든 에이전트 작업은 종료 확정(머지 · 종료 확인) 시점에 자기 worktree 를 `git worktree remove` 로 제거하고 작업 브랜치를 삭제한다 / 미커밋 변경이 있으면 삭제하지 않고 보고한다 / gissue 스케줄러 worktree 도 태스크 종료 시 동일 적용. rule 47 의 "push 는 종료가 아니다" 를 종료 정의로 연결하고, rule 43 §4(하위 세션 임의 삭제 금지)와는 "정리는 작업 단위를 소유한 세션이 종료 확정 후 수행"으로 정합시켰다(43에 상호참조 추가, 41 색인 · GEMINI 목록 · AI_MUST_READ 체크리스트 1번 갱신). → [작업 기록](../.agent/work_history/20261106_1746_csn70424_worktree-cleanup-rule.md)
 
 ## 2026-11-04
 - **저장소 위생 정비 88차 — 86·87차 죽은 세션 미커밋 산출물 계승·마감, [H] 24시간 창 2건(4434·4411) 전건 일치, What's New 7일 창 만료분(10-27) HISTORY 이관 (CSN 70424)** — [0] 열린 PR 0건(충돌 0 · `git ls-remote --heads origin` → 원격 ref **1건**뿐 · nested 관리 대상 0건), [E] 열린 PR 0건(대상 0 · main run 8건 **전부 success** · 최신 `41640171537`), [F] stash 0건 · 워크트리 잔재 2건 → `maint-86-2108` **계승·마감**(86·87차 미커밋 산출물 3건 — 워크트리 `git status` 로만 보이는 잔재) · `maint-62-2331` **보류**(정본 도구 DryRun 2026-11-04 00:56:24 `MANUAL-REVIEW` 재확인) · `aux-sched-2645` 미접촉, [H] 2시간 창 0건 · 24시간 창 **2건**(4434·4411) → **88차가 86·87차 기록을 신뢰하지 않고 명령으로 전건 재확인** → **전건 일치** → **정정 0건 · 전이 0건 · 이슈 쓰기 0건**. **별도 act 2건** — ① 86·87차 미커밋 산출물 계승·마감(커밋·PR 생성은 **이 세션이 수행** · `KNOW-013`·`KNOW-015`·`KNOW-030`) ② **What's New 롤링 7일 창 정리**(rule 36) — 기준일 `2026-11-03` → `2026-11-04` 갱신 · `## 2026-11-04` 절 신설 · 만료된 `## 2026-10-27` 절 **5건**을 `docs/HISTORY.md` 로 이관. **엔진 오류 잔여(인계)** — 86차 앞선 시도·86차·87차가 모두 lowyworkenv 엔진의 `[claude-code:unrecognized_model] {"model":"MiniMax-M3"}` 로 커밋 전에 종료됐다(원인은 lowyworkenv 측 `scripts/gissue/model-config.json` 의 `minimaxModel: "MiniMax-M3"` 와 claude CLI 2.1.311 의 모델명 인식 불일치 — 이 저장소 밖이라 88차는 수정하지 않음). → [작업 기록](../.agent/work_history/20261104_0034_csn70424_repo-maintenance.md)
