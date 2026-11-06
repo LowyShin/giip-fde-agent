@@ -28,7 +28,7 @@
 
 ## 3. 작업 전 체크리스트
 
-1. **공유 체크아웃을 직접 수정하지 않습니다.** 다른 세션이 쓰는 경우가 많으므로 전용 worktree/브랜치에서 작업합니다. 이 레포는 public 이라 레포 폴더 안에서 바로 작업하지 않는 것이 원칙입니다([README](README.md)).
+1. **공유 체크아웃을 직접 수정하지 않습니다.** 다른 세션이 쓰는 경우가 많으므로 전용 worktree/브랜치에서 작업합니다. 이 레포는 public 이라 레포 폴더 안에서 바로 작업하지 않는 것이 원칙입니다([README](README.md)). 그리고 **작업 종료가 확정되면(머지·종료 확인) 자기 worktree와 작업 브랜치를 정리합니다** — 미커밋 변경이 있으면 지우지 말고 보고합니다([`.agent/rules/57_worktree_cleanup_on_completion.md`](.agent/rules/57_worktree_cleanup_on_completion.md)).
 2. **main 에 직접 push 하지 않고 PR 로 올립니다**([`35_commit_push_per_task.md`](.agent/rules/35_commit_push_per_task.md)).
 3. 커밋 전, 변경(추가)한 줄에 CSN 번호·고객 문자열이 0건인지 `git grep`/`git diff` 로 확인합니다.
 4. 의미 있는 변경은 [`docs/WHATS_NEW.md`](docs/WHATS_NEW.md) 를 갱신합니다([`36_whats_new_maintenance.md`](.agent/rules/36_whats_new_maintenance.md)).

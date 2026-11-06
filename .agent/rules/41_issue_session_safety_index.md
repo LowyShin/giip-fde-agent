@@ -34,6 +34,7 @@
 | [45_gate_cap_needs_decision.md](45_gate_cap_needs_decision.md) | 게이트 3회 캡 이후 `NEEDS_DECISION` + 4분기 재판정 | #2415 #2425 |
 | [46_cross_csn_write_scope.md](46_cross_csn_write_scope.md) | 자기 CSN 매핑에 없는 CSN 은 읽기만, 쓰기 전면 금지 | #1053 #1079 |
 | [47_auto_cleanup_safety_requirements.md](47_auto_cleanup_safety_requirements.md) | 자동 정리(worktree 등)의 최소 안전 요건 5가지 | #2432 #2445 #2463 #1540 |
+| [57_worktree_cleanup_on_completion.md](57_worktree_cleanup_on_completion.md) | 작업 종료 확정 시 소유 세션이 자기 worktree·작업 브랜치를 정리(미커밋 시 삭제 대신 보고). 스케줄러 worktree 도 태스크 종료 시 동일 | #4699 |
 | [48_single_source_safety_predicate.md](48_single_source_safety_predicate.md) | 안전 판정은 공용 함수 1개. 복붙 중복 금지 | #2440 #2463 #2425 |
 | [49_human_confirmation_false_positive.md](49_human_confirmation_false_positive.md) | "사람 확인 필요" 탐지 시 주어·시제 구분(오탐이 잘 지킨 이슈를 벌준다) | #2424 #2457 |
 | [50_bot_pr_scope_discipline.md](50_bot_pr_scope_discipline.md) | 봇 PR 은 이슈 범위 밖 파일을 쓸어담지 않는다 | #2424 #2459 |

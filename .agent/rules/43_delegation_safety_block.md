@@ -93,6 +93,10 @@ pnpm **자신의** 안전장치(`ERR_PNPM_UNEXPECTED_VIRTUAL_STORE`)가 무력�
 자기 worktree 를 지우면 그 후속 작업의 기반이 사라진다. 정리는 위임자 또는 별도 정리 로직의
 몫이며, 그 정리 로직 자체의 안전 요건은
 [`47_auto_cleanup_safety_requirements.md`](47_auto_cleanup_safety_requirements.md) 에 있다.
+단, 작업 단위 전체의 종료가 확정된 뒤의 정리는
+[`57_worktree_cleanup_on_completion.md`](57_worktree_cleanup_on_completion.md) 가 정본이며,
+그 정리는 작업 단위를 소유한 세션(위임자)이 수행한다. 이 절의 금지는 종료 확정 전의
+임의 삭제에 대한 것이다.
 
 ## 문구를 훅으로 강제하려면 (권장, 이식 선택사항)
 
