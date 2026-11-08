@@ -2624,7 +2624,60 @@ foreach ($csn in $map.PSObject.Properties.Name) {
     if ($DryRun) {
         # 이슈별 엔진 선택을 그대로 재현해 로그로 남긴다(giip #1472) — 저장소 정비 1회 + 이슈별 큐 조회.
         $engineNoteRepo = if ($env:MINIMAX_API_KEY) { "MiniMax($MiniMaxModel) 우선, 폴백 claude($ClaudeModel)" } else { "claude($ClaudeModel)" }
+        # [giip 4806] DryRun でも **実運転と同じゲート**を評価する。
+        #   背景(実測): giip 4804/4805 がゲートを入れたのは Start-Job 直前(実運転の経路)だけで、
+        #   この DryRun 分岐は素通しだった。そのため `-DryRun` は対象 0 件でも
+        #   「저장소 정비 세션 예정」と出し、**実運転なら起動しないティックを「起動する」と報告**していた。
+        #   ゲートの効きを LLM を 1 本も起動せずに実測する唯一の手段が DryRun なので、
+        #   ここが実運転と違うと受け入れ条件(対象0件のティックで LLM が起動しない)を測れない。
+        #   判定は読み取りだけ(gh pr list / git stash list / list-issues.js)で、状態は書かない —
+        #   [H] 高水位マークの**前進(Set-)はしない**(Resolve- は読み取りのみ)。
+        #   ⚠ 下の判定行は実運転の経路(Phase 1 の Start-Job 直前)と **文字列まで同一**でなければならない。
+        #     同じ判定を 2 か所に書いた以上、片方だけ直すと DryRun が嘘をつく。
+        #     tests/test-spawn-gate-order.ps1 の (d) がこの同一性を静的に pin している。
+        $accountsFile = $GiipAccountsFile
+        $prevEapDry = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        $preflightDecision = $null
+        $preflightMeasure = $null
+        try {
+            . (Join-Path $root 'lib/preflight-target.ps1')
+            . (Join-Path $root 'lib/engine-backoff.ps1')
+            . (Join-Path $root 'lib/h-recheck-watermark.ps1')
+            $backoffStateFile = Get-GissueBackoffStatePath $logDir
+            $tickBackoff = Test-GissueBackoffActive $backoffStateFile ((Get-Date).ToUniversalTime()) 'REPO-MAINT'
+            foreach ($bl in @($tickBackoff.LogLines)) { Write-Log $csn "[DryRun] $bl" }
+            $hWatermarkFile = Get-GissueHWatermarkPath $logDir
+            $hWindow = Resolve-GissueHRecheckHoursBack $hWatermarkFile $csn ((Get-Date).ToUniversalTime()) 2
+            foreach ($hl in @($hWindow.LogLines)) { Write-Log $csn "[DryRun] $hl" }
+            if ($tickBackoff.Active) {
+                $preflightDecision = @{ Spawn = $false; Reason = "backoff:$($tickBackoff.Kind)"; LogLines = @() }
+            } else {
+                $preflightRepos = @(Select-GissuePreflightPrimaryRepos (Get-GissueGitRepoPaths $workdir))
+                $preflightMeasure = Measure-GissueRepoMaintTargets $preflightRepos @{
+                    ListConflictingPrs      = { param($r) Get-GissuePreflightConflictingPrs $r }
+                    ListFailingCiPrs        = { param($r) Get-GissuePreflightFailingCiPrs $r }
+                    ListAutoUnblockStash    = { param($r) Get-GissuePreflightAutoUnblockStash $r }
+                    ListRecentCommentIssues = { Get-GissuePreflightRecentCommentIssues $listIssuesScript $csn $accountsFile $apiBase $hWindow.HoursBack }
+                }
+                $preflightDecision = Test-GissuePreflightShouldSpawn $preflightMeasure 'REPO-MAINT'
+                foreach ($pl in @($preflightDecision.LogLines)) { Write-Log $csn "[DryRun] $pl" }
+            }
+        } catch {
+            # 判定不能は 0 件と読まない(P-2) — 実運転と同じく「起動する」側に倒し、必ず WARN を残す。
+            Write-Log $csn "[DryRun][PREFLIGHT][WARN] 프리플라이트 자체가 실패($($_.Exception.Message)) — 従来どおり起動する扱い"
+            $preflightDecision = @{ Spawn = $true; Reason = 'preflight-exception'; LogLines = @() }
+        } finally {
+            $ErrorActionPreference = $prevEapDry
+        }
+        # 受け入れ条件の測定用に機械可読の 1 行を出す(自由書式にしない)。
+        Write-Log $csn ("[DryRun][PREFLIGHT-DECISION] job=REPO-MAINT spawn={0} reason={1} count={2} hours-back={3}" -f `
+            ([bool]$preflightDecision.Spawn), "$($preflightDecision.Reason)", "$(if ($null -ne $preflightMeasure) { $preflightMeasure.Total } else { 'n/a' })", "$($hWindow.HoursBack)")
+        if (-not $preflightDecision.Spawn) {
+            Write-Log $csn "[DryRun] 저장소 정비 세션 미기동 예정 (reason=$($preflightDecision.Reason)) — 이슈 순회로 진행"
+        } else {
         Write-Log $csn "[DryRun] 저장소 정비 세션 예정 (cwd=$workdir, engine=$engineNoteRepo)"
+        }
         Write-Log $csn "[DryRun][SOFT-BUDGET] 설정 = $(Format-GissueSoftBudgetSetting $SoftBudgetMin $RunTimeoutMin)"
         # {AGENT_REPO} 치환이 실제로 이뤄졌는지 확인할 수 있도록 안전 규칙 로드 경로를 그대로 출력한다
         # (완료조건 2 — 치환자가 그대로 남으면 프롬프트가 존재하지 않는 경로를 가리키게 된다).
@@ -2635,7 +2688,13 @@ foreach ($csn in $map.PSObject.Properties.Name) {
         }
         # giip #3556: REVIEW 병합완료 사전필터 — Get-GissueIssueQueue 호출 *이전에* 실행하여
         # 병합완료 REVIEW를 DONE 전환함으로써 claude 세션 배정budget 을 절약한다.
-        Invoke-GissuePresweep $csn $workdir -DryRun
+        # [giip 4806] 実測で判明: `Invoke-GissuePresweep` の第3引数は [switch] ではなく
+        #   既定値付きの通常パラメータ(`$DryRun = $false`)なので、`-DryRun` と書くと
+        #   「Missing an argument for parameter 'DryRun'」で terminating error になり、
+        #   $ErrorActionPreference='Stop' のもとで **-DryRun 実行はここで必ず死んでいた**。
+        #   DryRun は本タスクの測定器(LLM を 1 本も起動せずゲートの効きを測る唯一の手段)なので、
+        #   位置引数で $true を渡す形に直す。意味は同じ(-Live を付けない = 判定のみ)。
+        Invoke-GissuePresweep $csn $workdir $true
         $issueQueueDry = @(Get-GissueIssueQueue $ListIssuesScript $csn $GiipAccountsFile $ApiBase $reviewTestedMaxAgeHours)  # giip #1665: 방어적 @() 강제
         Write-Log $csn "[DryRun] 처리 대상 $($issueQueueDry.Count)건"
         foreach ($dq in $issueQueueDry) {
