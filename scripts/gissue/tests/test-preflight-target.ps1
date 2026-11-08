@@ -147,26 +147,40 @@ Check 'g8 git 레포가 아닌 경로는 빠진다'           (-not (@($prim) -c
 
 # ── (h) 러너 배선: 게이트가 REPO-MAINT Start-Job 보다 앞에 있어야 한다 ─────────
 $src = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../run-gissue-claude.ps1') -Raw -Encoding UTF8
+
+# [giip 4806] ⚠ 同じ判定文が **DryRun 分岐にも在る**（giip 4806 が `-DryRun` にも実運転と同じ
+#   ゲートを通したため。DryRun は LLM を 1 本も起動せずに効きを測る唯一の経路なので必要）。
+#   全文に対して当てると **DryRun 側の写しに当たり、実運転側を消しても通ってしまう**
+#   (実測: NC M24〜M27 が BROKEN/SURVIVED になった)。
+#   → 以下の配線 pin は **実運転の区間**（per-CSN ワーカージョブの開始以降）に限って当てる。
+#   区間アンカーが消えたら測定不能として FAIL する（測り手不在で緑にしない）。
+$realRegionAnchor = '$job = Start-Job -ScriptBlock {'
+$realStart = $src.IndexOf($realRegionAnchor)
+if ($realStart -lt 0) {
+    Write-Output "[FAIL] 実運転区間のアンカーが見つからない: $realRegionAnchor"
+    exit 1
+}
+$srcReal = $src.Substring($realStart)
 # 닷소싱 자체(실행문)를 앵커로 쓴다. 단순히 "lib/preflight-target.ps1" 이 어딘가에 있는지로 보면
 # 바로 위 주석에 같은 문자열이 있어 닷소싱 행을 지워도 통과해버린다(NC M24 로 실측 — 당해 생존).
-$posDot   = $src.IndexOf(". (Join-Path `$root 'lib/preflight-target.ps1')")
-$posGate  = $src.IndexOf('Test-GissuePreflightShouldSpawn $preflightMeasure')
-$posStart = $src.IndexOf('$repoMaintJob = Start-Job -InitializationScript')
+$posDot   = $srcReal.IndexOf(". (Join-Path `$root 'lib/preflight-target.ps1')")
+$posGate  = $srcReal.IndexOf('Test-GissuePreflightShouldSpawn $preflightMeasure')
+$posStart = $srcReal.IndexOf('$repoMaintJob = Start-Job -InitializationScript')
 Check 'h1 러너가 preflight lib 를 닷소싱한다(실행문 앵커)' ($posDot -gt 0) "pos=$posDot"
 Check 'h2 러너에 게이트 호출이 있다'                   ($posGate -gt 0) "pos=$posGate"
 Check 'h3 게이트가 REPO-MAINT Start-Job 보다 앞'       (($posGate -gt 0) -and ($posStart -gt 0) -and ($posGate -lt $posStart)) "gate=$posGate start=$posStart"
-Check 'h4 Spawn=false 분기에서 Start-Job 을 건너뛴다'  ($src -match '(?s)if \(-not \$preflightDecision\.Spawn\)') ''
+Check 'h4 Spawn=false 분기에서 Start-Job 을 건너뛴다'  ($srcReal -cmatch '(?s)if \(-not \$preflightDecision\.Spawn\) \{\s*\r?\n\s*# 여기서 return 하면') ''
 Check 'h5 닷소싱이 게이트보다 앞'                      (($posDot -gt 0) -and ($posDot -lt $posGate)) "dot=$posDot gate=$posGate"
-Check 'h6 게이트는 Measure 를 거쳐 판정한다'           ($src.IndexOf('Measure-GissueRepoMaintTargets $preflightRepos') -gt 0) ''
-Check 'h7 worktree 제외(주체크아웃 선별)를 거친다'     ($src.IndexOf('Select-GissuePreflightPrimaryRepos') -gt 0) ''
+Check 'h6 게이트는 Measure 를 거쳐 판정한다'           ($srcReal.IndexOf('Measure-GissueRepoMaintTargets $preflightRepos') -gt 0) ''
+Check 'h7 worktree 제외(주체크아웃 선별)를 거친다'     ($srcReal.IndexOf('Select-GissuePreflightPrimaryRepos') -gt 0) ''
 # 삭감 장치가 처리 자체를 멈추는 원인이 되면 안 된다 — 프리플라이트 예외는 "기동" 쪽으로 폴백한다.
-$posTry   = $src.IndexOf('$preflightMeasure = $null
+$posTry   = $srcReal.IndexOf('$preflightMeasure = $null
         $prevEapPf = $ErrorActionPreference')
 Check 'h9 프리플라이트가 try/catch 로 감싸여 있다'       ($posTry -gt 0) "pos=$posTry"
-Check 'h10 예외 시 Measure 는 null 로 남아 기동 쪽으로 간다' ($src -match '(?s)\} catch \{[^}]*프리플라이트 자체가 실패') ''
-Check 'h11 프리플라이트 구간만 ErrorActionPreference 를 낮춘다' ($src.Contains("`$prevEapPf = `$ErrorActionPreference") -and $src.Contains("`$ErrorActionPreference = 'Continue'")) ''
-Check 'h12 끝나면 원래 값으로 되돌린다'                 ($src -match '(?s)finally \{\s*\r?\n\s*\$ErrorActionPreference = \$prevEapPf') ''
-Check 'h8 Start-Job 은 게이트 통과 후에만 나온다(단 1곳)' ((@([regex]::Matches($src, [regex]::Escape('$repoMaintJob = Start-Job'))).Count) -eq 1) "count=$((@([regex]::Matches($src, [regex]::Escape('$repoMaintJob = Start-Job'))).Count))"
+Check 'h10 예외 시 Measure 는 null 로 남아 기동 쪽으로 간다' ($srcReal -match '(?s)\} catch \{[^}]*프리플라이트 자체가 실패') ''
+Check 'h11 프리플라이트 구간만 ErrorActionPreference 를 낮춘다' ($srcReal.Contains("`$prevEapPf = `$ErrorActionPreference") -and $srcReal.Contains("`$ErrorActionPreference = 'Continue'")) ''
+Check 'h12 끝나면 원래 값으로 되돌린다'                 ($srcReal -match '(?s)finally \{\s*\r?\n\s*\$ErrorActionPreference = \$prevEapPf') ''
+Check 'h8 Start-Job 은 게이트 통과 후에만 나온다(단 1곳)' ((@([regex]::Matches($srcReal, [regex]::Escape('$repoMaintJob = Start-Job'))).Count) -eq 1) "count=$((@([regex]::Matches($srcReal, [regex]::Escape('$repoMaintJob = Start-Job'))).Count))"
 
 # ── (i) P-5 부작용 금지: lib 코드에 쓰기 계열이 섞이면 FAIL ────────────────────
 $libSrc  = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../lib/preflight-target.ps1') -Raw -Encoding UTF8

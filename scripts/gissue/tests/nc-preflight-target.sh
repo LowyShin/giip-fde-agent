@@ -180,14 +180,22 @@ apply_mutant "M29 0件でも内訳行を残す規約を外す(測った/測っ�
 
 echo
 echo "=== 러너 배선 ==="
+# ⚠ [giip 4806] 下の 5 件のアンカーは、行頭の改行＋実運転側のインデントまで含めている。
+#   理由(実測): giip 4806 が `-DryRun` 分岐にも同じ判定を通したため、同じ呼び出し文が
+#   **2 箇所**に出るようになった(DryRun 側は 4 スペース深い)。インデント無しの短いアンカーは
+#   両方に当たり、mutant が BROKEN(当て先ずれ)になって**測れなくなる**。
+#   mutant 自体は 1 行も弱めていない — 当てる場所を一意にしただけである。
 apply_mutant "M24 preflight lib の닷소싱을 지운다" KILLED "$RUN" \
-  "        . (Join-Path \$root 'lib/preflight-target.ps1')" \
-  "        # (removed by NC)"
+  $'\n        . (Join-Path $root \'lib/preflight-target.ps1\')' \
+  $'\n        # (removed by NC)'
 apply_mutant "M25 Spawn=false でも Start-Job に進む" KILLED "$RUN" \
-  '        if (-not $preflightDecision.Spawn) {' '        if ($false) {'
+  '        if (-not $preflightDecision.Spawn) {
+            # 여기서 return 하면' \
+  '        if ($false) {
+            # 여기서 return 하면'
 apply_mutant "M26 주체크아웃 선별(worktree 제외)을 거치지 않는다" KILLED "$RUN" \
-  '        $preflightRepos = @(Select-GissuePreflightPrimaryRepos (Get-GissueGitRepoPaths $workdir))' \
-  '        $preflightRepos = @(Get-GissueGitRepoPaths $workdir)'
+  $'\n            $preflightRepos = @(Select-GissuePreflightPrimaryRepos (Get-GissueGitRepoPaths $workdir))' \
+  $'\n            $preflightRepos = @(Get-GissueGitRepoPaths $workdir)'
 apply_mutant "M30 프리플라이트의 예외 폴백(try 진입)을 없앤다" KILLED "$RUN" \
   '        $preflightMeasure = $null
         $prevEapPf = $ErrorActionPreference' \
@@ -201,15 +209,16 @@ apply_mutant "M31 ErrorActionPreference 를 원복하지 않는다" KILLED "$RUN
             $null = $prevEapPf
         }'
 apply_mutant "M27 Measure 를 거치지 않고 판정한다" KILLED "$RUN" \
-  '        $preflightMeasure = Measure-GissueRepoMaintTargets $preflightRepos @{' \
-  '        $preflightMeasure = $null; $unusedPorts = @{'
+  $'\n            $preflightMeasure = Measure-GissueRepoMaintTargets $preflightRepos @{' \
+  $'\n            $preflightMeasure = $null; $unusedPorts = @{'
 
 echo
 echo "=== 緑対照（赤くなってはいけない変更） ==="
 apply_mutant "G01 lib のコメント文言を変える" GREEN "$LIB" \
   '# 用途' '# 用途（NC 緑対照で文言だけ変えた）'
 apply_mutant "G03 러너 로그 문구만 바꾼다" GREEN "$RUN" \
-  '이슈 순회로 진행"' '이슈 순회로 계속 진행"'
+  '정비 세션 미기동 (reason=$($preflightDecision.Reason)) — 이슈 순회로 진행"' \
+  '정비 세션 미기동 (reason=$($preflightDecision.Reason)) — 이슈 순회로 계속 진행"'
 
 echo
 echo "================ NC 結果 ================"

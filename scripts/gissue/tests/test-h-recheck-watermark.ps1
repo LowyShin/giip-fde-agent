@@ -107,27 +107,40 @@ try {
 # ── (i) 러너への配線が実在するか（書いても呼ばれていなければ意味が無い） ──────────────
 $runner = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '../run-gissue-claude.ps1')).Path
 $src = Get-Content -LiteralPath $runner -Raw -Encoding UTF8
+
+# [giip 4806] ⚠ 同じ判定文が **DryRun 分岐にも在る**（giip 4806 が `-DryRun` にも実運転と同じ
+#   ゲートを通したため。DryRun は LLM を 1 本も起動せずに効きを測る唯一の経路なので必要）。
+#   全文に対して当てると **DryRun 側の写しに当たり、実運転側を消しても通ってしまう**
+#   (実測: NC M43/M45 が SURVIVED した)。
+#   → 以下の配線 pin は **実運転の区間**（per-CSN ワーカージョブの開始以降）に限って当てる。
+$realRegionAnchor = '$job = Start-Job -ScriptBlock {'
+$realStart = $src.IndexOf($realRegionAnchor)
+if ($realStart -lt 0) {
+    Write-Output "[FAIL] 実運転区間のアンカーが見つからない: $realRegionAnchor"
+    exit 1
+}
+$srcReal = $src.Substring($realStart)
 # ⚠ ファイル名の「どこかに在るか」で見てはいけない — すぐ上の自分のコメントにも同じ文字列がある
 #   ([[self-search-hits-its-own-literal]])。닷소싱の実行文そのものを pin する。
 $dotSourceWm = ". (Join-Path `$root 'lib/h-recheck-watermark.ps1')"
-Check 'i1 러너が lib を닷소싱している(実行文)' ($src.Contains($dotSourceWm)) ''
-Check 'i2 窓の算出が配線されている'          ($src.Contains('$hWindow = Resolve-GissueHRecheckHoursBack $hWatermarkFile $csn')) ''
+Check 'i1 러너が lib を닷소싱している(実行文)' ($srcReal.Contains($dotSourceWm)) ''
+Check 'i2 窓の算出が配線されている'          ($srcReal.Contains('$hWindow = Resolve-GissueHRecheckHoursBack $hWatermarkFile $csn')) ''
 # マーク前進は「刻印変数を渡して」呼ばれていなければならない。関数名だけの一致では
 # 条件(`if ($true)`)に差し替えられても通る。
-Check 'i3 マーク前進が配線されている'        ($src.Contains('Set-GissueHWatermark $hWatermarkFile $csn $repoMaintStartedAtUtc')) ''
+Check 'i3 マーク前進が配線されている'        ($srcReal.Contains('Set-GissueHWatermark $hWatermarkFile $csn $repoMaintStartedAtUtc')) ''
 # 固定 2 を [H] ポートに直接渡していたのが元の姿。そこが置き換わっていることを pin する。
-Check 'i4 [H] ポートが固定 2 時間でない'     ($src -match 'Get-GissuePreflightRecentCommentIssues \$listIssuesScript \$csn \$accountsFile \$apiBase \$hWindow\.HoursBack') ''
+Check 'i4 [H] ポートが固定 2 時間でない'     ($srcReal -match 'Get-GissuePreflightRecentCommentIssues \$listIssuesScript \$csn \$accountsFile \$apiBase \$hWindow\.HoursBack') ''
 # マーク前進は REPO-MAINT の出力受領より後(= 実際に動いた後)でなければならない。
-$idxRecv = $src.IndexOf('$repoMaintOut = @(Receive-Job')
-$idxAdvance = $src.IndexOf('Set-GissueHWatermark $hWatermarkFile')
+$idxRecv = $srcReal.IndexOf('$repoMaintOut = @(Receive-Job')
+$idxAdvance = $srcReal.IndexOf('Set-GissueHWatermark $hWatermarkFile')
 Check 'i5 マーク前進が出力受領より後'        (($idxRecv -ge 0) -and ($idxAdvance -gt $idxRecv)) "recv=$idxRecv advance=$idxAdvance"
 # 窓の算出は REPO-MAINT spawn より前(プリフライトに渡すため)。
-$idxWindow = $src.IndexOf('Resolve-GissueHRecheckHoursBack')
-$idxSpawn = $src.IndexOf('$repoMaintJob = Start-Job')
+$idxWindow = $srcReal.IndexOf('Resolve-GissueHRecheckHoursBack')
+$idxSpawn = $srcReal.IndexOf('$repoMaintJob = Start-Job')
 Check 'i6 窓の算出が spawn より前'           (($idxWindow -ge 0) -and ($idxWindow -lt $idxSpawn)) "window=$idxWindow spawn=$idxSpawn"
 # 刻印は **セッション開始時刻**でなければならない。出力受領後に取ると、セッション中(最大40分)に
 # 付いたコメントが次の窓から外れて永久に未検証になる(= 静かな取りこぼし)。
-$idxStamp = $src.IndexOf('$repoMaintStartedAtUtc = (Get-Date).ToUniversalTime()')
+$idxStamp = $srcReal.IndexOf('$repoMaintStartedAtUtc = (Get-Date).ToUniversalTime()')
 Check 'i7 刻印の採取が存在する'              ($idxStamp -ge 0) "stamp=$idxStamp"
 Check 'i8 刻印の採取が出力受領より前'        (($idxStamp -ge 0) -and ($idxStamp -lt $idxRecv)) "stamp=$idxStamp recv=$idxRecv"
 

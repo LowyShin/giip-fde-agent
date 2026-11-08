@@ -187,9 +187,14 @@ apply_mutant 'M28 別種別でも連続を積む' KILLED "$BO" \
 
 echo
 echo "=== 러너 배선（書いても呼ばれていなければ意味が無い） ==="
+# ⚠ [giip 4806] 下の 5 件のアンカーは、行頭の改行＋実運転側のインデントまで含めている。
+#   理由(実測): giip 4806 が `-DryRun` 分岐にも同じ判定を通したため、同じ呼び出し文が
+#   **2 箇所**に出るようになった(DryRun 側は 4 スペース深い)。インデント無しの短いアンカーは
+#   両方に当たり、mutant が BROKEN(当て先ずれ)になって**測れなくなる**。
+#   mutant 自体は 1 行も弱めていない — 当てる場所を一意にしただけである。
 apply_mutant 'M29 backoff lib の닷소싱을 지운다' KILLED "$RUN" \
-  "        . (Join-Path \$root 'lib/engine-backoff.ps1')" \
-  "        # (닷소싱 제거: NC mutant)" "$T_BO"
+  $'\n        . (Join-Path $root \'lib/engine-backoff.ps1\')' \
+  $'\n        # (닷소싱 제거: NC mutant)' "$T_BO"
 apply_mutant 'M30 ティックゲートを外す(常に起動)' KILLED "$RUN" \
   '$engineBlockedThisTick = [bool]$tickBackoff.Active' \
   '$engineBlockedThisTick = $false' "$T_BO"
@@ -201,8 +206,8 @@ apply_mutant 'M32 REPO-MAINT 出力の検知を外す' KILLED "$RUN" \
   '$boRepo = Skip-GissueBackoffFromOutput $backoffStateFile' "$T_BO"
 # ゲートが spawn より後ろにあっては意味が無い（起動してから見ても遅い）。
 apply_mutant 'M33 ゲートを REPO-MAINT spawn より後ろに置く' KILLED "$RUN" \
-  '$tickBackoff = Test-GissueBackoffActive $backoffStateFile' \
-  '$tickBackoff = Test-GissueBackoffActiveLater $backoffStateFile' "$T_BO"
+  $'\n        $tickBackoff = Test-GissueBackoffActive $backoffStateFile' \
+  $'\n        $tickBackoff = Test-GissueBackoffActiveLater $backoffStateFile' "$T_BO"
 
 echo
 echo "=== W-1〜W-6 [H] 高水位マーク ==="
@@ -243,14 +248,14 @@ apply_mutant 'M42 書き込み失敗を成功扱いにする' KILLED "$WM" \
     }
 }' "$T_WM"
 apply_mutant 'M43 [H] ポートを固定 2 時間に戻す' KILLED "$RUN" \
-  'Get-GissuePreflightRecentCommentIssues $listIssuesScript $csn $accountsFile $apiBase $hWindow.HoursBack' \
-  'Get-GissuePreflightRecentCommentIssues $listIssuesScript $csn $accountsFile $apiBase 2' "$T_WM"
+  $'\n                ListRecentCommentIssues = { Get-GissuePreflightRecentCommentIssues $listIssuesScript $csn $accountsFile $apiBase $hWindow.HoursBack }' \
+  $'\n                ListRecentCommentIssues = { Get-GissuePreflightRecentCommentIssues $listIssuesScript $csn $accountsFile $apiBase 2 }' "$T_WM"
 apply_mutant 'M44 マーク前進の配線を外す' KILLED "$RUN" \
   'if (Set-GissueHWatermark $hWatermarkFile $csn $repoMaintStartedAtUtc) {' \
   'if ($true) {' "$T_WM"
 apply_mutant 'M45 watermark lib の닷소싱을 지운다' KILLED "$RUN" \
-  "        . (Join-Path \$root 'lib/h-recheck-watermark.ps1')" \
-  "        # (닷소싱 제거: NC mutant)" "$T_WM"
+  $'\n        . (Join-Path $root \'lib/h-recheck-watermark.ps1\')' \
+  $'\n        # (닷소싱 제거: NC mutant)' "$T_WM"
 # 刻印を終了時刻にすると、セッション中に付いたコメントが次の窓から外れて永久に未検証になる。
 apply_mutant 'M46 刻印を spawn 前でなく出力受領後に取る' KILLED "$RUN" \
   '        $repoMaintStartedAtUtc = (Get-Date).ToUniversalTime()

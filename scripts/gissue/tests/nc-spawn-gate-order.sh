@@ -181,7 +181,9 @@ apply_mutant "M25 パリティ検査を丸ごと外す" KILLED "$LIB" \
   '    $violations += @()'
 apply_mutant "M26 DryRun 分岐が無くても違反にしない" KILLED "$LIB" \
   '    if ($dryBlocks.Count -eq 0) {' '    if ($false) {'
-apply_mutant "M27 `-not \$DryRun`(実運転側)を DryRun 分岐と誤認する" KILLED "$LIB" \
+# ⚠ ラベルに ` を使わない。二重引用符の中の ` はコマンド置換として実行され、
+#   set -u のもとで "DryRun: unbound variable" になってハーネスが途中で止まる(実測)。
+apply_mutant 'M27 -not $DryRun(実運転側)を DryRun 分岐と誤認する' KILLED "$LIB" \
   '                ($condText.IndexOf('"'"'-not'"'"', [System.StringComparison]::OrdinalIgnoreCase) -lt 0)) {' \
   '                ($true)) {'
 apply_mutant "M28 アンカー 1 本(プリフライト判定)を一覧から落とす" KILLED "$LIB" \

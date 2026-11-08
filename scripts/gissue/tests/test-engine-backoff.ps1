@@ -226,29 +226,43 @@ try {
 # この lib を書いても呼ばれていなければ意味が無い。ソースに対して配線を直接 pin する。
 $runner = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '../run-gissue-claude.ps1')).Path
 $src = Get-Content -LiteralPath $runner -Raw -Encoding UTF8
+
+# [giip 4806] ⚠ 同じ判定文が **DryRun 分岐にも在る**（giip 4806 が `-DryRun` にも実運転と同じ
+#   ゲートを通したため。DryRun は LLM を 1 本も起動せずに効きを測る唯一の経路なので必要）。
+#   全文に対して当てると **DryRun 側の写しに当たり、実運転側を消しても通ってしまう**
+#   (実測: NC M24〜M27 が BROKEN/SURVIVED になった)。
+#   → 以下の配線 pin は **実運転の区間**（per-CSN ワーカージョブの開始以降）に限って当てる。
+#   区間アンカーが消えたら測定不能として FAIL する（測り手不在で緑にしない）。
+$realRegionAnchor = '$job = Start-Job -ScriptBlock {'
+$realStart = $src.IndexOf($realRegionAnchor)
+if ($realStart -lt 0) {
+    Write-Output "[FAIL] 実運転区間のアンカーが見つからない: $realRegionAnchor"
+    exit 1
+}
+$srcReal = $src.Substring($realStart)
 # ⚠ 「ファイル名がソースのどこかに在るか」で見てはいけない — すぐ上の自分のコメントにも同じ文字列が
 #   あるので、닷소싱 行を消しても通ってしまう(giip 4804 の NC で実際に生き残った型:
 #   [[substring-anywhere-is-not-an-anchor]] / [[self-search-hits-its-own-literal]])。
 #   だから **닷소싱の実行文そのもの**をアンカーにする。
 $dotSourceBackoff = ". (Join-Path `$root 'lib/engine-backoff.ps1')"
-Check 'f1 러너が lib を닷소싱している(実行文)' ($src.Contains($dotSourceBackoff)) ''
+Check 'f1 러너が lib を닷소싱している(実行文)' ($srcReal.Contains($dotSourceBackoff)) ''
 # ⚠ 関数名の前方一致で見てはいけない — `Test-GissueBackoffActiveLater` のような改名を素通りする
 #   ([[substring-match-on-numbered-ids-needs-a-boundary]] と同型)。呼び出し式ごと pin する。
 $callGate = '$tickBackoff = Test-GissueBackoffActive $backoffStateFile'
-Check 'f2 ティックゲートが配線されている'    ($src.Contains($callGate)) ''
+Check 'f2 ティックゲートが配線されている'    ($srcReal.Contains($callGate)) ''
 # ゲートの結果が実際に使われているか。判定だけして捨てる改変を通さない。
-Check 'f2b ゲートの結果が使われている'       ($src.Contains('$engineBlockedThisTick = [bool]$tickBackoff.Active')) ''
+Check 'f2b ゲートの結果が使われている'       ($srcReal.Contains('$engineBlockedThisTick = [bool]$tickBackoff.Active')) ''
 # ⚠ 検知の呼び出しは **2 箇所**ある(REPO-MAINT / per-issue)。片方だけ pin すると
 #   もう片方を外しても通る([[every-table-column-needs-its-own-pin]])。両方を別々に pin する。
-Check 'f3 REPO-MAINT 出力の検知が配線されている' ($src.Contains('$boRepo = Set-GissueBackoffFromOutput $backoffStateFile')) ''
-Check 'f3b per-issue 出力の検知が配線されている' ($src.Contains('$boIssue = Set-GissueBackoffFromOutput $backoffStateFile')) ''
+Check 'f3 REPO-MAINT 出力の検知が配線されている' ($srcReal.Contains('$boRepo = Set-GissueBackoffFromOutput $backoffStateFile')) ''
+Check 'f3b per-issue 出力の検知が配線されている' ($srcReal.Contains('$boIssue = Set-GissueBackoffFromOutput $backoffStateFile')) ''
 # ゲートは REPO-MAINT の Start-Job より前になければ意味が無い(起動してから見ても遅い)。
-$idxGate = $src.IndexOf($callGate)
-$idxRepoMaintSpawn = $src.IndexOf('$repoMaintJob = Start-Job')
+$idxGate = $srcReal.IndexOf($callGate)
+$idxRepoMaintSpawn = $srcReal.IndexOf('$repoMaintJob = Start-Job')
 Check 'f4 ゲートが REPO-MAINT spawn より前'  (($idxGate -ge 0) -and ($idxRepoMaintSpawn -ge 0) -and ($idxGate -lt $idxRepoMaintSpawn)) "gate=$idxGate spawn=$idxRepoMaintSpawn"
 # イシュー順回でもティック内で止まること(= 1 ティックで全件空振りしない)。
-Check 'f5 イシュー順回の中断が配線されている' ($src -match 'BACKOFF-BREAK') ''
-Check 'f5b 中断が実際に break している'       ($src.Contains('[BACKOFF-BREAK]') -and ($src.IndexOf('[BACKOFF-BREAK]') -lt $src.IndexOf('if ((Get-Date) -gt $issueLoopDeadline)'))) ''
+Check 'f5 イシュー順回の中断が配線されている' ($srcReal -match 'BACKOFF-BREAK') ''
+Check 'f5b 中断が実際に break している'       ($srcReal.Contains('[BACKOFF-BREAK]') -and ($srcReal.IndexOf('[BACKOFF-BREAK]') -lt $srcReal.IndexOf('if ((Get-Date) -gt $issueLoopDeadline)'))) ''
 
 if ($fail -gt 0) { Write-Output "FAILED: $fail"; exit 1 }
 Write-Output 'ALL PASS'
