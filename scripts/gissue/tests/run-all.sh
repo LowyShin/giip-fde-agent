@@ -1,15 +1,19 @@
 #!/usr/bin/env bash
 # [giip 4805] gissue スケジューラのガードを 1 本の入口から全部走らせる。
 #
-# なぜ必要か: このレポには pre-push フックも CI も無い(2026-11-08 時点で `core.hooksPath` 未設定・
-#   .githooks なし・テストを参照する workflow なし)。テストと NC ハーネスは書いてあるのに
-#   **誰も自動で走らせない**ので、壊れても誰も気づかない = 「測り手不在で永久に緑」の process 版。
-#   フック基盤そのものを作るのは本タスクの範囲外(giip 4806 の判断事項)なので、ここでは
-#   「1 コマンドで全部走る」入口だけを用意する。commit/push 前に手で叩ける。
+# ⚠ [giip 4806 訂正] 初版のこのヘッダは「このレポには CI が無い」と書いていたが、**それは誤りだった**。
+#   `.github/workflows/repo-gates.yml` が PR と push(main) で `scripts/gissue/run-repo-gates.ps1`
+#   を実行しており、そこが **test-*.ps1 を自動発見する正本ゲート**である(2026-10-24 結線)。
+#   そのため初版は「判定の入口」を 2 本に増やしていた(= 同じ判定が 2 系統・rule 48 違反)。
+#   訂正後の役割分担:
+#     - test-*.ps1 / test-*.mjs の実行は **run-repo-gates.ps1 に委譲**する(ローカル = CI と同じコード)
+#     - このスクリプトが足すのは、正本ゲートが拾わない **NC(当て直し)ハーネス `nc-*.sh`** だけ
+#   新しいテストを足すときは `run-repo-gates.ps1` の `$ExpectedPs1TestCount` を上げる
+#   （判定は `-lt` なので「多い」側は黙って通る = 床が下がったことに誰も気づかない）。
 #
 # 使い方:
-#   bash scripts/gissue/tests/run-all.sh          # 構文 + 単体テスト（速い・数十秒）
-#   bash scripts/gissue/tests/run-all.sh --nc     # 上記 + NC(当て直し)ハーネス（遅い・20分前後）
+#   bash scripts/gissue/tests/run-all.sh          # 正本ゲート全部（構文 + test-*.ps1/mjs + リンク）
+#   bash scripts/gissue/tests/run-all.sh --nc     # 上記 + NC(当て直し)ハーネス（遅い・30分前後）
 #
 # 失敗したら非 0 で終わる。どれが落ちたかを最後にまとめて出す。
 set -u
@@ -24,25 +28,20 @@ step() {
   if "$@"; then echo "     OK"; else echo "     FAILED"; fails+=("$label"); fi
 }
 
-# [判定 1] 構文 + BOM。powershell -File は構文エラーでも 0 を返すことがあるので先に止める(giip #2429)。
-step '構文+BOM (check-ps1-parse.ps1)' \
-  pwsh -NoProfile -File "$PWD/scripts/gissue/check-ps1-parse.ps1" \
-    "$PWD/scripts/gissue/run-gissue-claude.ps1" \
-    "$PWD/scripts/gissue/lib/preflight-target.ps1" \
-    "$PWD/scripts/gissue/lib/engine-backoff.ps1" \
-    "$PWD/scripts/gissue/lib/h-recheck-watermark.ps1"
+# [判定 1] 正本ゲート。構文+BOM と test-*.ps1 / test-*.mjs の全数、マークダウン相対リンクまで
+#   ここが見る。**CI(repo-gates.yml)が呼ぶのと同一のスクリプト**なので、
+#   「ワークトリーで green ≠ main で green」(KNOW-005)が起きない。
+step '正本ゲート (run-repo-gates.ps1 — CI と同一)' \
+  pwsh -NoProfile -ExecutionPolicy Bypass -File "$PWD/scripts/gissue/run-repo-gates.ps1" -RepoRoot "$PWD"
 
-# [判定 2] 単体テスト。各ファイルは「러너への配線が実在するか」まで見る(書いても呼ばれて
-#   いなければ意味が無いため)。
-step 'プリフライト (giip 4804)' pwsh -NoProfile -ExecutionPolicy Bypass -File "$PWD/scripts/gissue/tests/test-preflight-target.ps1"
-step 'バックオフ (giip 4805)'   pwsh -NoProfile -ExecutionPolicy Bypass -File "$PWD/scripts/gissue/tests/test-engine-backoff.ps1"
-step '[H] 高水位マーク (giip 4805)' pwsh -NoProfile -ExecutionPolicy Bypass -File "$PWD/scripts/gissue/tests/test-h-recheck-watermark.ps1"
-
-# [判定 3] NC(当て直し)。**本体 PASS だけでは当て先が合っている保証にならない**ので、
-#   意図的な欠陥を入れてテストが必ず赤くなることを測る。先行(4804)は置き換えず併走させる。
+# [判定 2] NC(当て直し)。**本体 PASS だけでは当て先が合っている保証にならない**ので、
+#   意図的な欠陥を入れてテストが必ず赤くなることを測る。正本ゲートは `test-*.ps1` だけを
+#   自動発見するので、`nc-*.sh` はここでしか走らない（= このスクリプトが存在する唯一の理由）。
+#   先行(4804/4805)は置き換えず併走させる。被覆は合併で測る。
 if [ "$WITH_NC" = "1" ]; then
-  step 'NC プリフライト (giip 4804・併走)' bash "$PWD/scripts/gissue/tests/nc-preflight-target.sh"
-  step 'NC バックオフ/[H] (giip 4805)'     bash "$PWD/scripts/gissue/tests/nc-engine-backoff.sh"
+  step 'NC プリフライト (giip 4804・併走)'   bash "$PWD/scripts/gissue/tests/nc-preflight-target.sh"
+  step 'NC バックオフ/[H] (giip 4805・併走)' bash "$PWD/scripts/gissue/tests/nc-engine-backoff.sh"
+  step 'NC spawn ゲート順序 (giip 4806)'     bash "$PWD/scripts/gissue/tests/nc-spawn-gate-order.sh"
 else
   echo "──── NC ハーネスは未実行（--nc で実行。commit 前には必ず 1 回通すこと）"
 fi
