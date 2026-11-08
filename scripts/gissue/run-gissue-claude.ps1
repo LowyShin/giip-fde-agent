@@ -2692,6 +2692,12 @@ foreach ($csn in $map.PSObject.Properties.Name) {
         #   $root 는 scripts/gissue 루트(ArgumentList 첫 인자 $Root). 잡은 별도 프로세스라 여기서 닷소싱한다.
         . (Join-Path $root 'lib/gissue-stash-unblock-lib.ps1')
 
+        # [giip 4804] LLM 세션 기동 전 "처리 대상 0건" 판정(프리플라이트). 정본은 lib/preflight-target.ps1 —
+        #   판정 로직(P-1~P-5)과 포트(읽기 전용 gh/git/list-issues.js 호출)를 한 벌로 공유한다.
+        #   REPO-MAINT 세션은 지금까지 대상 유무를 보지 않고 매 틱 기동했고, 그 1회가 실측 중앙값
+        #   1,456,098 토큰이었다(.agent/metrics/scheduler-baseline-giip-4804.md, smartorder-works).
+        . (Join-Path $root 'lib/preflight-target.ps1')
+
         # [ENCODING][giip #1073] watchdog 코멘트 안전 등록 헬퍼 — giipfaw API 경유(DB 직접 접근 불필요).
         # watchdog note 들은 모두 한글을 포함한다. 커맨드라인 인자로 직접 넘기면 무인(headless) 실행
         # 체인에서 시스템 기본 코드페이지 파싱을 타서 mojibake 가 될 수 있다(giip #581 → #1030 재발,
@@ -3326,7 +3332,40 @@ foreach ($csn in $map.PSObject.Properties.Name) {
         # timebox giip #1565 와 동일 패턴). 캡 초과 시 Stop-Job 후 이슈 순회로 진행한다 — 정비는 멱등이라
         # 후속 이슈 등록 없이 note 만 남기고 다음 :07 이 이어서 수행한다. (Start-Job 은 부모 스코프의 함수를
         # 상속하지 않으므로 엔진 함수 본문을 -InitializationScript 로 명시 전달한다.)
-        Write-Output "[REPO-MAINT] CSN $csn 저장소 정비 세션 시작 (캡 ${repoMaintDeadlineMin}분)"
+        # [giip 4804] 프리플라이트 — [0]/[E]/[F]/[H] 의 대상 건수를 **LLM 없이** 먼저 센다.
+        #   프롬프트($BlockRepoMaint)는 네 규칙 모두 "대상이 하나도 없으면 조용히 건너뛴다"고 지시하는데,
+        #   그 '하나도 없음'의 확인 자체를 LLM 에게 시키고 있었다. 같은 판정은 gh/git/list-issues.js
+        #   읽기만으로 끝나므로 여기서 먼저 하고, 0건이면 세션을 아예 기동하지 않는다.
+        #   판정 불능(gh 401/네트워크/레이트리밋 등)은 0건으로 읽지 않고 **기동하는 쪽**으로 넘어간다(P-1/P-2).
+        # gh/git は正常系でも stderr に書くことがあり、$ErrorActionPreference='Stop' のままだと
+        # それが terminating error になって CSN 잡 전체가 죽는다(이 파일 L1865 의 실측과 같은 계열).
+        # 프리플라이트 구간만 Continue 로 낮추고, 예외는 전부 잡아 **기동하는 쪽**으로 폴백한다 —
+        # 削減のために入れた仕組みが、処理そのものを止める原因になってはいけない。
+        $preflightMeasure = $null
+        $prevEapPf = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            $preflightRepos = @(Select-GissuePreflightPrimaryRepos (Get-GissueGitRepoPaths $workdir))
+            $preflightMeasure = Measure-GissueRepoMaintTargets $preflightRepos @{
+                ListConflictingPrs      = { param($r) Get-GissuePreflightConflictingPrs $r }
+                ListFailingCiPrs        = { param($r) Get-GissuePreflightFailingCiPrs $r }
+                ListAutoUnblockStash    = { param($r) Get-GissuePreflightAutoUnblockStash $r }
+                ListRecentCommentIssues = { Get-GissuePreflightRecentCommentIssues $listIssuesScript $csn $accountsFile $apiBase 2 }
+            }
+        } catch {
+            # $preflightMeasure は $null のまま → Test-GissuePreflightShouldSpawn が
+            # preflight-unknown で Spawn=true を返す(P-2/P-4)。黙って skip はしない。
+            Write-Output "[PREFLIGHT][WARN] job=REPO-MAINT 프리플라이트 자체가 실패($($_.Exception.Message)) — 従来どおり起動する"
+        } finally {
+            $ErrorActionPreference = $prevEapPf
+        }
+        $preflightDecision = Test-GissuePreflightShouldSpawn $preflightMeasure 'REPO-MAINT'
+        foreach ($pl in @($preflightDecision.LogLines)) { Write-Output $pl }
+        if (-not $preflightDecision.Spawn) {
+            # 여기서 return 하면 이슈 순회(B/C)까지 건너뛴다 — 정비만 건너뛰고 아래로 계속 진행한다.
+            Write-Output "[REPO-MAINT] CSN $csn 정비 세션 미기동 (reason=$($preflightDecision.Reason)) — 이슈 순회로 진행"
+        } else {
+        Write-Output "[REPO-MAINT] CSN $csn 저장소 정비 세션 시작 (캡 ${repoMaintDeadlineMin}분, preflight=$($preflightDecision.Reason) count=$($preflightMeasure.Total))"
         $repoMaintInit = [scriptblock]::Create(@"
 function Invoke-GissueMinimaxAttempt {
 ${function:Invoke-GissueMinimaxAttempt}
@@ -3360,6 +3399,7 @@ ${function:Invoke-GissueEngine}
         } finally {
             Remove-Job $repoMaintJob -Force -ErrorAction SilentlyContinue
         }
+        }   # [giip 4804] preflight Spawn 분기 끝
 
         # ── REVIEW/TESTED 재검증 쿨다운(2026-09-04, 사용자 지시: "재검증 주기를 줄인다") ──────────────
         # 최신 코멘트 author 가 아래 봇/게이트 자신 목록에 있으면(=사람의 새 신호 없음), 마지막으로 claude 로
