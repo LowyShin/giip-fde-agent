@@ -2698,6 +2698,18 @@ foreach ($csn in $map.PSObject.Properties.Name) {
         #   1,456,098 토큰이었다(.agent/metrics/scheduler-baseline-giip-4804.md, smartorder-works).
         . (Join-Path $root 'lib/preflight-target.ps1')
 
+        # [giip 4805] エンジンの「0トークン即死」検知とバックオフ。正本は lib/engine-backoff.ps1 —
+        #   上限到達(월/주/세션)・未ログインのとき `claude -p` は何もせず 1 行だけ出して即死するが、
+        #   러너はそれを見ていなかった。実測で **3,709 セッション中 1,338 本(36.1%)が 0 トークン即死**
+        #   (LIMIT_WEEKLY 1,080 / NOT_LOGGED_IN 248)。1 ティックでキュー全件を空振りさせ、20 分後に
+        #   また全件空振りさせていた(.agent/metrics/scheduler-baseline-giip-4804.md, smartorder-works)。
+        . (Join-Path $root 'lib/engine-backoff.ps1')
+
+        # [giip 4805] [H] 최근 코멘트 재검증の高水位マーク。正本は lib/h-recheck-watermark.ps1 —
+        #   [H] は固定 2 時間窓を 20 分ごとに見ていたので、同じコメントを約 6 回再検証していた。
+        #   判断の中身は変えず、重複分だけを落とす(取りこぼしが出ない設計の根拠は lib 冒頭)。
+        . (Join-Path $root 'lib/h-recheck-watermark.ps1')
+
         # [ENCODING][giip #1073] watchdog 코멘트 안전 등록 헬퍼 — giipfaw API 경유(DB 직접 접근 불필요).
         # watchdog note 들은 모두 한글을 포함한다. 커맨드라인 인자로 직접 넘기면 무인(headless) 실행
         # 체인에서 시스템 기본 코드페이지 파싱을 타서 mojibake 가 될 수 있다(giip #581 → #1030 재발,
@@ -3341,6 +3353,36 @@ foreach ($csn in $map.PSObject.Properties.Name) {
         # それが terminating error になって CSN 잡 전체가 죽는다(이 파일 L1865 의 실측과 같은 계열).
         # 프리플라이트 구간만 Continue 로 낮추고, 예외는 전부 잡아 **기동하는 쪽**으로 폴백한다 —
         # 削減のために入れた仕組みが、処理そのものを止める原因になってはいけない。
+        # [giip 4805] ① ティック入口のバックオフゲート。前のティックで 0 トークン即死を検知していれば
+        #   期限まで **REPO-MAINT もイシュー順回も spawn しない**。ファイル読み取りだけ(ネットワーク 0)。
+        #   読めない/壊れている状態ファイルは「バックオフなし」に倒すが、必ず WARN を残す(B-5)。
+        $backoffStateFile = Get-GissueBackoffStatePath $logDir
+        $tickBackoff = Test-GissueBackoffActive $backoffStateFile ((Get-Date).ToUniversalTime()) 'REPO-MAINT'
+        foreach ($bl in @($tickBackoff.LogLines)) { Write-Output $bl }
+        $engineBlockedThisTick = [bool]$tickBackoff.Active
+        $engineBlockedKind = "$($tickBackoff.Kind)"
+
+        # [giip 4805] [H] の窓を「前回 [H] を実際に回した時刻から今まで」にする(高水位マーク)。
+        #   従来は **毎ティック 固定 2 時間窓**だった。ティックは 20 分間隔なので、同じコメントが
+        #   約 6 回続けて再検証される(結果は毎回同じ)。[H] は「コメントと実態の再検証」= LLM 判断が
+        #   必要な層で、本タスクの範囲外(削ってはいけない)。だから **判断の中身は一切変えず**、
+        #   同一コメントの重複再検証だけを落とす。マークは「REPO-MAINT セッションが実際に動いた」
+        #   ときだけ前進する(skip/即死では動かさない)ので、取りこぼしは原理的に生じない
+        #   — 回らなかった間は窓が伸び続け、次に回ったときまとめて拾う(上限なし)。
+        #   プロンプト [H] 規則 2「자기 자신 제외」も、これで機械的に満たされる。
+        $hWatermarkFile = Get-GissueHWatermarkPath $logDir
+        $hWindow = Resolve-GissueHRecheckHoursBack $hWatermarkFile $csn ((Get-Date).ToUniversalTime()) 2
+        foreach ($hl in @($hWindow.LogLines)) { Write-Output $hl }
+
+        # [giip 4805] バックオフ中はプリフライト(gh/git/list-issues の読み取り)も走らせない —
+        #   起動しないと既に決まっているので、読み取りだけ無駄に走らせる理由がない。
+        #   ※ 下の else 側は giip 4804 の構造をそのまま保つ(先行ガード h9 が
+        #     「`$preflightMeasure = $null` の直後に EAP を下げて try/catch に入る」を pin している。
+        #      削減装置が処理を止める原因にならないための契約なので、間に行を挟まない)。
+        $preflightDecision = $null
+        if ($engineBlockedThisTick) {
+            $preflightDecision = @{ Spawn = $false; Reason = "backoff:$engineBlockedKind"; LogLines = @() }
+        } else {
         $preflightMeasure = $null
         $prevEapPf = $ErrorActionPreference
         $ErrorActionPreference = 'Continue'
@@ -3350,7 +3392,7 @@ foreach ($csn in $map.PSObject.Properties.Name) {
                 ListConflictingPrs      = { param($r) Get-GissuePreflightConflictingPrs $r }
                 ListFailingCiPrs        = { param($r) Get-GissuePreflightFailingCiPrs $r }
                 ListAutoUnblockStash    = { param($r) Get-GissuePreflightAutoUnblockStash $r }
-                ListRecentCommentIssues = { Get-GissuePreflightRecentCommentIssues $listIssuesScript $csn $accountsFile $apiBase 2 }
+                ListRecentCommentIssues = { Get-GissuePreflightRecentCommentIssues $listIssuesScript $csn $accountsFile $apiBase $hWindow.HoursBack }
             }
         } catch {
             # $preflightMeasure は $null のまま → Test-GissuePreflightShouldSpawn が
@@ -3361,6 +3403,7 @@ foreach ($csn in $map.PSObject.Properties.Name) {
         }
         $preflightDecision = Test-GissuePreflightShouldSpawn $preflightMeasure 'REPO-MAINT'
         foreach ($pl in @($preflightDecision.LogLines)) { Write-Output $pl }
+        }
         if (-not $preflightDecision.Spawn) {
             # 여기서 return 하면 이슈 순회(B/C)까지 건너뛴다 — 정비만 건너뛰고 아래로 계속 진행한다.
             Write-Output "[REPO-MAINT] CSN $csn 정비 세션 미기동 (reason=$($preflightDecision.Reason)) — 이슈 순회로 진행"
@@ -3381,6 +3424,10 @@ ${function:Invoke-GissueEngine}
             Invoke-GissueEngine -PromptText $promptTextInner -ForceClaude:$false -IssueContextLine '' -ForceReason '' `
                 -Root $rootInner -Model $modelInner -MinimaxApiKey $minimaxApiKeyInner -MinimaxModel $minimaxModelInner -MinimaxBaseUrl $minimaxBaseUrlInner -MinimaxContextTokens $minimaxContextTokensInner
         } -ArgumentList $repoMaintenancePrompt, $agentRepo, $model, $minimaxApiKey, $minimaxModel, $minimaxBaseUrl, $minimaxContextTokens
+        # [giip 4805] [H] の高水位マークに使う刻印は **セッション開始時刻**。終了時刻にすると、
+        #   セッション中(最大 ${repoMaintDeadlineMin}分)に付いたコメントが次の窓から外れて永久に
+        #   再検証されない。開始時刻なら最悪もう一度見るだけで、取りこぼしは起きない。
+        $repoMaintStartedAtUtc = (Get-Date).ToUniversalTime()
         try {
             $repoMaintWait = Invoke-GissueCappedJobWait $repoMaintDeadlineMin $issueEnginePollMin @{
                 IsRunning = { $repoMaintJob.State -eq 'Running' }
@@ -3392,7 +3439,27 @@ ${function:Invoke-GissueEngine}
                 Write-Output "[REPO-MAINT] CSN $csn 정비 세션이 ${repoMaintDeadlineMin}분 캡 초과 — 강제 정리 후 이슈 순회로 진행 (멱등, 다음 :07 이 이어서 수행)"
                 Stop-Job $repoMaintJob -ErrorAction SilentlyContinue
             } else {
-                try { Receive-Job $repoMaintJob } catch { Write-Output "[WARN] 저장소 정비 세션 출력 회수 오류($($_.Exception.Message)) — 이슈별 처리는 계속 진행" }
+                try {
+                    # [giip 4805] ② 出力を受けたら 0 トークン即死かを見る。従来は素通しで、
+                    #   上限到達の 1 行を出して死んでもそのままイシュー順回へ進んでいた。
+                    $repoMaintOut = @(Receive-Job $repoMaintJob)
+                    $repoMaintOut
+                    $boRepo = Set-GissueBackoffFromOutput $backoffStateFile ($repoMaintOut | Out-String) ((Get-Date).ToUniversalTime()) 'REPO-MAINT'
+                    foreach ($bl in @($boRepo.LogLines)) { Write-Output $bl }
+                    if ($boRepo.Blocked) {
+                        $engineBlockedThisTick = $true
+                        $engineBlockedKind = "$($boRepo.Kind)"
+                    } else {
+                        # [giip 4805] ここだけがマークを前進させる唯一の場所(W-5)。
+                        #   = 「プリフライトで skip した / 即死した / 캡 초과で止めた」ティックでは前進しない。
+                        #   だから回らなかった間の分は窓に残り続け、次に回ったときまとめて拾う。
+                        if (Set-GissueHWatermark $hWatermarkFile $csn $repoMaintStartedAtUtc) {
+                            Write-Output "[H-WINDOW] 高水位マークを $($repoMaintStartedAtUtc.ToString('o')) へ前進(csn=$csn)"
+                        } else {
+                            Write-Output "[H-WINDOW][WARN] 高水位マークを書けなかった — 次ティックも同じ窓で回る(重複再検証が残るだけで取りこぼしはない)"
+                        }
+                    }
+                } catch { Write-Output "[WARN] 저장소 정비 세션 출력 회수 오류($($_.Exception.Message)) — 이슈별 처리는 계속 진행" }
             }
         } catch {
             Write-Output "[WARN] 저장소 정비 세션 오류($($_.Exception.Message)) — 이슈별 처리는 계속 진행"
@@ -3405,6 +3472,11 @@ ${function:Invoke-GissueEngine}
         # 최신 코멘트 author 가 아래 봇/게이트 자신 목록에 있으면(=사람의 새 신호 없음), 마지막으로 claude 로
         # 강제 재검증한 시각으로부터 $reviewRecheckCooldownHours 시간이 지나지 않는 한 이번 실행은 건너뛴다.
         # 목록에 없는 author(실제 사람)는 즉시 진행 대상이다.
+        # ⚠ [giip 4805 실측] CSN 70418 에서 이 쿨다운은 **한 번도 발동하지 않는다**: GIIP 의
+        #   `last_comment_author` 는 봇/사람 구분 없이 전부 계정명 `lowyshin.giip` 이었다(899/899 건).
+        #   따라서 아래 목록의 어느 이름과도 일치하지 않아 $isBotAuthorOnly 가 항상 false 가 된다.
+        #   = REVIEW/TESTED 재검증이 쿨다운 없이 매 틱 돌고 있다. 이 목록을 손대도 고쳐지지 않으므로
+        #   (판정 재료 자체가 없다) 본 태스크에서는 **변경하지 않고** 별건으로 보고한다(결과 리포트 F-1).
         $reviewRecheckBotAuthors = @(
             'gissue-agent', 'gissue-review-audit', 'gissue-scope-gate', 'gissue-comment-gate',
             'gissue-scheduler-watchdog', 'gissue-scheduler-wrapper', 'Workflow Orchestrator',
@@ -3529,6 +3601,14 @@ ${function:Invoke-GissueEngine}
         $loopStartTime = Get-Date
         for ($qi = 0; $qi -lt $issueQueue.Count; $qi++) {
             $issue = $issueQueue[$qi]
+            # [giip 4805] ③ ティック内の中断。エンジンが 0 トークン即死している状態で残りのキューを
+            #   spawn し続けるのが、1 ティックで全件空振りしていた実測そのもの(ログに
+            #   「You've hit your weekly limit」が isn ごとに並んでいた)。1 本目で止める。
+            if ($engineBlockedThisTick) {
+                $blockedList = ($issueQueue[$qi..($issueQueue.Count - 1)].ForEach({ $_.Isn }) -join ',')
+                Write-Output "[BACKOFF-BREAK] 엔진 0 토큰 즉사(kind=$engineBlockedKind) — 이번 틱의 남은 $($issueQueue.Count - $qi)건은 기동하지 않는다: isn=$blockedList"
+                break
+            }
             if ((Get-Date) -gt $issueLoopDeadline) {
                 # [giip #3557] 회차 로그에 미처리 isn 목록을 한 줄로 기록 (코멘트 누적 제거)
                 $skippedList = ($issueQueue[$qi..($issueQueue.Count - 1)].ForEach({ $_.Isn }) -join ',')
@@ -3700,7 +3780,13 @@ ${function:Invoke-GissueEngine}
             } else {
                 # 정상 케이스(캡 이내 완료) — 출력 회수 후 잡 정리.
                 try {
-                    Receive-Job $innerJob
+                    # [giip 4805] ② 出力を受けたら 0 トークン即死かを見る。Blocked なら次の周回先頭(③)で
+                    #   残りのキューを spawn せずに break する。働いた場合は状態をクリアする(B-7)。
+                    $issueOut = @(Receive-Job $innerJob)
+                    $issueOut
+                    $boIssue = Set-GissueBackoffFromOutput $backoffStateFile ($issueOut | Out-String) ((Get-Date).ToUniversalTime()) "ISSUE:$($issue.Isn)"
+                    foreach ($bl in @($boIssue.LogLines)) { Write-Output $bl }
+                    if ($boIssue.Blocked) { $engineBlockedThisTick = $true; $engineBlockedKind = "$($boIssue.Kind)" }
                 } catch {
                     Write-Output "[WARN] isn=$($issue.Isn) 처리 세션 오류($($_.Exception.Message)) — 다음 이슈로 진행"
                 }
