@@ -6,9 +6,12 @@
 >
 > *(EN/JP 독자는 각 항목을 AI 에이전트에 번역 요청하세요. / Ask your AI assistant to translate entries.)*
 
-**기준일 (as of): 2026-11-06**
+**기준일 (as of): 2026-11-10**
 
 ---
+
+## 2026-11-10
+- **gissue 러너 프롬프트에 코멘트 `--role` 전달 지시 추가 (giip 4505)** — `scripts/gissue/run-gissue-claude.ps1`의 공통 블록 2(조회·쓰기 도구)와 공통 블록 3(진행 코멘트 프로토콜)에, 코멘트 등록 시 `get-issue.sh --role "<이 세션이 로드한 role 파일 경로>"`를 함께 넘겨 구조화 필드 loadedRole에도 기록하라는 지시를 추가했다. 배관(`get-issue.sh --role` → `lib/post-comment.js` → `giipIssueCommentsV2` 엔드포인트, giip 1324)은 기존부터 완성돼 있었으나 러너 프롬프트 어디에도 `--role` 언급이 없어, 이 러너의 세션 코멘트는 본문에 role을 적어도 loadedRole가 비어 admin 배지가 회색 ?로 표시됐다. role을 로드하지 않은 작업에서는 `--role` 자체를 생략하도록 명시했다(없는 role을 지어내지 않음).
 
 ## 2026-11-06
 - **규칙 57 신설 — 작업 종료 시 worktree·작업 브랜치 정리 의무화 (giip 4699, CSN 70424)** — 에이전트 작업들이 만든 git worktree 를 종료 시 제거하지 않아 호스트 디스크 용량이 폭발한 사고의 재발 방지(사용자 직접 지시). 정본 [`.agent/rules/57_worktree_cleanup_on_completion.md`](../.agent/rules/57_worktree_cleanup_on_completion.md): 모든 에이전트 작업은 종료 확정(머지 · 종료 확인) 시점에 자기 worktree 를 `git worktree remove` 로 제거하고 작업 브랜치를 삭제한다 / 미커밋 변경이 있으면 삭제하지 않고 보고한다 / gissue 스케줄러 worktree 도 태스크 종료 시 동일 적용. rule 47 의 "push 는 종료가 아니다" 를 종료 정의로 연결하고, rule 43 §4(하위 세션 임의 삭제 금지)와는 "정리는 작업 단위를 소유한 세션이 종료 확정 후 수행"으로 정합시켰다(43에 상호참조 추가, 41 색인 · GEMINI 목록 · AI_MUST_READ 체크리스트 1번 갱신). → [작업 기록](../.agent/work_history/20261106_1746_csn70424_worktree-cleanup-rule.md)
