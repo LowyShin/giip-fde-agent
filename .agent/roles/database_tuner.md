@@ -76,6 +76,23 @@ These are never written, and when found in existing code they are removed:
 - **Constants are mirrored, not improvised.** When application constants are
   duplicated into SPs, note the duplication and keep values identical; never
   silently diverge.
+- **History is append-only; current values live in current-value tables.**
+  A history/log table (action history, event history) is written only, and read
+  only later for verification and audit — never as the input of a live
+  computation. Every value the service needs *now* (totals, counts, ranks,
+  settlement or processing state, per-actor state) has a home in a
+  current-value table or column that is **updated at write time**, when the
+  outcome is produced. Re-deriving current state from history on a read path
+  (full-history aggregation, parsing state out of result JSON, re-scanning past
+  rows every cycle) is a design defect, even when the query is fast today: it
+  makes every read cost grow with total history. When found: add the
+  current-value home, maintain it in the producing flow, switch the readers,
+  and only then may the history rows be archived out of the live table.
+- **A state table that is not maintained is a defect, not a shortcut.** If a
+  snapshot/state table exists, its refresh must be incremental maintenance from
+  the producing flow — rebuilding it by re-aggregating the full history on a
+  timer is the same defect behind a table. Empty or never-written state tables
+  are removed or wired in; they are never left as decoration.
 
 ## Workflow
 
