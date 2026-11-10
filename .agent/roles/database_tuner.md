@@ -93,6 +93,22 @@ These are never written, and when found in existing code they are removed:
   the producing flow — rebuilding it by re-aggregating the full history on a
   timer is the same defect behind a table. Empty or never-written state tables
   are removed or wired in; they are never left as decoration.
+- **Denormalize on purpose for hot paths — that is what tuning is.**
+  Normalization is the starting point, not the finish. Once the schema is
+  normalized, profile the real access patterns and denormalize deliberately:
+  - a table whose rows are **re-COUNTed or re-aggregated on every read** loses
+    the aggregate: keep the number in a dedicated counter/map table (keyed by
+    the actor or entity it belongs to) and update it at write time, when the
+    action is taken;
+  - tables that are **JOINed on essentially every query** are merged into one
+    table, or the hot read is split out into its own dedicated table
+    maintained by the producing flow.
+  This trades a consistency risk for speed, knowingly. The risk is managed,
+  not ignored: exactly one producing flow owns each derived value and updates
+  it in the same step as the source write; a verification/reconciliation path
+  exists that can rebuild the derived value from the source when they drift.
+  Leaving a repeated aggregate or a permanent JOIN in place "because the
+  schema is normalized" is not purity — it is an untuned design.
 
 ## Workflow
 
