@@ -11,12 +11,34 @@ REPO_BRANCH="${REPO_BRANCH:-main}"
 # 볼륨의 repo 는 스케줄러 사용자(dev) 소유로 회수되므로(fix-root-owned.sh) root 로 도는 entrypoint 의 git 이 재기동 때
 # "detected dubious ownership" 으로 실패해 컨테이너가 Restarting(128) 루프에 빠진다. root 전용 전역 설정이다.
 git config --global --add safe.directory '*' || true
+
+# >>> safe_update_repo
+# safe_update_repo <dir> <branch> <label>
+# fetch/checkout/merge --ff-only 를 set -e 로부터 보호한다. 볼륨 repo 에 커밋 안 된 추적 파일 변경이 있어
+# merge 가 중단되거나(dxsmo 217회 재시작) remote-tracking ref 가 깨져 있어도(caci-aqchat) entrypoint 가
+# 죽지 않고 현재 체크아웃으로 계속한다. reset/clean/stash/checkout -f/삭제는 절대 하지 않는다(로컬 작업 보존).
+safe_update_repo() {
+  local dir="$1" branch="$2" label="$3" step=""
+  if   ! git -C "$dir" fetch origin "$branch";          then step="fetch"
+  elif ! git -C "$dir" checkout "$branch";              then step="checkout"
+  elif ! git -C "$dir" merge --ff-only "origin/$branch"; then step="merge --ff-only"
+  fi
+  if [ -z "$step" ]; then
+    echo "[entrypoint] pulled latest ($(git -C "$dir" rev-parse --short HEAD))"
+  else
+    {
+      echo "[entrypoint] WARN: $label update failed at step '$step' ($dir, branch $branch)"
+      echo "[entrypoint] WARN: git status --short (first 10 lines):"
+      git -C "$dir" status --short 2>&1 | head -n 10 || true
+      echo "[entrypoint] WARN: continuing with the current checkout (HEAD=$(git -C "$dir" rev-parse --short HEAD 2>/dev/null || echo unknown)) — local changes were NOT touched"
+    } >&2
+  fi
+  return 0
+}
+# <<< safe_update_repo
 echo "[entrypoint] repo: $REPO_URL ($REPO_BRANCH) -> $REPO_DIR"
 if [ -d "$REPO_DIR/.git" ]; then
-  git -C "$REPO_DIR" fetch origin "$REPO_BRANCH"
-  git -C "$REPO_DIR" checkout "$REPO_BRANCH"
-  git -C "$REPO_DIR" merge --ff-only "origin/$REPO_BRANCH"
-  echo "[entrypoint] pulled latest ($(git -C "$REPO_DIR" rev-parse --short HEAD))"
+  safe_update_repo "$REPO_DIR" "$REPO_BRANCH" "fde repo"
 else
   git clone --branch "$REPO_BRANCH" "$REPO_URL" "$REPO_DIR"
   echo "[entrypoint] cloned ($(git -C "$REPO_DIR" rev-parse --short HEAD))"
@@ -268,9 +290,7 @@ if [ "${GIIP_ENABLE_AGENT:-true}" = "true" ] && [ -n "$AGENT_SK" ]; then
 
   echo "[entrypoint] giip agent: $GIIP_AGENT_URL -> $GIIP_AGENT_DIR"
   if [ -d "$GIIP_AGENT_DIR/.git" ]; then
-    git -C "$GIIP_AGENT_DIR" fetch origin main
-    git -C "$GIIP_AGENT_DIR" checkout main
-    git -C "$GIIP_AGENT_DIR" merge --ff-only origin/main
+    safe_update_repo "$GIIP_AGENT_DIR" main "giipAgentLinux"
   else
     # giip #2855 T2: .git 이 없는데 디렉터리가 비어있지 않게 남아 있으면 `git clone` 이
     # "destination path ... already exists and is not an empty directory" 로 거부하고, 5행
