@@ -850,6 +850,54 @@ Shadow 가 쌓이지 않던 원인(수정됨): `review-done-audit.ps1` 은 `pr-g
 
 회귀 테스트: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\tests\test-checklist-shadow-reduce.ps1` (캐시 적중/미적중, 입력 변경 시 재호출, TTL·틱·시간당 상한, 실패 백오프, 끄기, Live 불변, 동시 쓰기).
 
+## 13-3-1) 증거 기반 PR 귀속 + 되돌림 게이트 (giip #4840/#4839)
+
+"대응 PR 없음" REVIEW→READY 되돌림이 27건 이상 누적된 사고의 근본 수정입니다.
+
+### 근본 원인 (두 가지가 섞여 있었다)
+
+| 원인 | 내용 | 조치 |
+|---|---|---|
+| (a) 귀속 실패 | PR 탐색면이 **기대 head 브랜치(`bot/task-giip-<isn>`) 1개**에 묶여 있었다. 레포 목록 밖(제품 레포·다른 프로젝트 레포), 비규약 브랜치(`docs/giip-4219-…`), 수동 PR, 커밋 메시지에만 isn 이 있는 PR 을 전부 "PR 없음"으로 오판. | **증거 4면 탐색**(아래) |
+| (b) 판정 실패 | PR 귀속은 맞는데 **진행 코멘트 형식 같은 사소한 사유**로 되돌려짐(giip #4839). | **체크리스트 게이트**(아래) |
+
+### 증거 4면 탐색 (정본: `lib/pr-lookup.mjs`)
+
+| 면 | 탐색 | 비고 |
+|---|---|---|
+| 브랜치명 | 규약 브랜치(`head:bot/task-giip-<isn>`, 조직 전 1회) + 레포 브랜치 열거(`gh api …/branches`) → isn 을 담은 브랜치 → `gh pr list --head` | **GitHub 검색은 브랜치명을 색인하지 않는다**(2026-11-11 실측) — 직접 열거해야 잡힌다 |
+| PR 제목/본문 | `gh search prs --owner <org>` (조직 전 레포) | `prMatchesIsn` 로 재필터(본문 폴백은 "담당 이슈를 선언하지 않은 PR" 한정) |
+| 커밋 메시지 | `gh search commits --owner <org>` → 커밋에 딸린 PR | 다른 이슈를 선언한 PR 은 참조로 보고 제외 |
+| 이슈 코멘트의 PR 링크 | `Get-PrLinksFromText` + `Get-ValidatedPrLinks` | 기존 경로 유지 |
+
+조직 목록은 레포 origin 에서 유도하고 `GISSUE_GH_ORGS` 로 보강할 수 있습니다. **조직의 모든 브랜치를 열거하지는 않습니다**(LowyShin 조직은 272개 레포 — 무한대 비용). 비용 가드: 로컬 후보가 **이 isn 을 선언한** PR 이면 조직 전 탐색을 건너뜁니다(비용 0).
+
+### 되돌림 게이트
+
+되돌림(REVERT)을 구룰이 **제안**하면, 되돌리기 전에 의뢰 체크리스트 판정을 수행하고 **미충족(UNFULFILLED)일 때만** 되돌립니다.
+
+| 판정 | 동작 |
+|---|---|
+| 판정 실패 / 파싱 실패 | **전이 없음** — 근거 없이 되돌리지 않는다 |
+| KEEP(전 항목 충족) | 되돌리지 않음(코멘트도 남기지 않음 — 틱마다 쌓이지 않게) |
+| HOLD(근거 부족) | 보류. 필요한 증거 코멘트 1회만 |
+| REVERT(미충족 있음) | **체크리스트 코멘트(`## 의뢰 체크리스트 판정`)를 먼저** 남기고 READY 전이 |
+| 캡 초과 / 동일 미충족 반복 | 자동 되돌림 중단 + NEEDS_DECISION |
+
+### 모드
+
+`-PrGateMode Gated|Shadow|Legacy` (미지정이면 환경변수 `GISSUE_PR_GATE_MODE`, 그것도 없으면 **Gated**).
+
+| 모드 | 귀속 | 되돌림 결정 |
+|---|---|---|
+| Gated(기본) | 증거 기반 | 체크리스트 게이트(UNFULFILLED 일 때만) |
+| Shadow | 증거 기반 | 구룰이 결정(즉시 되돌림) + 신룰 결론만 기록(비교용) |
+| Legacy | 증거 기반 | 구룰이 결정, 기록 없음 |
+
+**비교 가능성**: Gated/Shadow 모두 구룰 결론(`legacy`)과 신룰 결론(`checklist`)을 `logs/checklist-shadow.jsonl` 에 **같은 스키마**로 남깁니다 → `compare-checklist-vs-legacy.ps1` 로 두 경로를 직접 비교할 수 있습니다.
+
+> `-ChecklistMode Live`(기존 스위치)는 REVIEW 판정 전체를 체크리스트로 대체하는 경로로 그대로 유지됩니다.
+
 ## 13-4) 게이트 디바운스 — 작업 세션이 방금 움직인 이슈는 한 틱 미룬다 (giip 4300)
 
 **문제**: 3회 누적 에스컬레이션(전 게이트 합산 캡, giip #2085/#2415)이 이슈가 실제로 작업 중이던 구간의 체크에도 가산돼,

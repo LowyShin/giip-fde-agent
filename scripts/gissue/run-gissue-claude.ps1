@@ -771,6 +771,10 @@ $CommonToolsBlock = @'
     - 목록 조회:  node "{GISSUE_TOOLS}\list-issues.js" --csn {CSN} --status <STATUS[,STATUS...]> [--min-age-minutes <N>] [--hours-back <N>] [--json]
     - 단건 조회:  bash "{GISSUE_TOOLS}/get-issue.sh" <isn> {CSN}
     - 코멘트:     bash "{GISSUE_TOOLS}/get-issue.sh" <isn> {CSN} --comment-file "<UTF-8 파일 경로>"
+    - 코멘트 role 기록: 코멘트 호출에 --role "<이 세션이 로드한 role 파일 경로(.agent/roles/<키>.md)>"
+      를 함께 넘겨야 구조화 필드 loadedRole 에도 기록된다(giip #1324). 본문에 role 을 적는 것과는
+      별개이며, --role 을 안 넘기면 loadedRole 가 비어 admin 배지가 회색 ? 로 표시된다(giip #4505).
+      role 을 로드하지 않은 작업이면 --role 자체를 생략한다(없는 role 을 지어내지 말 것).
     - 상태 전이:  bash "{GISSUE_TOOLS}/get-issue.sh" <isn> {CSN} --status <STATUS>
     - 코멘트+전이를 한 호출로:  ... --comment-file "<경로>" --status <STATUS>
     - 잘못 올린 코멘트 삭제:    ... --delete-comment <cSn>   (자기가 방금 올린 것만)
@@ -811,6 +815,9 @@ $CommonProgressProtocol = @'
     bash "{GISSUE_TOOLS}/get-issue.sh" <이슈번호> {CSN} --comment-file "<본문을 저장한 UTF-8 파일 경로>"
     (짧은 순수 ASCII 메시지에 한해 --comment "<본문>" 직접 전달도 가능 — 한글에는 쓰지 말 것.
      상태 변경은 --status <STATUS> 로 분리해서 넘기거나 같은 호출에 결합한다.)
+  코멘트를 등록할 때는 위 호출에 --role "<이 세션이 실제로 로드한 role 파일 경로>" 도 함께 넘긴다
+  (위 6번 항목의 본문 role 표기와 별개로, 구조화 필드 loadedRole 기록용 — giip #1324/#4505).
+  상태 전이를 --status 로 같은 호출에 결합하는 경우도 동일하다. role 을 로드하지 않은 작업이면 생략한다.
   (giip #1073) 이 경로는 코멘트 등록 직후 즉시 재조회해 mojibake 여부를 자동 검증한다. 깨졌으면 방금
   올린 코멘트만 삭제하고 1회 재시도한 뒤, 그래도 깨지면 에러로 중단하니 무시하지 말고 사람에게 보고할 것.
   (giip #1053) CSN 불일치 자동 게이트가 내장돼 있다 — `<isn>` 의 실제 cSn 이 넘긴 `{CSN}` 과 다르면 API
