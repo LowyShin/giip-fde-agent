@@ -36,6 +36,18 @@ safe_update_repo() {
   return 0
 }
 # <<< safe_update_repo
+# >>> agent-cron-line
+# agent_cron_line <agent_dir>: giipAgentLinux cron 한 줄을 stdout 으로 낸다.
+# flock 이 있으면 /dev/shm(tmpfs) 잠금으로 단일 인스턴스 보장 — 이전 실행이 안 끝났으면 새 실행은 즉시 건너뛴다.
+# 잠금 파일은 /tmp 가 아니라 /dev/shm 이어야 한다(/tmp 디렉터리 스캔에서 막히는 사고 대응).
+agent_cron_line() {
+  if command -v flock >/dev/null 2>&1; then
+    echo "* * * * * root cd $1 && flock -n /dev/shm/giipAgent3.lock bash giipAgent3.sh >> $1/log/cron.log 2>&1"
+  else
+    echo "* * * * * root cd $1 && bash giipAgent3.sh >> $1/log/cron.log 2>&1"
+  fi
+}
+# <<< agent-cron-line
 echo "[entrypoint] repo: $REPO_URL ($REPO_BRANCH) -> $REPO_DIR"
 if [ -d "$REPO_DIR/.git" ]; then
   safe_update_repo "$REPO_DIR" "$REPO_BRANCH" "fde repo"
@@ -350,8 +362,13 @@ CNFEOF
     fi
   fi
 
-  echo "* * * * * root cd $GIIP_AGENT_DIR && bash giipAgent3.sh >> $GIIP_AGENT_DIR/log/cron.log 2>&1" > /etc/cron.d/giip-agent
+  agent_cron_line "$GIIP_AGENT_DIR" > /etc/cron.d/giip-agent
   chmod 0644 /etc/cron.d/giip-agent
+  if command -v flock >/dev/null 2>&1; then
+    echo "[entrypoint] giip-agent cron: single-instance guard (flock) on"
+  else
+    echo "[entrypoint] giip-agent cron: single-instance guard (flock) off"
+  fi
   echo "[entrypoint] registered giipAgentLinux cron (every 1 min)"
 
   # giip #2949: CQE (Command Queue Engine) poller — 같은 giipAgent Linux 환경 사용

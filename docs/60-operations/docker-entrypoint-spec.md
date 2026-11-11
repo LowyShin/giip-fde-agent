@@ -151,3 +151,13 @@ docker exec giip-fde-agent bash scripts/gissue/check-csn-consistency.sh   # 3개
 **검증**: `bash docker/tests/test-safe-update-repo.sh` 로 (a) clean + 신규 커밋 → 갱신, (b) 같은 파일을 로컬이 수정 → rc 0·WARN 출력·로컬 수정 바이트 동일·HEAD 불변, (c) 0바이트 remote-tracking ref → rc 0 을 임시 repo 에서 확인했다. 실제 컨테이너 기동으로는 검증하지 않았다.
 
 **적용 시점 주의**: entrypoint 는 이미지에 `/entrypoint.sh` 로 구워져 있으므로, 이 수정은 이미지를 재빌드하고 컨테이너를 재생성한 뒤에야 효력이 생긴다. 기존 컨테이너는 옛 entrypoint 를 계속 쓴다. WARN 이 뜬 repo 는 사람이 로컬 변경을 정리(커밋/폐기)해야 최신 코드로 올라온다.
+
+### 10.1 giipAgentLinux cron 단일 인스턴스 가드(`agent_cron_line`, 2026-11-11)
+
+**배경(인시던트)**: entrypoint 가 등록하는 `/etc/cron.d/giip-agent` 는 매분 `bash giipAgent3.sh` 를 실행한다. `lwweb02` 컨테이너에서 이 작업이 `/tmp` 읽기에서 막혀 끝나지 않았고, 매분 새 프로세스가 쌓여 D-state 프로세스가 2시간 45분 만에 6개에서 83개로 늘었으며 Docker VM 디스크가 포화되어 멈췄다. giipAgentLinux 저장소에는 스크립트 내부 단일 인스턴스 가드가 별도 변경으로 들어가지만, 컨테이너는 에이전트 저장소와 함께 재빌드되지 않으므로 cron 줄 자체도 안전해야 한다. 실행 중인 호스트에는 같은 줄을 임시로 직접 패치했고, entrypoint 가 매 기동마다 이 파일을 다시 쓰기 때문에 Windows 쪽 스크립트가 재적용하고 있다.
+
+**동작**: `docker/entrypoint.sh` 의 `agent_cron_line <agent_dir>`(`# >>> agent-cron-line` 마커 구간)가 `command -v flock` 로 flock 유무를 판단한다. 있으면 `* * * * * root cd <dir> && flock -n /dev/shm/giipAgent3.lock bash giipAgent3.sh >> <dir>/log/cron.log 2>&1`, 없으면 기존 줄을 `/etc/cron.d/giip-agent` 에 쓴다(`chmod 0644` 유지). 잠금 파일은 막힌 디렉터리 스캔이 있는 `/tmp` 가 아니라 tmpfs 인 `/dev/shm` 에 둔다. 기동 로그에 `[entrypoint] giip-agent cron: single-instance guard (flock) on|off` 가 한 줄 남는다. `giip-cqe`(`*/5`) 줄은 변경하지 않았다.
+
+**검증**: `bash docker/tests/test-agent-cron-line.sh` 가 flock 있음/없음(PATH 조작) 두 변형의 출력 줄을 단언한다. 실제 컨테이너 기동으로는 검증하지 않았다.
+
+**적용 시점 주의**: 이미지에 구워진 `/entrypoint.sh` 가 바뀌므로 이미지 재빌드와 컨테이너 재생성 후에야 효력이 생긴다. 그 전까지는 호스트 쪽 재적용 스크립트가 유지한다.
