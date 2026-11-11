@@ -27,6 +27,9 @@
  */
 import { spawnSync } from 'node:child_process';
 
+/** PR 상태 등급(정본). 0=가장 우선. */
+const STATE_RANK = { MERGED: 0, OPEN: 1, CLOSED: 2 };
+
 /** gh 호출 시 봇 PAT 이 아니라 gh 자체 로그인(SHINSEMA 조직 권한)을 쓰도록 토큰 env 를 제거한다. */
 function ghEnv() {
   const env = { ...process.env };
@@ -52,12 +55,46 @@ function parseRepoSpec(repoSpec) {
   return { cwd: s, extraArgs: [] };
 }
 
+/**
+ * gh 실행 주입점 — **테스트 전용**.
+ *
+ * 왜 필요한가: gh 를 진짜로 부르면 회귀 테스트가 네트워크·인증에 의존한다(PATH 에 가짜 gh 를 끼우면
+ * OS 별 동작이 달라 Windows CI 에서 깨진다 — 실측 2026-11-11). 그래서 gh 호출을 한 함수로 모으고
+ * 테스트가 그 자리를 갈아끼우게 한다. 프로덕션 경로는 그대로 spawnSync 다.
+ *
+ * 주입 함수 계약: (args: string[], cwd?: string) => { ok: boolean; rows: any[]; err?: string }
+ */
+let ghSpawn = null;
+
+/** 테스트에서만 쓰는 gh 주입기. null 을 넣으면 원래의 spawnSync 로 돌아간다. */
+export function setGhSpawn(fn) { ghSpawn = typeof fn === 'function' ? fn : null; }
+
+/** gh 를 실행해 JSON 행 배열로 돌려준다(성공/실패를 예외 대신 값으로 표현). */
+function execGh(args, cwd) {
+  if (ghSpawn) {
+    try {
+      const r = ghSpawn(args, cwd);
+      if (!r || typeof r !== 'object') return { ok: false, rows: [], err: 'no result' };
+      return { ok: r.ok !== false, rows: Array.isArray(r.rows) ? r.rows : [], err: r.err || '' };
+    } catch (e) {
+      return { ok: false, rows: [], err: (e && e.message ? e.message : String(e)).slice(0, 160) };
+    }
+  }
+  const r = spawnSync('gh', args, { cwd, encoding: 'utf8', windowsHide: true, env: ghEnv() });
+  if (r.status !== 0) return { ok: false, rows: [], err: (r.stderr || '').trim().slice(0, 160) };
+  try {
+    const rows = JSON.parse(r.stdout || '[]');
+    // gh 가 객체 1건(배열 아닌 JSON)만 주면 1행짜리 배열로 감싼다. null/스칼라는 행 배열이 아니다 →
+    // 호출부가 .map/.filter 를 못 하므로 빈 배열로 정규화한다(생성자 crash 방지).
+    if (Array.isArray(rows)) return { ok: true, rows };
+    if (rows && typeof rows === 'object') return { ok: true, rows: [rows] };
+    return { ok: true, rows: [] };
+  } catch { return { ok: false, rows: [], err: 'json parse' }; }
+}
+
 function runGh(repoSpec, args) {
   const { cwd, extraArgs } = parseRepoSpec(repoSpec);
-  const r = spawnSync('gh', [...args, ...extraArgs], { cwd, encoding: 'utf8', windowsHide: true, env: ghEnv() });
-  if (r.status !== 0) return { ok: false, rows: [], err: (r.stderr || '').trim().slice(0, 160) };
-  try { return { ok: true, rows: JSON.parse(r.stdout || '[]') }; }
-  catch { return { ok: false, rows: [], err: 'json parse' }; }
+  return execGh([...args, ...extraArgs], cwd);
 }
 
 /**
@@ -65,12 +102,7 @@ function runGh(repoSpec, args) {
  * `runGh` 는 로컬 경로면 cwd 를 잡기 때문에 조직 전 검색에는 쓸 수 없다.
  */
 function runGhRaw(args) {
-  const r = spawnSync('gh', args, { encoding: 'utf8', windowsHide: true, env: ghEnv() });
-  if (r.status !== 0) return { ok: false, rows: [], err: (r.stderr || '').trim().slice(0, 160) };
-  try {
-    const rows = JSON.parse(r.stdout || '[]');
-    return { ok: true, rows: Array.isArray(rows) ? rows : [rows] };
-  } catch { return { ok: false, rows: [], err: 'json parse' }; }
+  return execGh(args, undefined);
 }
 
 /** gh search 결과의 `repository` 필드에서 owner/repo 슬러그를 뽑는다. */
@@ -108,6 +140,7 @@ export function prDeclaresIssue(pr) {
  * Test-IssueHasPr 의 `$isnRe` / `$isnBodyRe` 규칙 + 위 `prDeclaresIssue` 좁히기.
  */
 export function prMatchesIsn(pr, isn) {
+  if (!pr || !isn) return false;
   const nameRe = new RegExp(`(?<!\\d)${isn}(?!\\d)`);
   const bodyRe = new RegExp(`#${isn}(?!\\d)`);
   if (pr.headRefName && nameRe.test(pr.headRefName)) return true;
@@ -344,4 +377,35 @@ export function findIssuePrsInOrg(org, isn, opts = {}) {
   }
 
   return { ok: errors.length === 0 || prs.length > 0, prs, sources, errors };
+}
+
+
+/**
+ * 대표 PR(판정 대상) 선택 규칙 — **정본**(CLI/대시보드가 공유한다).
+ *
+ * 1) **이 isn 을 브랜치/제목으로 선언한 PR** 우선 — 본문에만 isn 을 인용한 PR 은 "참조"이지 담당
+ *    산출물이 아니다(giip #4840: 인용만 한 PR 을 판정 대상으로 삼으면 무관한 diff 로 scope MISMATCH →
+ *    잘못된 되돌림).
+ * 2) MERGED > OPEN > CLOSED (이미 머지된 PR 이 실제 완료 여부 판정에 정확하다).
+ * 3) PR 번호 큰 쪽(더 최근).
+ *
+ * @param {Array} prs 후보 배열 @param {number} isn
+ * @returns {object|null} 대표 PR
+ */
+export function selectPrimaryPr(prs, isn) {
+  const list = (prs || []).filter((p) => p && Number.isInteger(p.number) && p.number > 0);
+  if (list.length === 0) return null;
+  const rank = (pr) => {
+    const declares = prDeclaresIsn(pr, isn) ? 0 : 1;
+    const s = String(pr.state || '').toUpperCase();
+    const state = Object.prototype.hasOwnProperty.call(STATE_RANK, s) ? STATE_RANK[s] : 3;
+    return [declares, state, -Number(pr.number || 0)];
+  };
+  const sorted = list.slice().sort((a, b) => {
+    const ra = rank(a);
+    const rb = rank(b);
+    for (let i = 0; i < ra.length; i++) if (ra[i] !== rb[i]) return ra[i] - rb[i];
+    return 0;
+  });
+  return sorted[0];
 }
