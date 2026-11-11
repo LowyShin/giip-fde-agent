@@ -12,6 +12,12 @@
 #   · Get-CsnLiveness       — CSN 1건 판정(OK / RUNNING / SILENT / NO_LOG)
 #   · Get-GissueLiveness    — 전체 판정(OK / PARTIAL_SILENT / ALL_SILENT / NO_TARGETS)
 #   · Test-LivenessNotifyDue — 알림 쿨다운 판정(동일 상태면 쿨다운 동안 재알림 안 함)
+#   · Get-LivenessSignature  — 상태 서명(전체 판정 + 무소식 CSN 목록)
+#   · Get-LivenessSilentSince— 침묵 시작 시각(추정) 계산
+#   · Get-LivenessEpisode       — 상태 파일에서 에피소드 기록 꺼내기(없으면 null)
+#   · Get-LivenessEpisodeState — 에피소드 상태 갱신(침묵 시작 시각은 고정)
+#   · Test-LivenessEpisodeCommentDue — 열린 이슈에 진행 보고를 남길 시점인가
+#   · New-LivenessStatusComment / New-LivenessRecoveryComment — 진행 보고·회복 보고 본문
 
 function Get-LivenessCsnList {
     param([string]$ConfigPath, [string]$LogDir)
@@ -122,11 +128,187 @@ function Get-GissueLiveness {
     }
 }
 
+function Get-LivenessSignature {
+    # 상태 서명: 전체 판정 + 무소식 CSN 목록. 알림 쿨다운과 진행 보고의 "변화 감지" 기준이 된다.
+    param($Result)
+    if (-not $Result) { return '' }
+    return "$($Result.Overall):$((@($Result.Silent) | Sort-Object) -join ',')"
+}
+
+function Get-LivenessSilentSince {
+    # 침묵 시작 시각(추정). 무소식 CSN 별 "마지막 로그 + 기준시간" 중 가장 이른 값을 쓴다
+    # (로그가 10h 전이고 기준이 3h 면 7h 전부터 침묵이었다). NO_LOG CSN 은 로그가 없어 알 수 없다 → null.
+    param($Result, [datetime]$Now = (Get-Date))
+    if (-not $Result) { return $null }
+    $best = $null
+    foreach ($r in @($Result.Csns)) {
+        if (@('SILENT', 'NO_LOG') -notcontains $r.Status) { continue }
+        if (-not $r.LastLog) { continue }
+        $t = $null
+        try { $t = [DateTime]::Parse("$($r.LastLog)", [System.Globalization.CultureInfo]::InvariantCulture) } catch { $t = $null }
+        if (-not $t) { continue }
+        $est = $t.AddHours([double]$Result.MaxSilentHours)
+        if ($null -eq $best -or $est -lt $best) { $best = $est }
+    }
+    return $best
+}
+
+function Get-LivenessEpisodeState {
+    # 에피소드 상태(순수 — 파일을 쓰지 않는다). 침묵 시작 시각은 처음 판정한 값을 유지한다
+    # (매 시간 다시 계산하면 경과 시간이 흔들려 "얼마나 오래 침묵인가"가 읽히지 않는다).
+    param($State, $Issues, $Result, [datetime]$Now = (Get-Date))
+    $sig = Get-LivenessSignature -Result $Result
+    $prev = Get-LivenessEpisode -State $State
+    $first = @(@($Issues) | Sort-Object isn)[0]
+    $since = $null
+    if ($prev -and ($prev.PSObject.Properties.Name -contains 'silentSince') -and $prev.silentSince) {
+        try { $since = [DateTime]::Parse("$($prev.silentSince)", [System.Globalization.CultureInfo]::InvariantCulture) } catch { $since = $null }
+    }
+    if (-not $since) { $since = Get-LivenessSilentSince -Result $Result -Now $Now }
+    if (-not $since) { $since = $Now }
+    $count = 0
+    if ($prev -and ($prev.PSObject.Properties.Name -contains 'commentCount') -and $prev.commentCount) { $count = [int]$prev.commentCount }
+    $firstSeen = $Now.ToString('yyyy-MM-ddTHH:mm:ss')
+    if ($prev -and ($prev.PSObject.Properties.Name -contains 'firstSeenAt') -and $prev.firstSeenAt) { $firstSeen = "$($prev.firstSeenAt)" }
+    # [pscustomobject] 로 감싼다 — hashtable 을 그대로 쓰면 PSObject.Properties 에 키가 노출되지 않아
+    # "이 필드가 있는가" 판정(PSObject.Properties.Name -contains ... )이 항상 거짓이 된다.
+    return [pscustomobject][ordered]@{
+        isn           = if ($first) { [int]$first.isn } else { $null }
+        csn           = if ($first) { [int]$first.cSn } else { $null }
+        silentCsns    = @(@($Result.Silent) | Sort-Object)
+        silentSince   = $since.ToString('yyyy-MM-ddTHH:mm:ss')
+        firstSeenAt   = $firstSeen
+        lastCommentAt = $Now.ToString('yyyy-MM-ddTHH:mm:ss')
+        commentCount  = $count + 1
+        lastSignature = $sig
+    }
+}
+
+function Test-LivenessEpisodeCommentDue {
+    # 이미 열린 [OPS] 이슈에 진행 보고 코멘트를 남길 시점인가?
+    #   · 처음 발견            → 즉시 (에피소드 시작)
+    #   · 상태 서명이 바뀜    → 즉시 (침묵 CSN 이 늘었/줄었다)
+    #   · 다른 이슈로 전환    → 즉시 (이전 이슈가 닫혔거나 새로 열렸다)
+    #   · 같은 상태가 쿨다운  → 주기적 경과 보고(CooldownHours)만
+    param($Result, $State, $Issues, [double]$CooldownHours = 6, [datetime]$Now = (Get-Date))
+    $list = @($Issues)
+    if ($list.Count -eq 0) { return [pscustomobject]@{ Due = $false; Why = '열린 [OPS] 이슈 없음' } }
+    $sig = Get-LivenessSignature -Result $Result
+    $prev = Get-LivenessEpisode -State $State
+    if (-not $prev) { return [pscustomobject]@{ Due = $true; Why = '에피소드 첫 기록 — 진행 보고' } }
+    $first = @($list | Sort-Object isn)[0]
+    $prevIsn = 0
+    if ($prev.PSObject.Properties.Name -contains 'isn' -and $prev.isn) { $prevIsn = [int]$prev.isn }
+    if ($prevIsn -ne [int]$first.isn) { return [pscustomobject]@{ Due = $true; Why = "다른 이슈로 전환(기존 #$prevIsn -> #$($first.isn))" } }
+    $lastSig = ''
+    if ($prev.PSObject.Properties.Name -contains 'lastSignature' -and $prev.lastSignature) { $lastSig = "$($prev.lastSignature)" }
+    if ($lastSig -ne $sig) { return [pscustomobject]@{ Due = $true; Why = "상태 변화($lastSig -> $sig)" } }
+    $last = $null
+    if ($prev.PSObject.Properties.Name -contains 'lastCommentAt' -and $prev.lastCommentAt) {
+        try { $last = [DateTime]::Parse("$($prev.lastCommentAt)", [System.Globalization.CultureInfo]::InvariantCulture) } catch { $last = $null }
+    }
+    if (-not $last) { return [pscustomobject]@{ Due = $true; Why = '직전 진행 보고 시각 해석 불가' } }
+    $h = ($Now - $last).TotalHours
+    if ($h -ge $CooldownHours) { return [pscustomobject]@{ Due = $true; Why = "진행 보고 주기 경과($([math]::Round($h,2))h >= ${CooldownHours}h)" } }
+    return [pscustomobject]@{ Due = $false; Why = "쿨다운 중(마지막 진행 보고 $([math]::Round($h,2))h 전 < ${CooldownHours}h)" }
+}
+
+function New-LivenessStatusComment {
+    # 진행 보고 본문: 침묵 중인 CSN 목록 · 침묵 시작 시각 · 경과 · 상태 서명.
+    param($Result, $State, [datetime]$Now = (Get-Date))
+    $sig = Get-LivenessSignature -Result $Result
+    $ep = Get-LivenessEpisode -State $State
+    $since = $null
+    if ($ep -and ($ep.PSObject.Properties.Name -contains 'silentSince') -and $ep.silentSince) {
+        try { $since = [DateTime]::Parse("$($ep.silentSince)", [System.Globalization.CultureInfo]::InvariantCulture) } catch { $since = $null }
+    }
+    if (-not $since) { $since = Get-LivenessSilentSince -Result $Result -Now $Now }
+    if (-not $since) { $since = $Now }
+    $elapsed = [math]::Round(($Now - $since).TotalHours, 1)
+    $silent = @(@($Result.Silent) | Sort-Object)
+    $lines = @('[gissue-liveness] gissue 처리 무소식 — 진행 보고', '')
+    if ($ep -and ($ep.PSObject.Properties.Name -contains 'isn') -and $ep.isn) { $lines += "에피소드 이슈: #$($ep.isn)" }
+    $lines += @(
+        "- 보고 시각: $($Now.ToString('yyyy-MM-dd HH:mm:ss'))",
+        "- 상태 서명: $sig",
+        "- 침묵 중인 CSN: $(if ($silent.Count -gt 0) { $silent -join ', ' } else { '(없음)' })",
+        "- 침묵 시작(추정): $($since.ToString('yyyy-MM-dd HH:mm:ss'))",
+        "- 경과: ${elapsed}h",
+        "- 판정: $($Result.Summary)",
+        ''
+    )
+    foreach ($r in @($Result.Csns)) {
+        if (@('SILENT', 'NO_LOG') -notcontains $r.Status) { continue }
+        $lines += "- CSN $($r.Csn): $($r.Status) — $($r.Reason)"
+    }
+    $lines += @(
+        '',
+        '(auto: check-gissue-liveness.ps1 — 같은 제목 이슈가 열려 있는 동안 침묵이 이어지는 한 여기에 경과를 누적한다)'
+    )
+    return ($lines -join "`n")
+}
+
+function Get-LivenessEpisode {
+    # 상태 파일에서 에피소드 기록을 꺼낸다(없으면 null).
+    # pscustomobject 로 감싸야 "이 필드가 있는가" 판정(PSObject.Properties.Name -contains ...)이 성립한다.
+    param($State)
+    if (-not $State) { return $null }
+    if (-not ($State.PSObject.Properties.Name -contains 'episode')) { return $null }
+    $ep = $State.episode
+    if (-not $ep) { return $null }
+    return $ep
+}
+
+function New-LivenessRecoveryComment {
+    # 회복(처리 흔적 복귀) 보고 본문. 이 이슈를 DONE 으로 닫기 직전에 남긴다.
+    # -Issue: 에피소드 기록이 없을 때의 대체 근거(이슈 등록 시각 regdate).
+    #         예: 이전 버전이 등록해 둔 이슈(에피소드 기록 없음) — 침묵 시작 시각을 0h 로 잘못 쓰지 않게 한다.
+    param($Result, $State, [datetime]$Now = (Get-Date), $Issue = $null)
+    $ep = Get-LivenessEpisode -State $State
+    $since = $null
+    if ($ep -and ($ep.PSObject.Properties.Name -contains 'silentSince') -and $ep.silentSince) {
+        try { $since = [DateTime]::Parse("$($ep.silentSince)", [System.Globalization.CultureInfo]::InvariantCulture) } catch { $since = $null }
+    }
+    $fromIssue = $false
+    if (-not $since -and $Issue -and $Issue.regdate) {
+        try { $since = [DateTime]::Parse("$($Issue.regdate)", [System.Globalization.CultureInfo]::InvariantCulture) } catch { $since = $null }
+        if ($since) { $fromIssue = $true }
+    }
+    if (-not $since) { $since = Get-LivenessSilentSince -Result $Result -Now $Now }
+    if (-not $since) { $since = $Now }
+    $elapsed = [math]::Round(($Now - $since).TotalHours, 1)
+    # "이전 침묵 CSN" 은 **에피소드에 기록된 값**을 쓴다(회복 시점의 현재 판정은 정상이라 목록이 비어 있다).
+    $silent = @()
+    $silentNote = ''
+    if ($ep -and ($ep.PSObject.Properties.Name -contains 'silentCsns') -and $ep.silentCsns) { $silent = @($ep.silentCsns) }
+    if ($silent.Count -eq 0 -and -not $fromIssue) { $silent = @(@($Result.Silent) | Sort-Object) }
+    if ($silent.Count -eq 0) { $silentNote = ' (에피소드 기록 없음 — 이슈 등록 시각 기준)' }
+    $lines = @('[gissue-liveness] gissue 처리 무소식 — 회복 감지', '')
+    if ($ep -and ($ep.PSObject.Properties.Name -contains 'isn') -and $ep.isn) { $lines += "에피소드 이슈: #$($ep.isn)" }
+    $lines += @(
+        "- 회복 시각: $($Now.ToString('yyyy-MM-dd HH:mm:ss'))",
+        "- 이전 침묵 CSN: $(if ($silent.Count -gt 0) { $silent -join ', ' } else { '(없음)' })$($silentNote)",
+        "- 침묵 시작(추정): $($since.ToString('yyyy-MM-dd HH:mm:ss'))",
+        "- 총 경과: ${elapsed}h",
+        "- 현재 판정: $($Result.Summary)",
+        ''
+    )
+    foreach ($r in @($Result.Csns)) {
+        $last = if ($r.LastLog) { $r.LastLog } else { '(로그 없음)' }
+        $lines += "- CSN $($r.Csn): $($r.Status) — 마지막 처리 흔적 $last"
+    }
+    $lines += @(
+        '',
+        '(auto: check-gissue-liveness.ps1 — 처리 흔적이 복귀해 무소식 에피소드가 종료되었다. 이 이슈는 DONE 으로 닫는다)'
+    )
+    return ($lines -join "`n")
+}
+
 function Test-LivenessNotifyDue {
     # 알림 쿨다운. 상태 서명(overall + 무소식 CSN 목록)이 바뀌면 즉시, 같으면 CooldownHours 이후에만 재알림.
     param($Result, $State, [double]$CooldownHours = 6, [datetime]$Now = (Get-Date))
     if ($Result.Healthy) { return [pscustomobject]@{ Due = $false; Why = '정상 — 알릴 것 없음'; Signature = '' } }
-    $sig = "$($Result.Overall):$((@($Result.Silent) | Sort-Object) -join ',')"
+    $sig = Get-LivenessSignature -Result $Result
     if (-not $State -or -not $State.lastNotifiedAt) { return [pscustomobject]@{ Due = $true; Why = '첫 알림'; Signature = $sig } }
     if ("$($State.signature)" -ne $sig) { return [pscustomobject]@{ Due = $true; Why = "상태 변화($($State.signature) -> $sig)"; Signature = $sig } }
     $last = $null

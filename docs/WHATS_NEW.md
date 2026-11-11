@@ -6,9 +6,12 @@
 >
 > *(EN/JP 독자는 각 항목을 AI 에이전트에 번역 요청하세요. / Ask your AI assistant to translate entries.)*
 
-**기준일 (as of): 2026-11-06**
+**기준일 (as of): 2026-11-11**
 
 ---
+
+## 2026-11-11
+- **gissue 처리 무소식 알림 — 에피소드화(중복 등록 근본 원인 수정) (giip 4411 후속)** — 2026-11-11 에 `[OPS] gissue 처리 무소식 감지` 이슈가 #4870(05:36)·#4874(12:37) 두 건 중복 등록된 사고의 원인을 규명하고 고쳤다. **원인**: 등록(`register-issue.js` + default 계정, `csn=<OpsCsn>` 요청)과 중복 조회(`list-issues.js --csn <OpsCsn>`)가 **서로 다른 주체·CSN 스코프**를 썼다 — 서버(`pApiGiipIssuePutbyAK`)는 멤버가 아닌 CSN 요청을 홈 CSN 으로 조용히 클램프하는데(/issues 는 `i.cSn = @csn` 으로 **엄격히** 걸러낸다) 조회는 OpsCsn 만 쳐서 "이미 열린 같은 제목 이슈"를 **못 봤다**(제목 매칭 자체는 정상이었다). 6h 쿨다운이 6시간 동안만 이를 가려 7시간 간격(쿨다운 1회분)으로 드러났다. **수정**: 등록·조회·코멘트·종료를 **같은 주체(default 계정)** 로 수행하는 `scripts/gissue/lib/liveness-ops-issue.js` 신설(조회 후보 CSN = {OpsCsn, default 계정의 csn}, 응답 행의 실제 `cSn` 이 후보 밖이면 버림, 코멘트·상태변경은 그 이슈가 위치한 CSN 의 SK 로만 — **조회에만** 계정 부재 시 등록 주체 SK 폴백, 쓰기에는 없음) + **무소식 = 에피소드 1건** 모델 — 열린 같은 제목 이슈가 있으면 새로 만들지 않고 **상태 서명(침묵 CSN 목록·침묵 시작 시각·경과) 코멘트를 누적**, 처리 흔적이 복귀하면 **회복 코멘트 후 `DONE` 으로 닫음**, **목록 조회 실패 시에는 등록하지 않음**(중복 등록 방지 우선). **에피소드의 정체는 상태 파일이 안다** — 에피소드 이슈가 처리 스케줄러 등에 의해 외부 종료되어 열려 있지 않아도 침묵이 계속되는 동안엔 새 이슈를 만들지 않는다(만들면 "한 침묵에 여러 이슈" = 사고 재발). 에피소드 기록은 회복 시점에 정리된다. 제목·본문은 파일로 전달(한글 커맨드라인 인자 깨짐 방지). 테스트: `scripts/gissue/tests/test-gissue-liveness.ps1`(기존 (A)~(H) 유지 + 에피소드 규칙 + 스텁 도구 주입으로 중복 방지·코멘트 누적·회복 종료·조회 실패 미등록·쓰기 CSN 계약·에피소드 외부 종료 가드 검증), `scripts/gissue/tests/test-liveness-ops-issue.mjs`(제목 매칭·조회 후보 CSN·조회 SK 선택 규칙 + `find()` 조회 흐름 — 후보 CSN·SK 선택·응답 cSn 가드·실패 전파를 네트워크 주입으로 고정). → [사양서 §16](60-operations/hourly-issue-scheduler.md)
 
 ## 2026-11-06
 - **규칙 57 신설 — 작업 종료 시 worktree·작업 브랜치 정리 의무화 (giip 4699, CSN 70424)** — 에이전트 작업들이 만든 git worktree 를 종료 시 제거하지 않아 호스트 디스크 용량이 폭발한 사고의 재발 방지(사용자 직접 지시). 정본 [`.agent/rules/57_worktree_cleanup_on_completion.md`](../.agent/rules/57_worktree_cleanup_on_completion.md): 모든 에이전트 작업은 종료 확정(머지 · 종료 확인) 시점에 자기 worktree 를 `git worktree remove` 로 제거하고 작업 브랜치를 삭제한다 / 미커밋 변경이 있으면 삭제하지 않고 보고한다 / gissue 스케줄러 worktree 도 태스크 종료 시 동일 적용. rule 47 의 "push 는 종료가 아니다" 를 종료 정의로 연결하고, rule 43 §4(하위 세션 임의 삭제 금지)와는 "정리는 작업 단위를 소유한 세션이 종료 확정 후 수행"으로 정합시켰다(43에 상호참조 추가, 41 색인 · GEMINI 목록 · AI_MUST_READ 체크리스트 1번 갱신). → [작업 기록](../.agent/work_history/20261106_1746_csn70424_worktree-cleanup-rule.md)

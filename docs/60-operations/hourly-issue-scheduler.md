@@ -1009,10 +1009,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\check-ps1-par
 | 용도 | CSN 별 처리 로그가 일정 시간 갱신되지 않으면 "무소식"으로 알린다 |
 | 스크립트 | `scripts/gissue/check-gissue-liveness.ps1` (판정 함수는 `scripts/gissue/lib/gissue-liveness-lib.ps1`) |
 | 읽는 곳 | `scripts/gissue/logs/gissue_csn<N>.log` 의 mtime, `gissue_csn<N>.lock`(`PID\|시작\|마지막로그`), 대상 CSN 은 `csn-projects.json` 의 `enabled` CSN(없으면 로그 파일명) |
-| 쓰는 곳 | 기본은 **없음(읽기 전용)**. `-Notify -OpsCsn <csn>` 일 때만 giip 이슈 DB 에 `[OPS] gissue 처리 무소식 감지` 이슈 1건(`register-issue.js`)과 쿨다운 서명 `logs/gissue_liveness_state.json` |
+| 쓰는 곳 | 기본은 **없음(읽기 전용)**. `-Notify -OpsCsn <csn>` 일 때만 giip 이슈 DB 의 `[OPS] gissue 처리 무소식 감지` 이슈 1건(= 무소식 에피소드)과 `logs/gissue_liveness_state.json`(에피소드 상태) |
 | 소비처 | 종료코드(0 정상 / 1 무소식·판정 불가)는 점검 태스크의 `LastTaskResult`, `-Json` 은 대시보드·사람, `[OPS]` 이슈는 운영 큐 |
 | 등록 | `scripts/gissue/register-gissue-liveness-task.ps1` (매시 :37, 태스크명 `GIIP_GissueLiveness_Hourly`). **사람이 실행한다** — 스케줄러 변경은 자동화하지 않는다 |
-| 테스트 | `scripts/gissue/tests/test-gissue-liveness.ps1` (가짜 로그 디렉터리 + mtime 픽스처) |
+| 이슈 도구 | `scripts/gissue/lib/liveness-ops-issue.js` (열린 이슈 찾기 / 진행 보고 코멘트 / 회복 시 DONE 닫기 / 최초 등록 — stdout 은 JSON 1줄, 실패는 `ok=false`+종료코드 1) |
+| 테스트 | `scripts/gissue/tests/test-gissue-liveness.ps1` (가짜 로그 디렉터리 + mtime 픽스처 + 스텁 도구 주입 — 중복 방지·진행 보고·회복 종료·조회 실패 미등록·쓰기 CSN 계약·에피소드 외부 종료 가드), `scripts/gissue/tests/test-liveness-ops-issue.mjs` (제목 매칭·조회 후보 CSN·조회 SK 선택 규칙 + `find()` 조회 흐름 — 네트워크 주입으로 후보 CSN·SK 선택·응답 cSn 가드·실패 전파 고정) |
 
 **판정**
 - CSN 별: `OK`(최근 `-MaxSilentHours` 이내 로그 갱신, 기본 3h = 스케줄 1h + 긴 실행 상한 105분 여유) /
@@ -1024,10 +1025,46 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\check-ps1-par
   `NO_TARGETS`(대상 0건 — 판정 불가이며 정상으로 치지 않는다).
 - 처리 본체는 CSN 마다 매 실행 `Write-Log` 를 남기므로(이슈 0건이어도) 정상 가동이면 로그는 매시 갱신된다.
 
-**알림 정책**: 기본은 출력만(`-Notify` 없음 = DRYRUN). `-OpsCsn`(또는 환경변수 `GISSUE_LIVENESS_OPS_CSN`)이 없으면
-알림 없이 종료코드만 남긴다. 대상 CSN 은 이 배포가 쓰기 권한을 가진 작업 CSN 이어야 한다(남의 CSN 에 쓰지 않는다).
-열린 같은 제목 이슈가 있으면 새로 만들지 않고, 상태 서명(전체/일부 + 무소식 CSN 목록)이 같으면 `-CooldownHours`(기본 6)
-동안 재알림하지 않는다. 선례는 미매핑 CSN 가드(`GISSUE_CSNGUARD_OPS_CSN`)다.
+**알림 정책(무소식 = 에피소드 1건)**: 기본은 출력만(`-Notify` 없음 = DRYRUN). `-OpsCsn`(또는 환경변수
+`GISSUE_LIVENESS_OPS_CSN`)이 없으면 알림 없이 종료코드만 남긴다. 대상 CSN 은 이 배포가 쓰기 권한을 가진 작업 CSN
+이어야 한다(남의 CSN 에 쓰지 않는다). 선례는 미매핑 CSN 가드(`GISSUE_CSNGUARD_OPS_CSN`)다.
+
+- **열린 같은 제목 이슈가 있으면 새로 만들지 않는다.** 대신 그 이슈에 **진행 보고 코멘트**를 누적한다 —
+  상태 서명(전체/일부 + 무소식 CSN 목록) · 침묵 중인 CSN 목록 · 침묵 시작 시각(추정) · 경과를 본문에 남긴다.
+  조용히 생략하면 "침묵이 얼마나 이어졌는지"가 아무 데도 안 남는다.
+- **에피소드 정체는 상태 파일의 에피소드 기록이 안다.**(`logs/gissue_liveness_state.json` 의 `episode`).
+  에피소드 이슈가 **열려 있지 않으면**(처리 스케줄러가 가져가 종료했거나 사람이 닫은 경우) 침묵이 계속되는
+  중에도 **새 이슈를 만들지 않는다** — 만들면 "한 침묵에 여러 이슈" 가 되어 중복 등록 사고(2026-11-11)가
+  그대로 재발한다. 에피소드 기록은 **회복 시점에 정리**되므로, 그다음 침묵부터 새 에피소드가 시작된다.
+- **회복(처리 흔적 복귀)이면 열린 이슈에 회복 코멘트를 달고 `DONE` 으로 닫는다.** 닫는 경로가 없으면
+  `PENDING`·코멘트 0건 이슈가 계속 쌓인다. 이미 이 경로가 종료한 이슈(`closedIsns`)는 다시 건드리지
+  않는다(사후감사 게이트가 `DONE` 을 되살려 "코멘트+종료" 가 매시간 반복되지 않게 하기 위한 안전장치).
+- **진행 보고 주기**: 상태 서명이 바뀌면(침묵 CSN 이 늘/줄) 즉시, 같으면 `-CooldownHours`(기본 6h) 마다 1회.
+- **목록 조회가 실패하면 등록하지 않는다**(`LIST-FAIL`). 중복 등록 방지 우선이 안전 쪽이다.
+- **조회 후보가 불완전하면 등록하지 않는다.** 등록 주체(default) 계정에 `csn` 이 없으면 "홈 CSN" 을 알 수 없어
+  클램프된 등록 결과까지 볼 수 없다 → 조회 없이 등록하면 중복이 된다. `default.csn` 을 실제 값으로 채워야 한다.
+
+**★ 근본 원인 — 중복 등록이 뚫렸던 이유(2026-11-11, #4870 05:36 / #4874 12:37)**: 등록과 중복 조회가
+**서로 다른 주체·CSN 스코프**를 쓰고 있었다.
+
+| 경로 | 쓰던 주체/범위 | 결과 |
+|---|---|---|
+| 등록(이전 `register-issue.js`) | default 계정 SK(AK 경유), `csn=<OpsCsn>` 요청 | 서버(`pApiGiipIssuePutbyAK`)가 "요청자가 그 CSN 의 멤버가 아니면 **홈 CSN 으로 클램프**" → 이슈는 홈 CSN 에 생성됨 |
+| 중복 조회(이전 `list-issues.js --csn <OpsCsn>`) | 그 CSN 의 SK, `i.cSn = <OpsCsn>` 인 줄만 | 홈 CSN 에 생긴 이슈는 **보이지 않음** → "같은 제목 이슈 없음" 으로 오판 |
+
+⇒ 매 시간 "중복 없음" 으로 판단해 등록했다. 6h 쿨다운이 6시간 동안만 이 사실을 가려서 05:36(#4870) →
+12:37(#4874) 로 7시간 간격(쿨다운 1회분)으로 드러났다. 제목 매칭 자체는 정상이었다(`[[]` 이스케이프 +
+접두 일치). **조회 대상 CSN 과 등록 CSN 이 어긋난 것**이 원인이었다.
+
+**수정**: 등록·조회·코멘트·종료를 **같은 주체(default 계정)** 로 수행하고(`lib/liveness-ops-issue.js`),
+조회 후보 CSN 을 **{OpsCsn, default 계정의 csn}** 둘 다 본다. 응답 행의 실제 `cSn` 이 후보 밖이면 버린다
+(남의 CSN 이슈에 손대지 않는다). 코멘트·상태변경은 **그 이슈가 실제 위치한 CSN 의 SK** 로만 한다
+(`pApiGiipIssueCommentPutbyAK` 의 인가 게이트 = "이슈의 cSn = SK 의 CSN").
+**조회에만** SK 폴백이 있다 — 그 CSN 의 계정이 없으면 등록 주체(default) 계정의 SK 로 조회한다. 서버가
+"멤버가 아니면 홈 CSN 으로 클램프"하므로 홈 CSN(등록 결과가 놓이는 곳)의 이슈는 반드시 보이고, 멤버라면
+클램프가 없어 그 CSN 의 이슈도 보인다. ⇒ 계정 항목이 없는 배포에서도 조회가 죽지 않는다(중복 위험은 없다 —
+등록할 수 없는 CSN 이기 때문이다). **쓰기에는 폴백이 없다**(타 CSN 쓰기 금지 가드 유지).
+제목·본문은 **파일**로 넘긴다(한글을 커맨드라인 인자로 주면 Windows PowerShell 5.1 콘솔 코드페이지로 깨진다).
 
 **설계 원칙 — 감시자는 감시 대상과 독립 태스크여야 한다.** 이 점검을 `GIIP_Gissue_Claude` 에 끼우거나 `run-gissue-claude.ps1`
 안에서 돌리면, 이번 사고처럼 처리 경로가 통째로 죽을 때 감시도 같이 죽어 아무도 알리지 못한다. 그래서 별도 태스크
