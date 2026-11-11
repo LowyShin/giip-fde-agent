@@ -11,7 +11,7 @@
  *   PowerShell 쪽만 PR 특정에 실패해 36건이 잘못 되돌려졌다.
  *
  *   그래서 규칙을 **복붙하지 않고** 이 CLI 로 노출해 PowerShell 이 그대로 호출하게 한다.
- *   판정 규칙의 정본은 여전히 `pr-lookup.mjs` 하나뿐이다(이 파일은 인자 파싱 + 대표 PR 선택만 한다).
+ *   판정 규칙의 정본은 여전히 `pr-lookup.mjs` 하나뿐이다(이 파일은 인자 파싱 + 결과 조립만 한다).
  *
  * 사용:
  *   node pr-lookup-cli.mjs <isn> <repoRoot> [<repoRoot> ...] [--org <org>] [--org-mode all|fallback]
@@ -19,10 +19,9 @@
  *
  *   --org <org>          조직 전 레포까지 탐색할 GitHub 조직(반복 가능). PowerShell 쪽은
  *                        `Get-AttributionOrgs` 로 레포 origin 에서 유도해 넘긴다.
- *   --org-mode fallback  (기본) 로컬 스캔에서 후보가 하나도 없을 때만 조직 전 탐색을 한다.
- *                        비용을 issue당 1회로 묶기 위한 기본값 — "PR 없음" 으로 되돌릴 수 있는
- *                       (=탐색이 필요한) 이슈에서만 조직 전을 훑는다.
- *   --org-mode all       항상 조직 전 탐색을 한다(후보 집합을 최대로 Wanted 경우).
+ *   --org-mode fallback  (기본) 로컬 스캔에서 후보가 하나도 없거나, 찾은 후보가 **이 isn 을 선언하지
+ *                        않은** 경우에만 조직 전 탐색을 한다(비용 가드 + giip #4840 정정).
+ *   --org-mode all       항상 조직 전 탐색을 한다.
  *
  * 출력(항상 stdout 에 JSON 1줄, 실패해도 JSON):
  *   {
@@ -36,14 +35,12 @@
  *   }
  *   매칭이 하나도 없으면 primary=null, all=[].
  *
- * 대표 PR(primary) 선택 규칙 — "실제로 배송된 산출물"을 우선한다:
- *   1) **이 isn 을 브랜치/제목으로 선언한 PR** (강한 귀속) — giip #4840 정정.
- *      본문에만 isn 을 인용한 PR 은 "참조"이지 담당 산출물이 아니므로 뒤로 밀린다.
- *   2) MERGED > OPEN > CLOSED, 같은 등급이면 PR 번호가 큰 쪽(더 최근).
- *      scope-gate 는 이 대표 PR 의 diff 로 판정하므로, 열려만 있고 머지 안 된 PR 보다
- *      이미 머지된 PR 을 보는 것이 실제 완료 여부 판정에 정확하다.
+ * 대표 PR(primary) 선택 규칙은 `pr-lookup.mjs` 의 `selectPrimaryPr`(정본)를 그대로 쓴다.
  */
-import { findIssuePrsInRepo, findIssuePrsInOrg, findIssuePrsByBranchInRepo, prDeclaresIsn } from './pr-lookup.mjs';
+import { pathToFileURL } from 'node:url';
+import {
+  findIssuePrsInRepo, findIssuePrsInOrg, findIssuePrsByBranchInRepo, selectPrimaryPr, prDeclaresIsn,
+} from './pr-lookup.mjs';
 
 /** PR url 에서 owner/repo 슬러그를 뽑는다(gissue-audit-lib.ps1 의 Get-RepoSlugFromUrl 과 동일 규칙). */
 function slugFromUrl(url) {
@@ -52,35 +49,16 @@ function slugFromUrl(url) {
   return m ? m[1] : null;
 }
 
-const STATE_RANK = { MERGED: 0, OPEN: 1, CLOSED: 2 };
-
 /**
- * 대표 PR 정렬 키. isn 을 선언한 PR(강한 귀속)이 항상 먼저다 — 없으면 상태/번호 순.
- * @param {object} pr  @param {number} isn
+ * 인자 파싱 — CLI 와 테스트(import 후 직접 호출)가 공유한다.
+ * @returns {{isn: number|null, repoRoots: string[], orgs: string[], orgMode: string, orgLimit: number, orgMaxCommits: number}}
  */
-function rank(pr, isn) {
-  const declares = prDeclaresIsn(pr, isn) ? 0 : 1;
-  const s = String(pr.state || '').toUpperCase();
-  const state = Object.prototype.hasOwnProperty.call(STATE_RANK, s) ? STATE_RANK[s] : 3;
-  return [declares, state, -Number(pr.number || 0)];
-}
-
-function compare(a, b, isn) {
-  const ra = rank(a, isn);
-  const rb = rank(b, isn);
-  for (let i = 0; i < ra.length; i++) {
-    if (ra[i] !== rb[i]) return ra[i] - rb[i];
-  }
-  return 0;
-}
-
-function main() {
-  const argv = process.argv.slice(2);
+export function parseLookupArgs(argv) {
   const orgs = [];
+  const repoRoots = [];
   let orgMode = 'fallback';
   let orgLimit = 50;
   let orgMaxCommits = 5;
-  const repoRoots = [];
   let isnArg = null;
 
   for (let i = 0; i < argv.length; i++) {
@@ -92,16 +70,17 @@ function main() {
     if (isnArg === null) { isnArg = a; continue; }
     repoRoots.push(a);
   }
+  return { isn: Number(isnArg), repoRoots, orgs, orgMode, orgLimit, orgMaxCommits };
+}
 
-  const isn = Number(isnArg);
-  if (!Number.isInteger(isn) || isn <= 0) {
-    process.stdout.write(JSON.stringify({
-      ok: false, isn: isn || null, primary: null, all: [], sources: [],
-      errors: ['사용법: node pr-lookup-cli.mjs <isn> <repoRoot> [<repoRoot> ...] [--org <org>]'],
-    }));
-    process.exit(2);
-  }
-
+/**
+ * 판정 수행(CLI 본체). gh 호출은 pr-lookup.mjs 를 통해간다 — 규칙 정본은 그 파일 하나뿐이다.
+ * @returns {{ok, isn, primary, all, sources, errors}}
+ */
+export function runLookup(isn, repoRoots, orgs, opts = {}) {
+  const orgMode = opts.orgMode || 'fallback';
+  const orgLimit = opts.orgLimit || 50;
+  const orgMaxCommits = opts.orgMaxCommits || 5;
   const all = [];
   const errors = [];
   const sources = [];
@@ -158,7 +137,7 @@ function main() {
   }
 
   // ── 3) 조직 전 레포 탐색 (제목/본문 + 커밋 메시지 + 규약 브랜치) ──
-  // 기본(fallback) 조건: "로컬에서 아무것도 못 찾었거나, 찾은 후보가 **이 isn 을 선언하지 않은** 경우"에만 돈다.
+  // 기본(fallback) 조건: "로컬에서 아무것도 못 찾았거나, 찾은 후보가 **이 isn 을 선언하지 않은** 경우".
   //   - 아무것도 못 찾음 → "PR 없음" 되돌림을 막으려면 조직 전을 봐야 한다.
   //   - 찾았지만 **선언하지 않은** 후보(본문 인용만) → 그 PR 이 판정 대상이 되면 무관한 diff 로 MISMATCH 가
   //     나던 giip #4840 패턴이므로, 진짜 담당 PR 이 다른 레포에 있을 수 있다 → 조직 전을 본다.
@@ -178,10 +157,32 @@ function main() {
     }
   }
 
-  all.sort((a, b) => compare(a, b, isn));
-  process.stdout.write(JSON.stringify({
-    ok: true, isn, primary: all.length ? all[0] : null, all, sources, errors,
-  }));
+  return {
+    ok: true,
+    isn,
+    primary: selectPrimaryPr(all, isn),
+    all,
+    sources,
+    errors,
+  };
 }
 
-main();
+function main() {
+  const parsed = parseLookupArgs(process.argv.slice(2));
+  const isn = parsed.isn;
+  if (!Number.isInteger(isn) || isn <= 0) {
+    process.stdout.write(JSON.stringify({
+      ok: false, isn: isn || null, primary: null, all: [], sources: [],
+      errors: ['사용법: node pr-lookup-cli.mjs <isn> <repoRoot> [<repoRoot> ...] [--org <org>]'],
+    }));
+    process.exit(2);
+  }
+  const res = runLookup(isn, parsed.repoRoots, parsed.orgs, {
+    orgMode: parsed.orgMode, orgLimit: parsed.orgLimit, orgMaxCommits: parsed.orgMaxCommits,
+  });
+  process.stdout.write(JSON.stringify(res));
+}
+
+// 이 모듈을 import 만 하면 CLI 가 실행되면 안 된다(테스트가 직접 호출한다).
+const invokedDirectly = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (invokedDirectly) main();
