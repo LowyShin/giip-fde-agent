@@ -61,6 +61,26 @@ function runGh(repoSpec, args) {
 }
 
 /**
+ * cwd/--repo 스코프가 없는 gh 호출(조직 전 검색처럼 레포 스코프가 없는 명령).
+ * `runGh` 는 로컬 경로면 cwd 를 잡기 때문에 조직 전 검색에는 쓸 수 없다.
+ */
+function runGhRaw(args) {
+  const r = spawnSync('gh', args, { encoding: 'utf8', windowsHide: true, env: ghEnv() });
+  if (r.status !== 0) return { ok: false, rows: [], err: (r.stderr || '').trim().slice(0, 160) };
+  try {
+    const rows = JSON.parse(r.stdout || '[]');
+    return { ok: true, rows: Array.isArray(rows) ? rows : [rows] };
+  } catch { return { ok: false, rows: [], err: 'json parse' }; }
+}
+
+/** gh search 결과의 `repository` 필드에서 owner/repo 슬러그를 뽑는다. */
+function slugFromRepository(repo) {
+  if (!repo) return '';
+  if (typeof repo === 'string') return repo;
+  return repo.fullName || repo.nameWithOwner || (repo.owner && repo.name ? `${repo.owner.login}/${repo.name}` : '');
+}
+
+/**
  * 이 PR 이 **자기가 어느 giip 이슈의 산출물인지 브랜치명/제목으로 이미 선언**하고 있는가.
  *
  * 이 코드베이스의 PR 관행은 브랜치 `bot/task-giip-<isn>` / `fix/giip-<isn>-…` 또는 제목
@@ -121,4 +141,207 @@ export function findIssuePrsInRepo(repoRoot, isn) {
     .map(({ body, ...rest }) => rest);
   if (hits.length) return { ok: true, prs: hits, how: 'broad' };
   return { ok: true, prs: [], how: 'none' };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// [giip #4840/#4839] 증거 기반 귀속 — 브랜치명 / PR 제목·본문 / 커밋 메시지 3면
+//
+// 왜 이 구역이 생겼나 (2026-11-11 실측):
+//   "대응 PR 없음" 되돌림이 27건 이상 누적됐다. 근본 원인은 귀속(attribution) 탐색면이
+//   **기대 head 브랜치(`bot/task-giip-<isn>`) 1개**에 묶여 있었기 때문이다.
+//   실제로는 (a) 다른 브랜치명(`docs/giip-4219-…`), (b) 다른 레포(제품 레포/스케줄러 레포),
+//   (c) 수동 PR, (d) 커밋 메시지에만 isn 이 있는 PR 이 전부 "PR 없음"으로 오판됐다.
+//
+// 탐색면 4개(요구사항):
+//   1) 브랜치명      : 기대 브랜치(`head:` 한정) + 레포 브랜치 열거로 isn 을 담는 브랜치 전부
+//   2) PR 제목/본문   : `gh search prs --owner <org>` (조직 전 레포)
+//   3) 커밋 메시지    : `gh search commits --owner <org>` → 커밋에 딸린 PR
+//   4) 이슈 코멘트의 PR 링크 : PowerShell 쪽(Get-PrLinksFromText) — 이 파일은 다루지 않는다
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * 이 PR 이 **이 isn 을 담당한다**고 브랜치/제목으로 선언하는가(강한 귀속 증거).
+ *
+ * `prDeclaresIssue`(어떤 giip 이슈든 선언했는가)와 다른 점: 여기서는 **이 isn** specifically 를 본다.
+ * 대표 PR 선택에서 "본문에다만 isn 을 인용한 PR"(참조)보다 "브랜치/제목으로 이 isn 을 선언한 PR"을
+ * 먼저 고르기 위해 쓴다 — giip #4840(판정 대상이 아닌 PR을 근거로 한 오탐)의 직접 원인.
+ */
+export function prDeclaresIsn(pr, isn) {
+  if (!pr || !isn) return false;
+  const nameRe = new RegExp(`(?<!\\d)${isn}(?!\\d)`);
+  return Boolean((pr.headRefName && nameRe.test(pr.headRefName)) || (pr.title && nameRe.test(pr.title)));
+}
+
+/**
+ * 커밋 메시지가 이 isn 을 giip 컨벤션으로 참조하는가.
+ * 허용: `giip 4840` / `giip-4840` / `giip#4840` / `giip:4840` / `#4840`.
+ * 거부: `giip 48401`(숫자 경계), `4840` 단독(다른 숫자일 수 있음).
+ */
+export function commitMatchesIsn(message, isn) {
+  if (!message || !isn) return false;
+  // JS 정규식에 `(?i)` 인라인 플래그는 없다 — `i` 플래그로 준다(.NET habit 금지).
+  const giipRe = new RegExp(`giip[\\s#:_-]*${isn}(?!\\d)`, 'i');
+  const hashRe = new RegExp(`#${isn}(?!\\d)`);
+  return giipRe.test(message) || hashRe.test(message);
+}
+
+/** 브랜치명이 이 isn 을 담는가(숫자 경계). */
+export function branchMatchesIsn(branch, isn) {
+  if (!branch || !isn) return false;
+  return new RegExp(`(?<!\\d)${isn}(?!\\d)`).test(branch);
+}
+
+/** repoSpec(로컬 경로 또는 `slug:OWNER/REPO`)에서 owner/repo 슬러그를 얻는다. 실패 시 null. */
+export function repoSlugOf(repoSpec) {
+  const s = String(repoSpec || '');
+  const m = /^slug:(.+)$/.exec(s);
+  if (m) return m[1].trim();
+  if (!s) return null;
+  const r = spawnSync('git', ['-C', s, 'remote', 'get-url', 'origin'], { encoding: 'utf8', windowsHide: true });
+  if (r.status !== 0) return null;
+  const url = String(r.stdout || '').trim();
+  const mm = /github\.com[:/]([^/]+\/[^/]+?)(?:\.git)?$/i.exec(url);
+  return mm ? mm[1] : null;
+}
+
+/**
+ * 레포 1개의 **브랜치명**으로 이 isn 의 PR 을 찾는다.
+ *
+ * 왜 필요한가: GitHub 검색은 PR 제목/본문/댓글만 색인한다 — **브랜치명은 색인되지 않는다.**
+ * 그래서 `gh pr list --search "giip-<isn>"` 로는 `docs/giip-4219-…` 같은 브랜치의 PR 을
+ * 제목/본문에 isn 이 없으면 못 잡는다(실측 2026-11-11). 브랜치를 직접 열거해서
+ * `gh pr list --head <브랜치>` 로 질의해야 잡힌다.
+ *
+ * @returns {{ok: boolean, prs: Array, how: 'branch'|'none', errors: string[]}}
+ */
+export function findIssuePrsByBranchInRepo(repoSpec, isn, opts = {}) {
+  const slug = repoSlugOf(repoSpec);
+  if (!slug) return { ok: false, prs: [], how: 'none', errors: [`slug 확인 실패: ${repoSpec}`] };
+  const perPage = opts.perPage || 100;
+  const maxBranches = opts.maxBranches || 10;
+  const errors = [];
+  const res = runGhRaw(['api', `repos/${slug}/branches?per_page=${perPage}`]);
+  if (!res.ok) return { ok: false, prs: [], how: 'none', errors: [`branches: ${res.err}`] };
+  const branches = res.rows.map((b) => b && b.name).filter((n) => branchMatchesIsn(n, isn));
+  const prs = [];
+  for (const b of branches.slice(0, maxBranches)) {
+    const r = runGh(`slug:${slug}`, ['pr', 'list', '--head', b, '--state', 'all',
+      '--json', 'number,state,url,title,body,headRefName', '--limit', '20']);
+    if (!r.ok) { errors.push(`pr list --head ${b}: ${r.err}`); continue; }
+    for (const row of r.rows) {
+      if (!Number.isInteger(row.number) || row.number <= 0) continue;
+      prs.push({
+        number: row.number, state: String(row.state || '').toUpperCase(), url: row.url || '',
+        title: row.title || '', body: row.body || '', headRefName: row.headRefName || '',
+        slug, repo: `slug:${slug}`, how: 'branch',
+      });
+    }
+  }
+  return { ok: true, prs, how: prs.length ? 'branch' : 'none', errors };
+}
+
+/**
+ * **조직 전 레포**에서 이 isn 의 PR 을 찾는다. 탐색면: PR 제목/본문 + 커밋 메시지 + 규약 브랜치.
+ *
+ * 왜 필요한가: `Get-NestedRepoPaths` 는 "workdir + 바로 아래 nested + 이 레포 자신 + 수동 등록 목록"
+ * 뿐이다. 제품 레포(SHINSEMA/giipv3 등)나 다른 프로젝트 레포에 올라간 PR 은 **어떤 탐지기에도**
+ * 안 잡혀 "PR 없음"으로 REVIEW 가 되돌려졌다(giip #4335/#4840 실측).
+ *
+ * 비용控制: 조직 1개당 PR 검색 4회(질의 2종 × 상태 2종) + 커밋 검색 2회 + 커밋별 PR 조회(상한).
+ * 규약 브랜치(`bot/task-giip-<isn>`)는 `head:` 한정으로 1회에 조직 전을 훑는다.
+ * **조직의 모든 브랜치를 열거하지는 않는다**(LowyShin 조직은 272개 레포 — 무한대 비용).
+ * 비규약 브랜치(`docs/giip-4219-…`)는 ①커밋 메시지 경로 ②제목/본문 경로로 잡힌다.
+ *
+ * @returns {{ok: boolean, prs: Array, sources: string[], errors: string[]}}
+ */
+export function findIssuePrsInOrg(org, isn, opts = {}) {
+  const limit = opts.limit || 50;
+  const maxCommits = opts.maxCommits || 10;
+  const prs = [];
+  const sources = [];
+  const errors = [];
+  const seen = new Set();
+  const add = (pr, how) => {
+    if (!pr || !Number.isInteger(pr.number) || pr.number <= 0) return;
+    const slug = pr.slug || '';
+    const key = `${slug}#${pr.number}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    const { body, ...rest } = pr;
+    prs.push({ ...rest, slug, how });
+    if (!sources.includes(how)) sources.push(how);
+  };
+
+  // ── (1) PR 제목/본문 (조직 전 레포) ──
+  // GitHub 검색은 제목·본문·댓글을 색인한다. 질의는 `giip-<isn>`(하이픈/공백 모두 토큰 분리된다)와
+  // `#<isn>` 두 종을 쓴다 — 하나만 쓰면 "#4334" 만 쓴 PR 을 놓친다.
+  for (const q of [`giip-${isn}`, `#${isn}`]) {
+    for (const state of ['open', 'closed']) {
+      const res = runGhRaw(['search', 'prs', q, '--owner', org, '--state', state,
+        '--limit', String(limit), '--json', 'number,state,url,title,body,repository']);
+      if (!res.ok) { errors.push(`search prs "${q}"(${state}): ${res.err}`); continue; }
+      for (const row of res.rows) {
+        const pr = {
+          number: row.number, state: String(row.state || '').toUpperCase(), url: row.url || '',
+          title: row.title || '', body: row.body || '', headRefName: '', slug: slugFromRepository(row.repository),
+        };
+        // 재필터는 정본 규칙(prMatchesIsn)을 그대로 쓴다 — 본문 폴백은 "담당 이슈를 선언하지 않은 PR" 에만.
+        if (!prMatchesIsn(pr, isn)) continue;
+        add(pr, 'org-pr');
+      }
+    }
+  }
+
+  // ── (2) 커밋 메시지 → 연관 PR ──
+  const seenCommits = new Set();
+  for (const q of [`giip-${isn}`, `#${isn}`]) {
+    const res = runGhRaw(['search', 'commits', q, '--owner', org, '--limit', String(maxCommits),
+      '--json', 'sha,url,repository,commit']);
+    if (!res.ok) { errors.push(`search commits "${q}": ${res.err}`); continue; }
+    for (const row of res.rows) {
+      const msg = (row.commit && row.commit.message) || '';
+      if (!commitMatchesIsn(msg, isn)) continue;
+      const slug = slugFromRepository(row.repository);
+      if (!slug || !row.sha) continue;
+      const ckey = `${slug}@${row.sha}`;
+      if (seenCommits.has(ckey)) continue;
+      seenCommits.add(ckey);
+      const prRes = runGhRaw(['api', `repos/${slug}/commits/${row.sha}/pulls`]);
+      if (!prRes.ok) { errors.push(`commits/${row.sha}/pulls: ${prRes.err}`); continue; }
+      for (const p of prRes.rows) {
+        const headSha = p && p.head && p.head.sha ? p.head.sha : '';
+        const headRef = p && p.head && p.head.ref ? p.head.ref : '';
+        const subject = { headRefName: headRef, title: p.title || '' };
+        const declaresThis = prDeclaresIsn(subject, isn);
+        // 다른 이슈를 선언한 PR(브랜치/제목에 다른 giip 이슈가 있음)은 이 isn 의 **참조**다 —
+        // 커밋 메시지에 이 isn 이 인용돼 있어도 담당 산출물로 삼지 않는다(giip #2464 정본 규칙과 동일).
+        if (!declaresThis && prDeclaresIssue(subject)) continue;
+        // 이 커밋이 PR 의 head 커밋이거나, PR 이 이 isn 을 선언할 때만 후보로 쓴다.
+        // (그 외에는 "이 커밋을 포함한 무관한 PR" 이 후보가 되는 오탐이다.)
+        if (headSha !== row.sha && !declaresThis) continue;
+        add({
+          number: p.number, state: p.merged_at ? 'MERGED' : String(p.state || '').toUpperCase(),
+          url: p.html_url || '', title: p.title || '', body: p.body || '',
+          headRefName: headRef, slug, repo: `slug:${slug}`,
+        }, 'org-commit');
+      }
+    }
+  }
+
+  // ── (3) 규약 head 브랜치 (조직 어디서든) ──
+  // `head:` 한정 검색은 정확한 브랜치명만 찾지만, 그 제약이 "이 isn 의 PR" 을 확정해 준다.
+  const headRes = runGhRaw(['search', 'prs', '--owner', org, '--limit', String(limit),
+    '--json', 'number,state,url,title,body,repository', '--', `head:bot/task-giip-${isn}`]);
+  if (!headRes.ok) errors.push(`search prs head:: ${headRes.err}`);
+  else {
+    for (const row of headRes.rows) {
+      add({
+        number: row.number, state: String(row.state || '').toUpperCase(), url: row.url || '',
+        title: row.title || '', body: row.body || '', headRefName: `bot/task-giip-${isn}`,
+        slug: slugFromRepository(row.repository),
+      }, 'org-branch');
+    }
+  }
+
+  return { ok: errors.length === 0 || prs.length > 0, prs, sources, errors };
 }

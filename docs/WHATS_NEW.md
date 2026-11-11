@@ -6,7 +6,12 @@
 >
 > *(EN/JP 독자는 각 항목을 AI 에이전트에 번역 요청하세요. / Ask your AI assistant to translate entries.)*
 
-**기준일 (as of): 2026-11-10**
+**기준일 (as of): 2026-11-11**
+
+---
+
+## 2026-11-11
+- **gissue 게이트 되돌림 오판 근본 수정 — 증거 기반 PR 귀속 + 체크리스트 게이트 (giip #4840/#4839)** — "대응 PR 없음" REVIEW→READY 되돌림이 27건 이상 누적된 사고의 근본 원인이 두 가지였음을 규명하고 둘 다 교정했다. ① **귀속의 탐색면 부족**: PR 탐색이 기대 head 브랜치(`bot/task-giip-<isn>`) 1개에 묶여 있어, 레포 목록 밖(제품 레포·다른 프로젝트 레포)·비규약 브랜치(`docs/giip-4219-…`)·수동 PR·커밋 메시지에만 isn 이 있는 PR 을 전부 "PR 없음"으로 오판했다. → **증거 4면 탐색**(브랜치명 / PR 제목·본문 / 커밋 메시지 / 이슈 코멘트의 PR 링크)으로 확장하고, "기대 브랜치 미탐지 단독"은 더 이상 되돌림 근거가 되지 않게 했다. 실측으로 **GitHub 검색은 브랜치명을 색인하지 않는다**는 사실을 확인해 브랜치 열거 경로를 추가했다. ② **판정 단위 오류**: PR 귀속이 맞더라도 "진행 코멘트 형식" 같은 사소한 사유로 되돌려졌다(giip #4839 — 2회 연속). → 되돌리기 전에 **의뢰 체크리스트 판정**을 수행하고 **미충족(UNFULFILLED)일 때만** 되돌린다. 판정 실패·근거 부족은 되돌리지 않는다(오탐 비용 비대칭 — rule 49). 대표(판정 대상) PR 은 "이 isn 을 브랜치/제목으로 선언한 PR"로 고쳐, 본문에서만 인용한 PR 을 근거로 삼던 오탐(giip #4840)을 막았다. 새 모드 `-PrGateMode Gated|Shadow|Legacy`(기본 Gated, `GISSUE_PR_GATE_MODE`)와 기존 `-ChecklistMode` 을 함께 두었으며, 구룰·신룰 결론을 같은 shadow 로그 스키마로 남겨 `compare-checklist-vs-legacy.ps1` 로 직접 비교할 수 있다. 규칙 정본은 Node(`lib/pr-lookup.mjs`) 한 곳에 두고 PowerShell 이 CLI 로 호출한다(탐지 기준 이원화 재발 방지). → [사양 §13-3-1](60-operations/hourly-issue-scheduler.md#13-3-1) · [k-layer KNOW-038](../.agent/k_layer/notes/KNOW-038_pr_attribution_needs_four_evidence_surfaces_and_revert_needs_a_fulfilment_judgement.md)
 
 ---
 

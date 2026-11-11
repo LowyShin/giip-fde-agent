@@ -81,6 +81,13 @@ param(
     #   Live   = PR-전용 되돌림(Modification 분기)을 체크리스트 판정으로 대체한다. 롤아웃 조건(신구 병행 비교 보고 +
     #            "체크리스트 없는 되돌림 0건" 확인)을 만족한 뒤에만 명시적으로 켠다. -Live(쓰기 허용)와는 별개의 스위치다.
     [string]$ChecklistMode = '',
+    # [giip #4840/#4839] 되돌림 판정 경로: Gated(기본) | Shadow | Legacy. 미지정이면 환경변수 GISSUE_PR_GATE_MODE.
+    #   Gated  = **되돌림(REVERT)** 은 의뢰 체크리스트 판정으로 게이트한다 — 판정이 UNFULFILLED(미충족 항목 있음)
+    #            일 때만 READY 로 되돌리고, 그 전에 체크리스트 코멘트를 남긴다. KEEP/HOLD/판정 실패는 되돌리지 않는다.
+    #            PR 귀속은 증거 기반(조직 전 레포·브랜치명·커밋 메시지·이슈 코멘트 PR 링크)이다.
+    #   Shadow = 종전 판정(되돌림)이 그대로 결정하고 신룰 결론만 기록(비교용).
+    #   Legacy = 종전 동작 그대로.
+    [string]$PrGateMode = '',
     [int]$MaxChecklistReverts = 3       # [giip #4334] 전 게이트 합산 되돌림 이 횟수에 도달하면 더 되돌리지 않고 WARN 에스컬레이션
 )
 
@@ -113,6 +120,8 @@ $env:GIIP_ACTOR = 'ai.dp01.gissue-scheduler'
 
 # [giip #4334] 체크리스트 판정 모드(Off|Shadow|Live). 기본 Shadow = 신룰은 기록만, 구룰이 계속 동작.
 $ChecklistModeResolved = Get-ChecklistMode $ChecklistMode
+# [giip #4840/#4839] 되돌림 판정 경로(Gated|Shadow|Legacy). 기본 Gated = 되돌림은 체크리스트 판정이 결정.
+$PrGateModeResolved = Get-PrGateMode $PrGateMode
 # 체크리스트 감사 코멘트를 실제로 남긴 isn. Live 모드의 READY/DONE 전이는 이 표에 있어야만 실행된다
 # (체크리스트 코멘트 없는 상태 전이 금지 - Set-IssueStatusAudit 가드).
 $script:ChecklistPosted = @{}
@@ -635,7 +644,10 @@ function Get-AuditChecklistAssessment($iss, $comments, $repos) {
         $d = Get-IssueDetail $isn $ApiKey $ApiBaseUrl
         if ($d -and $d.content) { $content = "$($d.content)" }
     }
-    $pr = Get-ChecklistPrEvidence $isn $repos
+    # [giip #4335/#4840] 이슈 본문/코멘트에 링크된 PR(제품 레포 등)도 증거로 넣는다 — 이전엔 $LinkTexts 를
+    # 넘기지 않아 "레포 스캔 밖 PR" 이 체크리스트 판정에서 invisible 이었다.
+    $linkTexts = @($content, (ConvertTo-CommentsText $comments))
+    $pr = Get-ChecklistPrEvidence $isn $repos $linkTexts
     $a = Invoke-ChecklistAssessment $isn $content $comments $pr
     $a.Pr = $pr
     return $a
@@ -784,8 +796,12 @@ function Invoke-AuditIssue($iss, $repos) {
     $assess = $null
     $legacyRevert = ($decisionMarker -eq 'REVERT')
     $legacyPromote = ($decisionNewStatus -eq 'DONE')
+    # [giip #4840/#4839] Gated 모드: **되돌림(REVERT)** 만 체크리스트 판정으로 게이트한다.
+    #   판정이 UNFULFILLED(미충족 항목 있음)일 때만 READY 로 되돌리고, 그 전에 체크리스트 코멘트를 남긴다.
+    #   KEEP/HOLD/판정 실패 → 되돌리지 않는다(근거 없는 되돌림 금지 — rule 49 비대칭).
+    $gatedRevert = ($PrGateModeResolved -eq 'Gated' -and $legacyRevert)
     if ($ChecklistModeResolved -ne 'Off' -and ($legacyRevert -or ($ChecklistModeResolved -eq 'Live' -and $legacyPromote))) {
-        if ($ChecklistModeResolved -eq 'Shadow') {
+        if ($ChecklistModeResolved -eq 'Shadow' -and -not $gatedRevert) {
             if ($legacyRevert) {
                 # [giip #4334 후속] Shadow 비용 축소(Shadow 한정 - Live 판정은 아래 else 에서 캐시 없이 매번 계산한다).
                 $src = "review-done-audit:$status"
@@ -803,6 +819,11 @@ function Invoke-AuditIssue($iss, $repos) {
             $assess = $null
         } else {
             $assess = Get-AuditChecklistAssessment $iss $comments $repos
+            if ($gatedRevert -and $assess.Ok) {
+                # [giip #4840/#4839] 비교 가능성: 구룰 결론(REVERT)과 신룰 결론을 **기존 Shadow 로그와 같은 형식**으로
+                # 남긴다 → compare-checklist-vs-legacy.ps1 로 두 경로를 직접 비교할 수 있다.
+                [void](Write-ChecklistShadowRecord $iss.isn 'REVERT' $assess "review-done-audit:$status")
+            }
             if (-not $assess.Ok) {
                 Write-AuditLog "isn=${isn}: [CHECKLIST] $($assess.Reason) - 전이 없음(근거 없이 되돌리지도 확정하지도 않는다)."
                 return
