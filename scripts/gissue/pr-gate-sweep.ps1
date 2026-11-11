@@ -98,6 +98,15 @@ param(
     #            logs/checklist-shadow.jsonl 에 기록만 한다. Live = REVIEW 이슈 판정을 체크리스트 하나로 대체
     #            (PR 없음 단독/scope/comment/보고형 되돌림은 항목 판정의 증거로 흡수). 명시적으로만 켠다.
     [string]$ChecklistMode = '',
+    # [giip #4840/#4839] REVIEW 큐 되돌림 판정 경로: Gated(기본) | Shadow | Legacy. 미지정이면 환경변수
+    #   GISSUE_PR_GATE_MODE, 없으면 Gated.
+    #   Gated  = 증거 기반 PR 귀속(조직 전 레포·브랜치명·커밋 메시지·이슈 코멘트 PR 링크) + **체크리스트 게이트**.
+    #            구룰(PR-gate/scope/comment)이 되돌림을 *제안*하면, 되돌리기 전에 의뢰 체크리스트 판정을 수행하고
+    #            **판정이 UNFULFILLED(미충족 항목 있음)일 때만** 되돌린다. 구룰/신룰 결론은 함께 기록된다.
+    #   Shadow = 증거 기반 귀속 + 구룰이 결정(즉시 되돌림), 신룰 결론만 기록(비교용).
+    #   Legacy = 즉시 되돌림(체크리스트 게이트 없음) — 되돌림이 재발하면 임시 회피용.
+    #            ※ PR 귀속은 세 모드 모두 증거 기반이다(탐색면 확장은 되돌림 오탐의 직접 원인이므로 항상 둔다).
+    [string]$PrGateMode = '',
     # giip #4300: 마지막 작업 코멘트가 이 분 이내인 이슈는 되돌림/스트라이크/에스컬레이션을 한 틱 미룬다(0=끔).
     [int]$MinIdleMinutes = 10,
     [int]$Csn = 0,
@@ -167,6 +176,11 @@ $CommentEscalatedMarker = '[COMMENT-GATE-HUMAN-REVIEW]'
 
 # [giip #4334] 체크리스트 판정 모드(Off|Shadow|Live).
 $ChecklistModeResolved = Get-ChecklistMode $ChecklistMode
+
+# [giip #4840/#4839] REVIEW 큐 되돌림 판정 경로(Gated|Shadow|Legacy).
+#   -ChecklistMode Live(기존 스위치)이면 REVIEW 판정 전체를 체크리스트로 대체하는 기존 경로를 그대로 쓴다.
+#   그 외에는 이 스위치가 REVIEW 큐의 되돌림 경로를 정한다(기본 Gated = 근본 수정 경로).
+$PrGateModeResolved = Get-PrGateMode $PrGateMode
 
 function Write-SweepLog($msg) {
     $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
@@ -496,8 +510,9 @@ function Invoke-ChecklistTransition($isn, $note, $newStatus, $label) {
     try {
         [System.IO.File]::WriteAllText($tmp, $note, (New-Object System.Text.UTF8Encoding $true))
         Invoke-IssueWrite $isn @('--comment-file', $tmp)       # 실패 시 예외 -> 아래 catch, 상태 전이로 가지 않는다
-        Invoke-IssueWrite $isn @('--status', $newStatus)
-        Write-SweepLog "CHECKLIST isn=$isn REVIEW→$newStatus ($label) + 체크리스트 코멘트 등록"
+        # $newStatus 가 비면 코멘트만 남긴다(상태 전이 없음 — HOLD 보류 등).
+        if ($newStatus) { Invoke-IssueWrite $isn @('--status', $newStatus) }
+        Write-SweepLog "CHECKLIST isn=$isn $(if ($newStatus) { "REVIEW→$newStatus" } else { '코멘트만(전이 없음)' }) ($label) + 체크리스트 코멘트 등록"
         return $true
     } catch {
         Write-SweepLog "[WRITE-FAIL] CHECKLIST isn=$isn ($label): $($_.Exception.Message)"
@@ -518,8 +533,10 @@ function Get-SweepChecklistAssessment($isn, $comments) {
 }
 
 # Shadow: 구룰이 되돌리려는 지점에서 호출 - 신룰 판정을 계산해 기록만 한다(쓰기 없음).
-function Write-SweepChecklistShadow($isn, $comments, $legacyLabel) {
-    if ($ChecklistModeResolved -ne 'Shadow') { return }
+# [giip #4840/#4839] 기록 스키마는 Gated 모드와 **같다**(legacy=구룰 결론 / checklist=신룰 결론).
+# → 같은 logs/checklist-shadow.jsonl 에 두 모드의 기록이 쌓이므로 compare-checklist-vs-legacy.ps1 로 직접 비교된다.
+function Write-SweepChecklistShadow($isn, $comments, $legacyLabel, $issueContent = '', $linkTexts = @()) {
+    if ($ChecklistModeResolved -ne 'Shadow' -and $PrGateModeResolved -ne 'Shadow') { return }
     try {
         # [giip #4334 후속] Shadow 비용 축소: 같은 (isn, 구룰 사유) 최근 기록/호출 상한/실패 백오프면 입력 조회와 LLM 호출을 모두 생략한다.
         $src = "pr-gate-sweep:$legacyLabel"
@@ -528,9 +545,12 @@ function Write-SweepChecklistShadow($isn, $comments, $legacyLabel) {
             Write-SweepLog "isn=${isn}: [CHECKLIST-SHADOW] 구룰=REVERT($legacyLabel) 신룰 평가 생략 - $($skip.Why) - 구룰 계속 진행."
             return
         }
-        $d = Get-IssueDetail $isn $ApiKey $ApiBaseUrl
-        $content = if ($d -and $d.content) { "$($d.content)" } else { '' }
-        $pr = Get-ChecklistPrEvidence $isn $repos
+        $content = $issueContent
+        if (-not $content) {
+            $d = Get-IssueDetail $isn $ApiKey $ApiBaseUrl
+            $content = if ($d -and $d.content) { "$($d.content)" } else { '' }
+        }
+        $pr = Get-ChecklistPrEvidence $isn $repos $linkTexts
         $r = Invoke-ChecklistShadowJudge $isn 'REVERT' $src $content $comments $pr
         $a = $r.Assessment
         Write-SweepLog "isn=${isn}: [CHECKLIST-SHADOW] 구룰=REVERT($legacyLabel) 신룰=$($a.Decision) ($($a.Reason)) [$($r.Action)] - 기록만, 구룰 계속 진행."
@@ -579,6 +599,73 @@ function Invoke-ChecklistLiveGate($isn, $comments, $tally, $allowPromote) {
     }
 }
 
+# ── [giip #4840/#4839] Gated 모드: 구룰의 "되돌림 제안" → 체크리스트 게이트 → UNFULFILLED 일 때만 되돌림 ──
+#
+# 왜 이게 필요한가(실측 2026-11-11):
+#   "대응 PR 없음" REVIEW→READY 되돌림이 27건 이상 누적됐다. 두 종류가 섞여 있었다.
+#     (a) 귀속 실패 — PR 이 **다른 레포/다른 브랜치명/수동 PR** 라 탐색면 밖이라 "PR 없음"이 된 경우.
+#         → 증거 기반 귀속(Get-IssuePrAttribution: 조직 전 레포·브랜치명·커밋 메시지·이슈 코멘트 PR 링크)으로 해결.
+#     (b) 판정 실패 — PR 귀속은 맞는데 "진행 코멘트 형식" 같은 **사소한 사유**로 되돌려진 경우(giip #4839).
+#         → 되돌리기 전에 의뢰 체크리스트 판정을 수행하고, **미충족(UNFULFILLED)일 때만** 되돌린다.
+#   "기대 브랜치 미탐지 단독"으로는 더 이상 되돌림 근거가 되지 않는다.
+#
+# 반환: 'reverted' | 'kept' | 'held' | 'escalated' | 'skipped'
+function Invoke-GatedRevertGate($isn, $comments, $tally, $legacyLabel, $issueContent, $linkTexts) {
+    $src = "pr-gate-sweep:$legacyLabel"
+    # 비용 가드: 틱/시간당 호출 상한 + 실패 백오프. TTL 은 끈다 — "입력이 그대로면 재사용"은
+    # 입력해시 캐시(Invoke-ChecklistShadowJudge)가 이미 담당한다(TTL 로 막으면 재작업 후에도 되돌릴 수 없다).
+    $skip = Test-ChecklistShadowSkip $isn $src $true
+    if ($skip.Skip) {
+        Write-SweepLog "isn=${isn}: [CHECKLIST-GATED] 판정 생략 - $($skip.Why) - 근거 없이 되돌리지 않고 REVIEW 유지."
+        return 'skipped'
+    }
+    try {
+        $pr = Get-ChecklistPrEvidence $isn $repos $linkTexts
+        $r = Invoke-ChecklistShadowJudge $isn 'REVERT' $src $issueContent $comments $pr
+        $a = $r.Assessment
+        $d = Get-GatedRevertDecision $isn $a $tally $MaxGateRevertAttempts $comments
+        switch ($d.Action) {
+            'skip' {
+                Write-SweepLog "isn=${isn}: [CHECKLIST-GATED] $($d.Reason) - 전이 없음(REVIEW 유지)."
+                return 'skipped'
+            }
+            'keep' {
+                Write-SweepLog "isn=${isn}: [CHECKLIST-GATED] 구룰=되돌림제안($legacyLabel) 신룰=KEEP ($($d.Reason)) - 되돌리지 않고 REVIEW 유지."
+                return 'kept'
+            }
+            'hold' {
+                # 보류 코멘트는 1회만(같은 이슈에 매 틱 쌓이지 않게).
+                $already = @($comments | Where-Object { $_.content -and "$($_.content)".Contains($d.Marker) }).Count -gt 0
+                if (-not $already -and $d.Comment) {
+                    [void](Invoke-ChecklistTransition $isn $d.Comment '' 'checklist HOLD(보류)')
+                }
+                Write-SweepLog "isn=${isn}: [CHECKLIST-GATED] 신룰=HOLD ($($d.Reason)) - 되돌리지 않고 REVIEW 유지."
+                return 'held'
+            }
+            'escalate' {
+                if ($d.Comment) { [void](Invoke-ChecklistTransition $isn $d.Comment 'NEEDS_DECISION' 'checklist 에스컬레이션') }
+                Write-SweepLog "isn=${isn}: [CHECKLIST-GATED] $($d.Reason) - NEEDS_DECISION 전환."
+                return 'escalated'
+            }
+            default {
+                # 되돌림: **체크리스트 코멘트를 먼저** 남기고 그 다음 READY 로 전이한다(코멘트 없는 전이 금지).
+                if (-not $d.Comment) {
+                    Write-SweepLog "isn=${isn}: [CHECKLIST-GATED] 판정은 되돌림인데 코멘트를 만들지 못했다 - 전이 없음."
+                    return 'skipped'
+                }
+                if (Invoke-ChecklistTransition $isn $d.Comment 'READY' "checklist REVERT($legacyLabel)") {
+                    Write-SweepLog "isn=${isn}: [CHECKLIST-GATED] 구룰=되돌림제안($legacyLabel) 신룰=REVERT/UNFULFILLED ($($d.Reason)) - 체크리스트 코멘트 등록 후 REVIEW→READY."
+                    return 'reverted'
+                }
+                return 'skipped'
+            }
+        }
+    } catch {
+        Write-SweepLog "isn=${isn}: [CHECKLIST-GATED] 오류(무시, 전이 없음): $($_.Exception.Message)"
+        return 'skipped'
+    }
+}
+
 # ── 진단 모드: 단일 isn 의 PR 존재 여부만 출력(상태 변경 없음) ──
 if ($DiagnoseIsn -gt 0) {
     $repos = Get-NestedRepoPaths $Workdir
@@ -618,7 +705,7 @@ Write-SweepLog "REVIEW 이슈 $(@($issues).Count)건 검사."
 
 $reverted = 0; $keptHasPr = 0; $keptGuard = 0; $keptNoPrReason = 0
 $scopeReverted = 0; $scopeGuard = 0; $scopeNoPrReason = 0; $commentReverted = 0; $commentGuard = 0; $gateWarn = 0
-$reportDone = 0; $reportReverted = 0
+$reportDone = 0; $reportReverted = 0; $keptByChecklist = 0
 $script:debounced = 0; $script:checklistKept = 0; $script:checklistReverted = 0; $script:checklistHeld = 0; $script:checklistEscalated = 0; $script:checklistSkipped = 0
 Write-SweepLog "체크리스트 판정 모드: $ChecklistModeResolved (giip #4334)"
 foreach ($iss in $issues) {
@@ -683,7 +770,7 @@ foreach ($iss in $issues) {
                         Write-SweepLog "isn=${isn}: [NO-PR-REASON] UNFULFILLED, 누적 $totalAttempts 회 >= $MaxGateRevertAttempts → NEEDS_DECISION 에스컬레이션."
                     } else {
                         Write-SweepLog "isn=${isn}: [NO-PR-REASON] 의뢰↔결과 UNFULFILLED → REVERT."
-                        Write-SweepChecklistShadow $isn $comments 'report-gate'
+                        Write-SweepChecklistShadow $isn $comments 'report-gate' $issueContent $legacyLinkTexts
                         Invoke-ReportRevert $isn $doneJudge.text $tally.Counts['report-gate']
                         $reportReverted++
                     }
@@ -696,12 +783,23 @@ foreach ($iss in $issues) {
             # ── giip #2415: 누적 3회 에스컬레이션(전 게이트 합산 + review-done-audit 되돌림 포함) ──
             $prGateAttemptCount = $tally.Counts['PR-gate']
             $totalAttempts = $tally.Total
-            if ($totalAttempts -ge $MaxGateRevertAttempts) {
+            if ($PrGateModeResolved -eq 'Gated') {
+                # [giip #4840/#4839] 증거 기반 귀속으로도 PR 이 없으면, **체크리스트 판정이 UNFULFILLED 일 때만**
+                # 되돌린다. 기대 브랜치 미탐지 단독으로는 되돌림 근거가 되지 않는다.
+                $g = Invoke-GatedRevertGate $isn $comments $tally 'PR-gate' $issueContent $legacyLinkTexts
+                switch ($g) {
+                    'reverted'  { $reverted++ }
+                    'kept'      { $keptByChecklist++ }
+                    'held'      { $keptByChecklist++ }
+                    'escalated' { $keptGuard++ }
+                    default     { $gateWarn++ }
+                }
+            } elseif ($totalAttempts -ge $MaxGateRevertAttempts) {
                 $keptGuard++
                 Invoke-GateEscalate $isn $RevertEscalatedMarker $RevertAuthor "PR-gate(PR 존재 판정)" "브랜치 bot/task-giip-$isn 에 대응하는 PR 이 어느 nested 레포에도 없는 상태가 누적 $totalAttempts 회($($tally.CountsText)) 되돌림 이후에도 해소되지 않았습니다." $tally
                 Write-SweepLog "isn=${isn}: PR 없음, 누적 $totalAttempts 회($($tally.CountsText)) 되돌림으로 최대치 도달 → NEEDS_DECISION 에스컬레이션(코멘트는 최초 1회만)."
             } else {
-                Write-SweepChecklistShadow $isn $comments 'PR-gate'
+                Write-SweepChecklistShadow $isn $comments 'PR-gate' $issueContent $legacyLinkTexts
                 Invoke-Revert $isn $prGateAttemptCount
                 $reverted++
             }
@@ -797,9 +895,21 @@ foreach ($iss in $issues) {
                         $keptGuard++
                         Invoke-GateEscalate $isn $RevertEscalatedMarker $RevertAuthor "누적 ${MaxGateRevertAttempts}회 초과(전체 게이트 합산)" "PR#$($prInfo.number) scope-match MISMATCH 되돌림 예정분 포함 누적 $totalAttempts 회(기존 $($tally.CountsText) + 이번 scope-gate 1회) 재시도 이후에도 해소되지 않아 NEEDS_DECISION 전환." $tally
                         Write-SweepLog "isn=${isn}: scope-match MISMATCH, 누적 $totalAttempts 회 >= $MaxGateRevertAttempts → NEEDS_DECISION 에스컬레이션(전체 합산)."
+                    } elseif ($PrGateModeResolved -eq 'Gated') {
+                        # [giip #4840/#4839] scope-match MISMATCH 단독으로는 되돌리지 않는다 —
+                        # "판정 대상이 아닌 PR 을 근거로 한" 오탐을 막으려면 의뢰 항목 판정이 UNFULFILLED 이어야 한다.
+                        Write-SweepLog "isn=${isn}: scope-match MISMATCH (평가 PR #$($prInfo.number) $($prInfo.slug), 상태=$($prInfo.state)) → 체크리스트 게이트로 넘어감."
+                        $g = Invoke-GatedRevertGate $isn $comments $tally 'scope-gate' $issueContent $legacyLinkTexts
+                        switch ($g) {
+                            'reverted'  { $scopeReverted++ }
+                            'kept'      { $keptByChecklist++ }
+                            'held'      { $keptByChecklist++ }
+                            'escalated' { $scopeGuard++ }
+                            default     { $gateWarn++ }
+                        }
                     } else {
                         Write-SweepLog "isn=${isn}: scope-match MISMATCH → REVERT (평가 PR #$($prInfo.number) $($prInfo.slug), 상태=$($prInfo.state))."
-                        Write-SweepChecklistShadow $isn $comments 'scope-gate'
+                        Write-SweepChecklistShadow $isn $comments 'scope-gate' $issueContent $legacyLinkTexts
                         Invoke-ScopeRevert $isn $prInfo $scopeJudge.text $scopeAttemptCount $prDiff
                         $scopeReverted++
                     }
@@ -824,9 +934,21 @@ foreach ($iss in $issues) {
                                     $keptGuard++
                                     Invoke-GateEscalate $isn $RevertEscalatedMarker $RevertAuthor "누적 ${MaxGateRevertAttempts}회 초과(전체 게이트 합산)" "PR#$($prInfo.number) comment-gate UNSATISFIED 되돌림 예정분 포함 누적 $totalAttempts 회(기존 $($tally.CountsText) + 이번 comment-gate 1회) 재시도 이후에도 해소되지 않아 NEEDS_DECISION 전환." $tally
                                     Write-SweepLog "isn=${isn}: comment-gate UNSATISFIED, 누적 $totalAttempts 회 >= $MaxGateRevertAttempts → NEEDS_DECISION 에스컬레이션(전체 합산)."
+                                } elseif ($PrGateModeResolved -eq 'Gated') {
+                                    # [giip #4839] "진행 코멘트 형식" 사유로 2회 되돌려진 사례의 정정 —
+                                    # 코멘트 형식/양식이 아니라 의뢰 항목 이행 여부(체크리스트)로 되돌림을 결정한다.
+                                    Write-SweepLog "isn=${isn}: comment-gate UNSATISFIED → 체크리스트 게이트로 넘어감."
+                                    $g = Invoke-GatedRevertGate $isn $comments $tally 'comment-gate' $issueContent $legacyLinkTexts
+                                    switch ($g) {
+                                        'reverted'  { $commentReverted++ }
+                                        'kept'      { $keptByChecklist++ }
+                                        'held'      { $keptByChecklist++ }
+                                        'escalated' { $commentGuard++ }
+                                        default     { $gateWarn++ }
+                                    }
                                 } else {
                                     Write-SweepLog "isn=${isn}: comment-gate UNSATISFIED → REVERT."
-                                    Write-SweepChecklistShadow $isn $comments 'comment-gate'
+                                    Write-SweepChecklistShadow $isn $comments 'comment-gate' $issueContent $legacyLinkTexts
                                     Invoke-CommentRevert $isn $prInfo $commentJudge.text $commentAttemptCount
                                     $commentReverted++
                                 }
@@ -848,6 +970,7 @@ foreach ($iss in $issues) {
     }  # end of else (hasNoPrReason) for PR-exists path
 }  # end of foreach loop
 Write-SweepLog "완료: PR없음-되돌림 $reverted, PR없음-NoPrReason유지 $keptNoPrReason, 보고형-자동DONE $reportDone, 보고형-되돌림 $reportReverted, PR있음 $keptHasPr, 누적캡-NEEDS_DECISION에스컬레이션 $keptGuard, scope-되돌림 $scopeReverted, scope-NoPrReason유지 $scopeNoPrReason, scope-NEEDS_DECISION에스컬레이션 $scopeGuard, comment-되돌림 $commentReverted, comment-NEEDS_DECISION에스컬레이션 $commentGuard, 게이트경고(폴백) $gateWarn, 디바운스-보류 $($script:debounced)."
+Write-SweepLog "판정 경로: $PrGateModeResolved (체크리스트 모드: $ChecklistModeResolved) — 체크리스트 게이트로 유지(되돌리지 않음) $keptByChecklist 건."
 if ($ChecklistModeResolved -eq 'Live') {
     Write-SweepLog "체크리스트(Live) 결과: 유지/확정 $($script:checklistKept), 되돌림 $($script:checklistReverted), 보류(NEEDS_DECISION) $($script:checklistHeld), 에스컬레이션 $($script:checklistEscalated), 판정불가로 전이없음 $($script:checklistSkipped)."
 }

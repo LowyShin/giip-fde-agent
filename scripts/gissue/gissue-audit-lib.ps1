@@ -207,31 +207,17 @@ function Get-ValidatedPrLinks($Links, $Isn = $null) {
 # 오탐(불필요 되돌림) 최소화를 위해 넉넉하게 판정한다.
 # $LinkTexts(선택, giip #4335): 이슈 본문/코멘트 등 자유 텍스트. 생략하면(기본 @()) 기존 동작과
 # 100% 동일 — 레포 스캔으로 못 찾았을 때만 보조로 검사해 기존 호출부(인자 미전달)는 영향 없다.
+#
+# [giip #4840/#4839] 2026-11-11: 종전 3경로(기대 브랜치/넓은 검색/이슈 텍스트 링크) 뒤에
+# **증거 기반 조직 전 탐색**(`Get-IssuePrAttribution`)을 편입했다.
+# "대응 PR 없음" 되돌림이 27건 이상 누적된 근본 원인 = 기대 head 브랜치 1개에 탐색이 묶여 있었기 때문.
+# 기대 브랜치 미탐지 **단독**으로는 더 이상 되돌림 근거가 되지 않는다(아래 증거 4면 참고).
 function Test-IssueHasPr($isn, $repos, $LinkTexts = @()) {
-    $isnRe = "(?<!\d)$isn(?!\d)"
-    # giip #2077 (2): 비표준 브랜치명 + 제목에 isn 이 없고 PR 본문(body)에만 "#<isn>"(예: "giip #2077")이
-    # 있는 PR 은, --search 가 잡아와도 아래 필터가 headRefName/title 만 봤기 때문에 탈락해 "PR 없음"으로
-    # 오판됐다. body 도 판정 대상에 포함한다. 본문은 자유 텍스트라 오탐(무관한 숫자)을 줄이려 이슈 참조
-    # 관용 표기 "#<isn>" 형태로만 매치한다(bare isn 아님).
-    $isnBodyRe = "#$isn(?!\d)"
-    foreach ($repo in $repos) {
-        # 1) 정확한 head 브랜치 매치(가장 신뢰도 높음 — 이 코드베이스의 브랜치 규약).
-        $exact = Invoke-GhPrQuery $repo @('pr', 'list', '--head', "bot/task-giip-$isn", '--state', 'all', '--json', 'number')
-        if ($exact.Count -gt 0) { return $true }
-        # 2) 넓은 검색 폴백(다르게 명명된 브랜치/본문 참조 대응).
-        $broad = Invoke-GhPrQuery $repo @('pr', 'list', '--state', 'all', '--search', "giip-$isn", '--json', 'headRefName,title,body')
-        foreach ($pr in $broad) {
-            if (($pr.headRefName -and $pr.headRefName -match $isnRe) -or ($pr.title -and $pr.title -match $isnRe) -or ($pr.body -and $pr.body -match $isnBodyRe)) {
-                return $true
-            }
-        }
-    }
-    # 3) [giip #4335] 레포 스캔 범위 밖: 이슈 본문/코멘트에 실제로 링크된, 이 isn 을 참조하는 PR 이 있으면 인정.
-    if (@($LinkTexts).Count -gt 0) {
-        $links = Get-PrLinksFromText $LinkTexts
-        if (@($links).Count -gt 0 -and @(Get-ValidatedPrLinks $links $isn).Count -gt 0) { return $true }
-    }
-    return $false
+    $legacy = Get-LegacyIssuePrCandidates $isn $repos $LinkTexts
+    if (@($legacy.Candidates).Count -gt 0) { return $true }
+    # 증거 기반 경로(조직 전 레포 · 브랜치명 · 커밋 메시지 · 이슈 코멘트 PR 링크).
+    $attr = Get-IssuePrAttribution $isn $repos $LinkTexts
+    return [bool]$attr.HasPr
 }
 
 # 이 isn 에 대응하는 PR이 "머지까지" 됐는가(review-done-audit.ps1 전용 — pr-gate-sweep.ps1 은
@@ -239,26 +225,276 @@ function Test-IssueHasPr($isn, $repos, $LinkTexts = @()) {
 # giip #1123). --state merged 로 직접 조회해 정확하게 판정한다(squash/rebase/merge 무관).
 # $LinkTexts: Test-IssueHasPr 와 동일 계약(선택, 기본 @() 이면 기존 동작과 동일).
 function Test-IssueHasMergedPr($isn, $repos, $LinkTexts = @()) {
+    $legacy = Get-LegacyIssuePrCandidates $isn $repos $LinkTexts
+    if (@($legacy.Candidates | Where-Object { $_.merged }).Count -gt 0) { return $true }
+    $attr = Get-IssuePrAttribution $isn $repos $LinkTexts
+    return [bool]$attr.HasMerged
+}
+
+# ─────────────────────────────────────────────────────────────────────────
+# [giip #4840/#4839] 증거 기반 PR 귀속 (2026-11-11)
+#
+# 왜 생겼나(실측): "대응 PR 없음" REVIEW→READY 되돌림이 27건 이상 누적됐다. 종전 귀속은
+#   ①기대 head 브랜치 `bot/task-giip-<isn>` ②레포별 넓은 검색(`giip-<isn>`) ③이슈 본문/코멘트의
+#   PR 링크 — 세 경로였고, **레포 목록 밖**(제품 레포·다른 프로젝트 레포)과 **비규약 브랜치**
+#   (`docs/giip-4219-…`)와 **커밋 메시지에만 isn 이 있는 PR** 을 전부 놓쳤다.
+#   GitHub 검색은 PR 제목/본문/댓글만 색인하고 **브랜치명은 색인하지 않는다**(2026-11-11 실측) —
+#   그래서 제목/본문에 isn 이 없으면 브랜치명이 맞아도 잡히지 않았다.
+#
+# 이 구역이 제공하는 것:
+#   Get-AttributionOrgs            — 조직 목록(레포 origin 에서 유도)
+#   Get-LegacyIssuePrCandidates    — 종전 3경로 후보(단일 출처: rule 48)
+#   Get-IssuePrAttributionViaNode  — Node 정본(`lib/pr-lookup.mjs`) 호출
+#   Get-IssuePrAttribution          — 증거 통합(브랜치명/제목·본문/커밋 메시지/이슈 코멘트 링크)
+#   Get-GatedRevertDecision        — 되돌림 최종 판정(순수 함수, UNFULFILLED 일 때만 되돌림)
+# ─────────────────────────────────────────────────────────────────────────
+
+# 종전 3경로의 후보를 모아 준다(단일 출처 — Test-IssueHasPr/Test-IssueHasMergedPr/폴백이 공유).
+# 반환: @{ Candidates = @(<후보>); HasMerged = <bool> }
+#   후보: @{ number; slug; url; title; state; headRefName; how; repo; merged }
+function Get-LegacyIssuePrCandidates($isn, $repos, $LinkTexts = @()) {
     $isnRe = "(?<!\d)$isn(?!\d)"
-    $isnBodyRe = "#$isn(?!\d)"   # giip #2077 (2): PR 본문의 "#<isn>" 참조도 매치(Test-IssueHasPr 와 동일)
+    # giip #2077 (2): 비표준 브랜치명 + 제목에 isn 이 없고 PR 본문(body)에만 "#<isn>"(예: "giip #2077")이
+    # 있는 PR 은, --search 가 잡아와도 아래 필터가 headRefName/title 만 봤기 때문에 탈락해 "PR 없음"으로
+    # 오판됐다. body 도 판정 대상에 포함한다. 본문은 자유 텍스트라 오탐(무관한 숫자)을 줄이려 이슈 참조
+    # 관용 표기 "#<isn>" 형태로만 매치한다(bare isn 아님).
+    $isnBodyRe = "#$isn(?!\d)"
+    $cands = @()
     foreach ($repo in $repos) {
-        $exact = Invoke-GhPrQuery $repo @('pr', 'list', '--head', "bot/task-giip-$isn", '--state', 'merged', '--json', 'number')
-        if ($exact.Count -gt 0) { return $true }
-        $broad = Invoke-GhPrQuery $repo @('pr', 'list', '--state', 'merged', '--search', "giip-$isn", '--json', 'headRefName,title,body')
+        # 1) 정확한 head 브랜치 매치(가장 신뢰도 높음 — 이 코드베이스의 브랜치 규약).
+        $exact = Invoke-GhPrQuery $repo @('pr', 'list', '--head', "bot/task-giip-$isn", '--state', 'all', '--json', 'number,state,url,title,headRefName')
+        foreach ($e in $exact) {
+            if (-not (Test-ValidPrNumber $e.number)) { continue }
+            $cands += @{ number = [int64]$e.number; slug = (Get-RepoSlugFromUrl $e.url); url = "$($e.url)"; title = "$($e.title)"; state = "$($e.state)"; headRefName = "$($e.headRefName)"; how = 'exact'; repo = "$repo"; merged = ("$($e.state)" -eq 'MERGED') }
+        }
+        if ($cands.Count -gt 0) { break }
+        # 2) 넓은 검색 폴백(다르게 명명된 브랜치/본문 참조 대응).
+        $broad = Invoke-GhPrQuery $repo @('pr', 'list', '--state', 'all', '--search', "giip-$isn", '--json', 'headRefName,title,body')
         foreach ($pr in $broad) {
             if (($pr.headRefName -and $pr.headRefName -match $isnRe) -or ($pr.title -and $pr.title -match $isnRe) -or ($pr.body -and $pr.body -match $isnBodyRe)) {
-                return $true
+                $cands += @{ number = [int64]$pr.number; slug = ''; url = ''; title = "$($pr.title)"; state = ''; headRefName = "$($pr.headRefName)"; how = 'broad'; repo = "$repo"; merged = $false }
             }
         }
+        if ($cands.Count -gt 0) { break }
     }
+    # 3) [giip #4335] 레포 스캔 범위 밖: 이슈 본문/코멘트에 실제로 링크된, 이 isn 을 참조하는 PR 이 있으면 인정.
     if (@($LinkTexts).Count -gt 0) {
         $links = Get-PrLinksFromText $LinkTexts
-        if (@($links).Count -gt 0) {
-            $validated = @(Get-ValidatedPrLinks $links $isn | Where-Object { $_.merged })
-            if ($validated.Count -gt 0) { return $true }
+        foreach ($l in @(Get-ValidatedPrLinks $links $isn)) {
+            $cands += @{ number = [int64]$l.number; slug = "$($l.slug)"; url = "$($l.url)"; title = "$($l.title)"; state = "$($l.state)"; headRefName = "$($l.headRefName)"; how = 'text-link'; repo = "$($l.repo)"; merged = [bool]$l.merged }
         }
     }
-    return $false
+    return @{ Candidates = @($cands); HasMerged = (@($cands | Where-Object { $_.merged }).Count -gt 0) }
+}
+
+# 조직(organization) 목록. 우선순위:
+#   1) 환경변수 GISSUE_GH_ORGS (쉼표/공백 구분) — 운영자가 직접 지정.
+#   2) 레포 목록의 origin/slug 에서 유도한 owner.
+#   3) 없으면 빈 목록(= 조직 전 탐색을 하지 않는다 — 네트워크 0, 기존 동작과 동일).
+# 주의: $repos 가 비면 조직도 비어 있다(테스트가 네트워크를 건드리지 않도록).
+function Get-AttributionOrgs($repos) {
+    $map = @{}
+    if ($env:GISSUE_GH_ORGS) {
+        foreach ($o in ($env:GISSUE_GH_ORGS -split '[,\s]+')) {
+            $t = "$o".Trim()
+            if ($t) { $map[$t.ToLowerInvariant()] = $t }
+        }
+    }
+    foreach ($r in @($repos)) {
+        $spec = "$r"
+        $slug = $null
+        if ($spec -match '^slug:(.+)$') {
+            $slug = $Matches[1].Trim()
+        } else {
+            try {
+                $origin = (git -C $spec remote get-url origin 2>$null)
+                if ($LASTEXITCODE -eq 0 -and $origin) {
+                    $o = ("$origin").Trim() -replace '\.git$', ''
+                    if ($o -match 'github\.com[:/]([^/]+)/([^/]+)$') { $slug = "$($Matches[1])/$($Matches[2])" }
+                }
+            } catch { $slug = $null }
+        }
+        if ($slug) {
+            $parts = "$slug".Split('/')
+            if ($parts.Count -ge 2 -and $parts[0]) { $map[$parts[0].ToLowerInvariant()] = $parts[0] }
+        }
+    }
+    return @($map.Values)
+}
+
+# Node 정본(`lib/pr-lookup.mjs`)을 CLI 로 호출해 증거 기반 후보를 받는다. 실패 시 $null.
+function Get-IssuePrAttributionViaNode($isn, $repos, $Orgs = @()) {
+    $cli = Join-Path (Join-Path $PSScriptRoot 'lib') 'pr-lookup-cli.mjs'
+    if (-not (Test-Path $cli)) { return $null }
+    try {
+        # $args 는 PowerShell 자동변수라 덮어쓰지 않는다(giip #2504 리뷰 지적 회피).
+        $cliArgs = @($cli, "$isn")
+        foreach ($r in @($repos)) { $cliArgs += "$r" }
+        foreach ($o in @($Orgs)) { $cliArgs += @('--org', "$o") }
+        $out = & node @cliArgs 2>$null
+        if ($LASTEXITCODE -ne 0 -or -not $out) { return $null }
+        $obj = ($out | Out-String).Trim() | ConvertFrom-Json
+        if (-not $obj -or -not $obj.ok) { return $null }
+        return $obj
+    } catch { return $null }
+}
+
+# 프로세스 캐시 — **Node 정본 경로 결과만** 캐시한다(스윕이 이슈당 2~3회 부른다).
+# 링크 경로(PR 링크 검증)는 캐시하지 않는다 — PR 상태가 시점마다 바뀌므로 낡은 캐시가 오판을 만든다.
+$script:PrAttributionCache = @{}
+
+# 이 isn 의 대응 PR 후보를 **증거 4면**으로 수집한다.
+#   1) 브랜치명     : 규약 브랜치(기대 head) + 레포 브랜치 열거(isn 을 담는 브랜치 전부)
+#   2) PR 제목/본문  : 조직 전 레포(`gh search prs --owner <org>`)
+#   3) 커밋 메시지   : 조직 전 레포(`gh search commits --owner <org>`) → 커밋에 딸린 PR
+#   4) 이슈 코멘트의 PR 링크 : Get-PrLinksFromText + Get-ValidatedPrLinks
+# 반환: @{ Isn; HasPr; HasMerged; Known; Sources; Candidates; Text; Orgs }
+#   Known = 탐색이 실제로 수행되었는지(전부 실패면 false — 그때는 보정하지 않는다).
+function Get-IssuePrAttribution($isn, $repos, $LinkTexts = @(), $Orgs = @()) {
+    $cands = @()
+    $sources = @()
+    $known = $false
+    $nodePrimary = $null
+    $orgs = @()
+    if (@($Orgs).Count -gt 0) { $orgs = @($Orgs) } else { $orgs = @(Get-AttributionOrgs $repos) }
+
+    # (1~3) Node 정본 경로 — 브랜치명/제목·본문/커밋 메시지.
+    # **Node 결과만 캐시한다**(비용이 큰 쪽). 링크 경로(아래 4)는 매번 다시 조회한다 —
+    #   PR 상태(머지 여부)는 시점에 따라 바뀌므로 캐시로 낡으면 "머지 안 됐다"로 오판할 수 있다.
+    $nodeKey = "$isn|" + ((@($orgs) | Sort-Object) -join ',')
+    if ($script:PrAttributionCache.ContainsKey($nodeKey)) {
+        $node = $script:PrAttributionCache[$nodeKey]
+    } else {
+        $node = Get-IssuePrAttributionViaNode $isn $repos $orgs
+        if ($node) { $script:PrAttributionCache[$nodeKey] = $node }
+    }
+    if ($node) {
+        $known = $true
+        # 대표 PR(판정 대상) — Node 정본이 "이 isn 을 브랜치/제목으로 선언한 PR"을 우선 고른다.
+        # (giip #4840: 본문에만 isn 을 인용한 PR 을 판정 대상으로 삼으면 무관한 diff 로 MISMATCH 가 난다)
+        if ($node.primary -and (Test-ValidPrNumber $node.primary.number)) { $nodePrimary = $node.primary }
+        foreach ($p in @($node.all)) {
+            if (-not (Test-ValidPrNumber $p.number)) { continue }
+            $cands += @{ number = [int64]$p.number; slug = "$($p.slug)"; url = "$($p.url)"; title = "$($p.title)"; state = "$($p.state)"; headRefName = "$($p.headRefName)"; how = "$($p.how)"; repo = "$($p.repo)"; merged = ("$($p.state)" -eq 'MERGED') }
+        }
+        foreach ($s in @($node.sources)) { if ($s -and $sources -notcontains $s) { $sources += $s } }
+    }
+
+    # (4) 이슈 본문/코멘트의 PR 링크 — node 결과와 무관하게 항상 합친다(제품 레포 PR 등).
+    if (@($LinkTexts).Count -gt 0) {
+        foreach ($l in @(Get-ValidatedPrLinks (Get-PrLinksFromText $LinkTexts) $isn)) {
+            $cands += @{ number = [int64]$l.number; slug = "$($l.slug)"; url = "$($l.url)"; title = "$($l.title)"; state = "$($l.state)"; headRefName = "$($l.headRefName)"; how = 'text-link'; repo = "$($l.repo)"; merged = [bool]$l.merged }
+        }
+        if (@($cands | Where-Object { $_.how -eq 'text-link' }).Count -gt 0) { $sources += 'text-link' }
+    }
+
+    # node 를 못 쓰는 환경(node 미설치/실패) 폴백: 종전 PowerShell 경로로 판정한다.
+    if (-not $known) {
+        $legacy = Get-LegacyIssuePrCandidates $isn $repos $LinkTexts
+        $cands += @($legacy.Candidates)
+        foreach ($c in @($legacy.Candidates)) { if ($c.how -and $sources -notcontains $c.how) { $sources += $c.how } }
+        $known = $true
+    }
+
+    # 중복 제거(slug+번호 기준) — 같은 PR 이 여러 탐색면에서 잡힐 수 있다.
+    $seen = @{}
+    $uniq = @()
+    foreach ($c in $cands) {
+        $k = "$($c.slug)#$($c.number)"
+        if ($seen.ContainsKey($k)) { continue }
+        $seen[$k] = $true
+        $uniq += $c
+    }
+
+    $hasMerged = (@($uniq | Where-Object { $_.merged }).Count -gt 0)
+    $lines = @("- 대응 PR 존재: $(if ($uniq.Count -gt 0) { '있음' } else { '없음' }) / 머지된 대응 PR: $(if ($hasMerged) { '있음' } else { '없음' })")
+    if ($uniq.Count -gt 0) {
+        $lines += "- 탐색 경로: $(($sources | Sort-Object -Unique) -join ', ')"
+        foreach ($p in @($uniq | Select-Object -First 8)) {
+            $st = if ($p.state) { $p.state } else { '?' }
+            $lines += "- PR #$($p.number) [$st] $(if ($p.slug) { $p.slug } else { $p.repo }) — 탐지:$($p.how) $(if ($p.headRefName) { "head=$($p.headRefName)" } else { '' }) $(if ($p.url) { $p.url } else { '' })"
+        }
+    }
+    $primary = $null
+    if ($nodePrimary) {
+        $pk = "$($nodePrimary.slug)#$($nodePrimary.number)"
+        $primary = @($uniq | Where-Object { "$($_.slug)#$($_.number)" -eq $pk } | Select-Object -First 1)
+        if (@($primary).Count -eq 0) { $primary = $null }
+    }
+    $res = @{ Isn = [int]$isn; HasPr = ($uniq.Count -gt 0); HasMerged = $hasMerged; Known = $known; Sources = @($sources); Candidates = @($uniq); Primary = $primary; Text = ($lines -join "`n"); Orgs = @($orgs) }
+    return $res
+}
+
+# 되돌림(REVERT) 최종 판정 — **순수 함수**(네트워크/LLM 없음). 입력만으로 결과가 결정된다.
+#
+# 규칙(요구사항): 되돌리기 **전에** 판정 근거(체크리스트)를 남기고, **체크리스트 판정이
+# UNFULFILLED(미충족 항목 있음)일 때만** 되돌린다. 그 외(KEEP/HOLD/판정 실패)는 되돌리지 않는다.
+#   - Ok=$false (판정 호출 실패/형식 불일치) → 'skip'  : 근거 없이 되돌리지 않는다(전이 없음)
+#   - KEEP  (전 항목 충족)                  → 'keep'  : 되돌리지 않고 상태 유지
+#   - HOLD  (미충족 0, 판정불가 있음)        → 'hold'  : 보류(필요한 증거 코멘트만 남김)
+#   - REVERT (미충족 항목 있음 = UNFULFILLED) → 'revert' : 체크리스트 코멘트 + READY
+# 반환: @{ Action; Reason; Comment; Marker; Status }
+#   Action ∈ skip|keep|hold|revert|escalate
+# $Tally: Get-GateRevertTally 결과(전체 합산 되돌림 횟수). $MaxAttempts: 전 게이트 공통 캡.
+function Get-GatedRevertDecision($isn, $Assessment, $Tally = $null, $MaxAttempts = 3, $PriorComments = @()) {
+    $res = @{ Action = 'skip'; Reason = ''; Comment = ''; Marker = ''; Status = '' }
+    if (-not $Assessment -or -not $Assessment.Ok) {
+        $res.Action = 'skip'
+        $res.Reason = if ($Assessment -and $Assessment.Reason) { "$($Assessment.Reason) - 전이 없음" } else { '판정 결과 없음 - 전이 없음' }
+        return $res
+    }
+    $total = 0
+    if ($Tally) { $total = [int]$Tally.Total }
+    $decision = "$($Assessment.Decision)"
+    switch ($decision) {
+        'KEEP' {
+            $res.Action = 'keep'
+            $res.Reason = "의뢰 체크리스트 전 항목 충족($($Assessment.Reason)) - 되돌리지 않음"
+            return $res
+        }
+        'HOLD' {
+            $res.Action = 'hold'
+            $res.Reason = "미충족 없으나 판정불가 항목 있음($($Assessment.Reason)) - 근거 부족으로 보류"
+            $res.Comment = Format-ChecklistComment $isn 'HOLD' $Assessment.Items $Assessment.Reason 0 $MaxAttempts '아래 "필요한 증거" 를 이슈 코멘트로 남기거나 사람이 확인해 주십시오.'
+            $res.Marker = $script:ChecklistMarkerHold
+            return $res
+        }
+        default {
+            # REVERT = 미충족(UNFULFILLED). 이때만 되돌린다.
+            $repeat = Test-ChecklistUnmetRepeat $PriorComments $Assessment.Items
+            if ($repeat -or ($total + 1) -gt $MaxAttempts) {
+                $why = if ($repeat) { '직전 체크리스트 되돌림과 미충족 항목 집합이 동일(같은 지점에서 반복 실패)' } else { "전 게이트 합산 되돌림 ${total}회로 캡(${MaxAttempts}) 도달" }
+                $res.Action = 'escalate'
+                $res.Status = 'NEEDS_DECISION'
+                $res.Reason = "미충족 항목은 있으나 되돌림을 멈춤: $why"
+                $res.Comment = (Format-ChecklistComment $isn 'HOLD' $Assessment.Items $Assessment.Reason 0 $MaxAttempts "더 이상 자동으로 되돌리지 않습니다: $why. NEEDS_DECISION 으로 전환합니다 - 사람이 확인해 주십시오. (무한루프 방지)") -replace ([regex]::Escape($script:ChecklistMarkerHold)), '[REVIEW-AUDIT:WARN]'
+                $res.Marker = '[REVIEW-AUDIT:WARN]'
+                return $res
+            }
+            $res.Action = 'revert'
+            $res.Status = 'READY'
+            $res.Reason = "미충족 항목 있음(UNFULFILLED): $($Assessment.Reason)"
+            $res.Comment = Format-ChecklistComment $isn 'REVERT' $Assessment.Items $Assessment.Reason ($total + 1) $MaxAttempts
+            $res.Marker = $script:ChecklistMarkerRevert
+            return $res
+        }
+    }
+}
+
+# REVIEW 큐 되돌림 판정 경로 모드 해석: Gated(기본) | Shadow | Legacy
+#   Gated  : 증거 기반 귀속 + 체크리스트 게이트(UNFULFILLED 일 때만 되돌림)
+#   Shadow : 증거 기반 귀속 + 종전 판정이 결정, 신룰(체크리스트) 결론만 기록(비교용)
+#   Legacy : 종전 동작 그대로(예상 브랜치 중심 판정 + 즉시 되돌림) — 되돌림 재발 시 임시 회피
+# 명시값 → 환경변수 GISSUE_PR_GATE_MODE → 기본 Gated.
+# 알 수 없는 값은 Gated 로 본다(오타가 오탐 경로를 되살리지 않게) — 신룰은 근거 부족 시 되돌리지 않는다.
+function Get-PrGateMode($explicit = $null) {
+    $v = if ($explicit) { "$explicit" } elseif ($env:GISSUE_PR_GATE_MODE) { "$env:GISSUE_PR_GATE_MODE" } else { 'Gated' }
+    switch -Regex ("$v".Trim()) {
+        '^(?i)legacy$' { return 'Legacy' }
+        '^(?i)shadow$' { return 'Shadow' }
+        '^(?i)gated$'  { return 'Gated' }
+        default        { return 'Gated' }
+    }
 }
 
 # giipfaw API GET 공통 호출기(giip #1123 조사 중 발견한 중요 버그의 수정처).
@@ -315,11 +551,14 @@ function Get-RepoSlugFromUrl($url) {
 #   구조적 배경이다). 그래서 규칙은 한 곳(pr-lookup.mjs)에만 두고 `lib/pr-lookup-cli.mjs` 로 호출한다.
 # 실패(node 없음/예외/JSON 파싱 실패)하면 $null 을 돌려주고, 호출부가 기존 PowerShell 경로로 폴백한다.
 function Get-IssuePrInfoViaNode($isn, $repos) {
-    $cli = Join-Path $PSScriptRoot 'lib\pr-lookup-cli.mjs'
+    $cli = Join-Path (Join-Path $PSScriptRoot 'lib') 'pr-lookup-cli.mjs'
     if (-not (Test-Path $cli)) { return $null }
     try {
         # $args 는 PowerShell 자동변수라 덮어쓰지 않는다(giip #2504 리뷰 지적 회피).
+        # [giip #4840/#4839] 조직도 넘긴다 — 로컬 후보가 "이 isn 을 선언하지 않은" PR 뿐이면 조직 전에서
+        # 진짜 담당 PR 을 찾는다(선언 우선 규칙은 CLI 가 적용한다).
         $cliArgs = @($cli, "$isn") + @($repos)
+        foreach ($o in @(Get-AttributionOrgs $repos)) { $cliArgs += @('--org', "$o") }
         $out = & node @cliArgs 2>$null
         if ($LASTEXITCODE -ne 0 -or -not $out) { return $null }
         $obj = ($out | Out-String).Trim() | ConvertFrom-Json
@@ -349,23 +588,25 @@ function Get-IssuePrInfo($isn, $repos, $LinkTexts = @()) {
             state = $p.state; headRefName = $p.headRefName; how = $p.how; all = @($node.all)
         }
     }
-    # Node 경로가 "정상 실행됐는데 매칭 0건"이면 PowerShell 폴백을 다시 돌릴 필요가 없다
+    # Node 경로가 "정상 실행됐는데 매칭 0건"이면 **레포 스캔** 폴백은 다시 돌릴 필요가 없다
     # (같은 gh 조회를 두 번 하게 되고, 폴백 쪽이 더 좁은 규칙이라 결과가 달라질 수 없다).
-    if ($node -and $node.ok -and (-not $node.primary)) { return $null }
-
-    # 2순위(폴백): 기존 PowerShell 경로 — node 자체를 못 쓰는 환경에서도 게이트가 계속 동작하도록.
-    $isnRe = "(?<!\d)$isn(?!\d)"
-    foreach ($repo in $repos) {
-        $exact = Invoke-GhPrQuery $repo @('pr', 'list', '--head', "bot/task-giip-$isn", '--state', 'all', '--json', 'number,url,title,headRefName,state')
-        foreach ($pr in $exact) {
-            if (-not (Test-ValidPrNumber $pr.number)) { continue }
-            return @{ repo = $repo; number = $pr.number; url = $pr.url; title = $pr.title; slug = (Get-RepoSlugFromUrl $pr.url); headRefName = $pr.headRefName; state = $pr.state; how = 'exact-ps'; all = @() }
-        }
-        $broad = Invoke-GhPrQuery $repo @('pr', 'list', '--state', 'all', '--search', "giip-$isn", '--json', 'number,url,title,headRefName,state')
-        foreach ($pr in $broad) {
-            if (-not (Test-ValidPrNumber $pr.number)) { continue }
-            if (($pr.headRefName -and $pr.headRefName -match $isnRe) -or ($pr.title -and $pr.title -match $isnRe)) {
-                return @{ repo = $repo; number = $pr.number; url = $pr.url; title = $pr.title; slug = (Get-RepoSlugFromUrl $pr.url); headRefName = $pr.headRefName; state = $pr.state; how = 'broad-ps'; all = @() }
+    # 단 **링크 경로**(이슈 본문/코멘트의 PR 링크)는 Node 가 다루지 않으므로 항상 확인해야 한다
+    # (node CLI 는 레포/조직만 훑는다 — giip #4335 경로가 여기서 사라지면 회귀).
+    if (-not ($node -and $node.ok)) {
+        # 2순위(폴백): 기존 PowerShell 경로 — node 자체를 못 쓰는 환경에서도 게이트가 계속 동작하도록.
+        $isnRe = "(?<!\d)$isn(?!\d)"
+        foreach ($repo in $repos) {
+            $exact = Invoke-GhPrQuery $repo @('pr', 'list', '--head', "bot/task-giip-$isn", '--state', 'all', '--json', 'number,url,title,headRefName,state')
+            foreach ($pr in $exact) {
+                if (-not (Test-ValidPrNumber $pr.number)) { continue }
+                return @{ repo = $repo; number = $pr.number; url = $pr.url; title = $pr.title; slug = (Get-RepoSlugFromUrl $pr.url); headRefName = $pr.headRefName; state = $pr.state; how = 'exact-ps'; all = @() }
+            }
+            $broad = Invoke-GhPrQuery $repo @('pr', 'list', '--state', 'all', '--search', "giip-$isn", '--json', 'number,url,title,headRefName,state')
+            foreach ($pr in $broad) {
+                if (-not (Test-ValidPrNumber $pr.number)) { continue }
+                if (($pr.headRefName -and $pr.headRefName -match $isnRe) -or ($pr.title -and $pr.title -match $isnRe)) {
+                    return @{ repo = $repo; number = $pr.number; url = $pr.url; title = $pr.title; slug = (Get-RepoSlugFromUrl $pr.url); headRefName = $pr.headRefName; state = $pr.state; how = 'broad-ps'; all = @() }
+                }
             }
         }
     }
@@ -936,25 +1177,27 @@ function Get-LatestUnmetChecklistItems($Comments) {
 # 코드 항목 증거로 쓸 PR 상태. 조회 실패는 Known=$false(보정 안 함).
 function Get-ChecklistPrEvidence($isn, $repos, $LinkTexts = @()) {
     $ev = @{ Known = $false; HasMerged = $false; HasAny = $false; Text = '(PR 조회 불가 - 레포 경로 없음)'; }
-    if ((-not $repos -or @($repos).Count -eq 0) -and @($LinkTexts).Count -eq 0) { return $ev }
+    # [giip #4840/#4839] 조직 전 탐색이 있으므로 "레포 경로 없음" 만으로 포기하지 않는다 —
+    # 환경변수(GISSUE_GH_ORGS)로 조직이 지정된 경우에도 증거를 찾을 수 있다.
+    if ((-not $repos -or @($repos).Count -eq 0) -and @($LinkTexts).Count -eq 0 -and @(Get-AttributionOrgs $repos).Count -eq 0) { return $ev }
     try {
-        $merged = [bool](Test-IssueHasMergedPr $isn $repos $LinkTexts)
-        $any = [bool](Test-IssueHasPr $isn $repos $LinkTexts)
-        $ev.Known = $true; $ev.HasMerged = $merged; $ev.HasAny = ($any -or $merged)
-        $lines = @("- 머지된 대응 PR: $(if ($merged) { '있음' } else { '없음' }) / 대응 PR 존재: $(if ($ev.HasAny) { '있음' } else { '없음' })")
+        # [giip #4840/#4839] 증거 기반 귀속(조직 전 레포·브랜치명·커밋 메시지·이슈 코멘트 링크)을 쓴다.
+        # 종전엔 "레포 스캔 + 이슈 텍스트 링크" 뿐이라 목록 밖 레포의 PR 을 못 봤다.
+        $attr = Get-IssuePrAttribution $isn $repos $LinkTexts
+        $ev.Known = [bool]$attr.Known
+        $ev.HasMerged = [bool]$attr.HasMerged
+        $ev.HasAny = [bool]$attr.HasPr
+        $lines = @("- 머지된 대응 PR: $(if ($ev.HasMerged) { '있음' } else { '없음' }) / 대응 PR 존재: $(if ($ev.HasAny) { '있음' } else { '없음' })")
         if ($ev.HasAny) {
-            $info = Get-IssuePrInfo $isn $repos $LinkTexts
-            if ($info) {
-                $cands = @($info.all | Where-Object { $_ }) ; if ($cands.Count -eq 0) { $cands = @($info) }
-                foreach ($p in @($cands | Select-Object -First 6)) {
-                    $st = if ($p.state) { $p.state } else { '?' }
-                    $lines += "- PR #$($p.number) [$st] $($p.url)"
-                    $d = $null
-                    try { $d = Get-PrDiffSummary $p.repo $p.number $(if ($p.slug) { $p.slug } else { Get-RepoSlugFromUrl $p.url }) } catch { }
-                    if ($d -and $d.files) {
-                        $f = ("$($d.files)".Trim() -split '\r?\n' | Select-Object -First 25) -join ', '
-                        $lines += "    - 변경 파일: $f"
-                    }
+            $cands = @($attr.Candidates | Where-Object { $_ })
+            foreach ($p in @($cands | Select-Object -First 6)) {
+                $st = if ($p.state) { $p.state } else { '?' }
+                $lines += "- PR #$($p.number) [$st] $(if ($p.slug) { $p.slug } else { $p.repo }) $(if ($p.url) { $p.url } else { '' }) (탐지:$($p.how))"
+                $d = $null
+                try { $d = Get-PrDiffSummary $p.repo $p.number $(if ($p.slug) { $p.slug } else { Get-RepoSlugFromUrl $p.url }) } catch { }
+                if ($d -and $d.files) {
+                    $f = ("$($d.files)".Trim() -split '\r?\n' | Select-Object -First 25) -join ', '
+                    $lines += "    - 변경 파일: $f"
                 }
             }
         }
@@ -1154,7 +1397,10 @@ function Get-ChecklistShadowRecordsFor($fileName, $isn) {
 }
 
 # Shadow 평가를 건너뛸지: @{ Skip; Why }. 입력 조회(API/gh)나 LLM 호출 전에 부른다. 감소 기능이 꺼져 있으면 항상 Skip=$false.
-function Test-ChecklistShadowSkip($isn, $source) {
+# $IgnoreTtl: $true 면 "같은 (isn, source) 최근 TTL 기록" 항목을 건너뛴다.
+#   쓰이는 곳: [giip #4840/#4839] Gated 모드 — 입력이 그대로면 재사용은 입력해시 캐시가 맡고,
+#   TTL 로 막으면 "재작업 후에도 되돌릴 수 없다"(되돌림이 한 번만 되고 멈춰버린다).
+function Test-ChecklistShadowSkip($isn, $source, $IgnoreTtl = $false) {
     $cfg = Get-ChecklistShadowConfig
     if (-not $cfg.Reduce) { return @{ Skip = $false; Why = '' } }
     $now = (Get-Date).ToUniversalTime()
@@ -1174,7 +1420,7 @@ function Test-ChecklistShadowSkip($isn, $source) {
         if ($n -ge $cfg.MaxPerHour) { return @{ Skip = $true; Why = "최근 1시간 호출 상한($($cfg.MaxPerHour)) 도달($n 건)" } }
     }
     # (b-3) 같은 (isn, source) 최근 TTL 기록
-    if ($cfg.TtlHours -gt 0) {
+    if ($cfg.TtlHours -gt 0 -and -not $IgnoreTtl) {
         $recs = @(Get-ChecklistShadowRecordsFor 'checklist-shadow.jsonl' $isn | Where-Object { $_.source -eq "$source" })
         if ($recs.Count -gt 0) {
             $last = $recs[$recs.Count - 1]
