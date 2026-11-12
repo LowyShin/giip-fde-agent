@@ -862,6 +862,13 @@ function Remove-GissueJunctionOnly {
 # ──────────────────────────────────────────────────────────────────────────────
 # 5. 머지판정 (giip #2440 원인 1) — squash-merge 컨벤션이라 ahead-count 를 쓰지 않는다
 # ──────────────────────────────────────────────────────────────────────────────
+# [106차 수정, 2026-11-13] 이 함수의 **반환값은 반드시 1개 객체**여야 한다.
+#   `$Log` 스크립블록은 그 자체로 성공 스트림에 쓰는 구현(`Write-CleanupLog` 의 `Write-Output`)이
+#   있어서, `& $Log "..."` 를 그대로 두면 로그 문자열이 반환값에 섞여
+#   호출부의 `$merged.Branches` 접근이 `System.Object[]`(=문자열+객체 혼합) 배열로 뭉개진다.
+#   실측(106차): 반환값 2개, 타입 `String, PSCustomObject` — 배열의 `.Branches` 는
+#   멤버 열거로 잠깐 되지만, 로그가 하나라도 더 섞이거나 $merged 자체가 null 이 되면
+#   아래 머지판정 게이트가 통째로 무너진다. 그래서 **모든 `& $Log` 호출에 `| Out-Null`** 를 붙인다.
 $script:GissueMergedBranchCache = @{}
 function Get-GissueMergedBranchSet {
     param([Parameter(Mandatory = $true)][string]$RepoPath, [scriptblock]$Log)
@@ -872,14 +879,14 @@ function Get-GissueMergedBranchSet {
     $originUrl = $null
     try { $originUrl = git -C $repoFull remote get-url origin 2>$null } catch {}
     if (-not $originUrl) {
-        if ($Log) { & $Log "머지판정 불가(origin remote 없음): $repoFull" }
+        if ($Log) { & $Log "머지판정 불가(origin remote 없음): $repoFull" | Out-Null }
         $script:GissueMergedBranchCache[$key] = $result
         return $result
     }
     $ghOwnerRepo = $null
     if ("$originUrl" -match '[:/]([^/:]+)/([^/]+?)(\.git)?\s*$') { $ghOwnerRepo = "$($Matches[1])/$($Matches[2])" }
     if (-not $ghOwnerRepo) {
-        if ($Log) { & $Log "머지판정 불가(origin URL 파싱 실패): $originUrl" }
+        if ($Log) { & $Log "머지판정 불가(origin URL 파싱 실패): $originUrl" | Out-Null }
         $script:GissueMergedBranchCache[$key] = $result
         return $result
     }
@@ -891,12 +898,12 @@ function Get-GissueMergedBranchSet {
             foreach ($p in @($parsed)) { if ($p.headRefName) { [void]$result.Branches.Add($p.headRefName) } }
             $result.Ok = $true
             $result.OwnerRepo = $ghOwnerRepo
-            if ($Log) { & $Log "머지된 PR 브랜치 $($result.Branches.Count)개 조회 완료($ghOwnerRepo)" }
+            if ($Log) { & $Log "머지된 PR 브랜치 $($result.Branches.Count)개 조회 완료($ghOwnerRepo)" | Out-Null }
         } else {
-            if ($Log) { & $Log "WARN: gh pr list --state merged 실패($ghOwnerRepo) — $ghOut (이 레포는 전부 '미머지'로 보수적 처리)" }
+            if ($Log) { & $Log "WARN: gh pr list --state merged 실패($ghOwnerRepo) — $ghOut (이 레포는 전부 '미머지'로 보수적 처리)" | Out-Null }
         }
     } catch {
-        if ($Log) { & $Log "WARN: gh pr list 예외($ghOwnerRepo) — $($_.Exception.Message)" }
+        if ($Log) { & $Log "WARN: gh pr list 예외($ghOwnerRepo) — $($_.Exception.Message)" | Out-Null }
     }
     $script:GissueMergedBranchCache[$key] = $result
     return $result
@@ -1167,7 +1174,27 @@ function Invoke-GissueWorktreeCleanupForRepo {
         }
 
         # ── 머지판정(giip #2440 원인 1): ahead-count 금지, 머지된 PR 목록만 신뢰 ──
-        if (-not $merged.Branches.Contains($e.Branch)) {
+        # [106차 수정, 2026-11-13] **판정 불가 → 삭제 금지(fail-closed)** 로 명시적으로 닫는다.
+        #   이전 구현은 `$merged` 가 null 이면 `$merged.Branches.Contains()` 가 런타임 예외를 던졌고,
+        #   그 예외는 PowerShell 의 비치명적 오류라 **'if' 문장 하나만 버리고** 흐름이 다음 문장으로
+        #   넘어간다 → 링크스캔(1183) → idle 게이트(1217) → DryRun 보고(1231) → **`git worktree remove`(1272)**.
+        #   즉 "머지 확인" 한 번도 하지 않은 채 **삭제**까지 갈 수 있었다(106차 DryRun 에서 1회 실측).
+        #   이 파일의 다른 게이트(활동시각 판정 불가, 정션 사전검증 실패)는 이미 fail-closed 였고,
+        #   머지판정만 fail-open 으로 남아 있었다 — giip #2463 의 의도와 어긋난다.
+        #   "판정 불가" 와 "미머지" 는 결론(삭제 금지)은 같지만 사유가 다르므로 분리해 기록한다.
+        $mergedBranches = $null
+        if ($null -ne $merged) { $mergedBranches = $merged.Branches }
+        if ($null -eq $mergedBranches) {
+            & $say "MANUAL-REVIEW(머지판정 불가 — 자동삭제 대상 아님): $ePath (branch=$($e.Branch))"
+            $result.ManualReview += [pscustomobject]@{ Path = $ePath; Branch = $e.Branch; Reason = '머지판정 결과 없음(PR 목록 조회 실패) — 삭제 금지(fail-closed)' }
+            continue
+        }
+        if ($mergedBranches.Count -eq 0 -and $merged.Ok -eq $false) {
+            & $say "MANUAL-REVIEW(머지판정 조회 실패 — 자동삭제 대상 아님): $ePath (branch=$($e.Branch))"
+            $result.ManualReview += [pscustomobject]@{ Path = $ePath; Branch = $e.Branch; Reason = '머지된 PR 목록 조회 실패(gh pr list) — 삭제 금지(fail-closed)' }
+            continue
+        }
+        if (-not $mergedBranches.Contains($e.Branch)) {
             & $say "MANUAL-REVIEW(미머지 — 자동삭제 대상 아님): $ePath (branch=$($e.Branch))"
             $result.ManualReview += [pscustomobject]@{ Path = $ePath; Branch = $e.Branch; Reason = '머지 PR 없음(사람 확인 필요 — 미완료 작업일 수 있음)' }
             continue
@@ -1371,7 +1398,10 @@ function Remove-GissueDirectoryTreeSafely {
     } catch {
         $firstErr = $_.Exception.Message
     }
-    & $say "  1차 삭제 실패($Path) — $firstErr / MAX_PATH 가능성 → \\?\ 확장 경로로 재시도"
+    # [106차 수정, 2026-11-13] `| Out-Null` — 이 함수는 **객체를 반환**하는 함수다.
+    #   로그 콜백이 성공 스트림에 쓰면 반환값이 `@(문자열, 객체)` 로 섞여 호출부의
+    #   `$del.Ok` / `$del.Detail` 이 배열이 된다(`.Detail` 이 " 사유1 사유2" 로 뒤엉킨다).
+    & $say "  1차 삭제 실패($Path) — $firstErr / MAX_PATH 가능성 → \\?\ 확장 경로로 재시도" | Out-Null
     try {
         [System.IO.Directory]::Delete((ConvertTo-GissueExtendedPath $Path), $true)
     } catch {
