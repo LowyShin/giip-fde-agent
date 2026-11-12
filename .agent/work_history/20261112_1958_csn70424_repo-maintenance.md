@@ -184,3 +184,9 @@ audit 판정 요약이 **C6 "gissue 처리 로그 갱신 회복" = 미충족** �
 > 두 건의 `last_comment_date` = 19:54:25 / 19:54:32 · 열린 같은 제목 **24건 전부 READY**.
 > → 교훈 노트 **KNOW-042** 신규 — `.agent/k_layer/notes/KNOW-042_queue_elapsed_basis_is_the_latest_comment_not_the_status_transition.md`
 > (tKB kbSn **7025** · csn 70424 · 본문 3989자 = 커밋 blob 문자 수와 동일).
+> **추가(2026-11-12, 102차 후속 — 20:57 KST 재측정):** 위 예측("20:18 KST 예상 큐 = 37건 중 24건") 의 **건수는 정확**했고,
+> **시각만** 36분 밀렸다. 코멘트를 남긴 2건이 20:54 KST 에 큐로 재진입하면서 원래 예측치에 합류한 것이다.
+> - **20:57 KST 실측**(2026-11-12T11:57:15Z): 큐 **37건** — `[OPS]` **정확 일치 24건**(substring 25건 = 후속 이슈 [giip 4907](https://giip.littleworld.net/ko/admin/giip-issues/4907) 포함) · 비[OPS] **12건**(37 = substring 25 + 비[OPS] 12) · 상태 분포 READY **27** / REVIEW **7** / PENDING **2** / STALE_IN_PROGRESS **1**.
+> - **[giip 4860](https://giip.littleworld.net/ko/admin/giip-issues/4860) · [giip 4870](https://giip.littleworld.net/ko/admin/giip-issues/4870) 재진입 확인** — 두 건 모두 **READY** · elapsed **62분** · 최신 코멘트 시각 19:54:25 / 19:54:32 + 60분 = **20:54 KST 진입**(예측 적중) · 상태 전이 없음.
+> - 따라서 102차 예측과 실측의 차이는 **"제외"가 아니라 "진입 지연"** 이었다 — **KNOW-042 규칙 3**("READY 유지면 큐 제외가 아니라 큐 진입 지연")이 실측으로 확인됨.
+> - **KNOW-042 규칙 4**(60분 뒤 재측정) 실행 완료. 교훈 노트 자체는 tKB 본문 4000자 한계(현재 3989자)로 절단 위험이 있어 **수정하지 않았고**, 확인 결과는 본 세션 기록에 남긴다.
