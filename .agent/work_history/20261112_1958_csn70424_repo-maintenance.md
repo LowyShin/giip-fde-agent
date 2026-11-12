@@ -128,7 +128,7 @@ audit 판정 요약이 **C6 "gissue 처리 로그 갱신 회복" = 미충족** �
 
 | 산출물 | 내용 | tKB |
 |---|---|---|
-| `.agent/k_layer/notes/KNOW-041_audit_revert_reenqueues_ops_issues_when_blocker_is_out_of_scope.md` | 완료 게이트의 되돌림 → 큐 재진입 → 소비 루프(큐 오염 재발 구조) · 큐 오염은 쓰기 시점에 직접 재측정 · 되돌림 사유가 저장소 밖 미해결 항목이면 큐 조회 계층 제외 방어선이 필요 | **미등록**(PR 머지 후 등록) |
+| `.agent/k_layer/notes/KNOW-041_audit_revert_reenqueues_ops_issues_when_blocker_is_out_of_scope.md` | 완료 게이트의 되돌림 → 큐 재진입 → 소비 루프(큐 오염 재발 구조) · 큐 오염은 쓰기 시점에 직접 재측정 · 되돌림 사유가 저장소 밖 미해결 항목이면 큐 조회 계층 제외 방어선이 필요 | **7023** |
 | `.agent/k_layer/notes/INDEX.md` | 위 1건 행 추가 | — |
 | `.agent/work_history/20261112_1958_csn70424_repo-maintenance.md` | 본 기록 | — |
 | `docs/WHATS_NEW.md` | `## 2026-11-12` 절에 102차 항목 추가 | — |
@@ -155,3 +155,19 @@ audit 판정 요약이 **C6 "gissue 처리 로그 갱신 회복" = 미충족** �
 - 생존 판정: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gissue/check-gissue-liveness.ps1 -Json`
 - 게이트: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gissue/run-repo-gates.ps1`
 - CI: `gh run list --repo LowyShin/giip-fde-agent --limit 5`
+
+> **추가(2026-11-12, 102차 마무리):** 본 기록의 산출물은 **PR #395** 로 머지되었다 —
+> 머지 커밋 `8dd20a2`(`8dd20a21efeb2e82068379f6b4b3700a6796b82c`) · mergedAt 2026-11-12T11:17:07Z(20:17:07 KST) ·
+> squash 머지 · CI run **43207419307**(pull_request · head `fe50ba8`) — PS1 gates pass(1m59s) ·
+> MJS gates pass(41s) · GitGuardian Security Checks pass.
+>
+> - 공유 체크아웃 `main` ff-sync: `66f6241` → `8dd20a2`(커밋·스테이징 없이 `git merge --ff-only origin/main`).
+> - 원격 브랜치 삭제 확인 — `git ls-remote --heads origin` 은 `main` + **타 CSN 소관 3건**뿐이다.
+> - 워크트리 회수: 정본 도구 `scripts/gissue/cleanup-worktrees.ps1` — `-RepoPath <저장소>` ·
+>   `-OnlyPath D:\temp\worktrees\giip-fde-agent\maint-102-1958` · `-MinIdleMinutes 0` —
+>   **DryRun 먼저**(제거 대상 1건 · 락 0건 · MANUAL-REVIEW 0건) → 본 실행 **Removed 1건** ·
+>   로컬 브랜치도 함께 정리.
+>   `git worktree list` 잔여 = 공유 체크아웃 + `maint-62-2331`(MANUAL-REVIEW 보존 · 미접촉) 2건.
+> - tKB: `KNOW-041` **kbSn 7023**(csn 70424) — 등록 후 본문 3153자 = 커밋 blob 문자 수와 동일
+>   (절단 없음 · U+FFFD 0). (등록 1차는 공유 체크아웃의 CRLF 판본 3227자였고, LF 원본(3153자)으로
+>   재동기화해 커밋 blob 와 동일하게 맞췄다.)
