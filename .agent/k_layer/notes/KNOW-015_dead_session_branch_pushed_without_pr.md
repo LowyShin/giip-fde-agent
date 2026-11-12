@@ -72,6 +72,7 @@ metadata:
 - [KNOW-013](KNOW-013_work_history_completion_claim_may_be_unexecuted_plan.md) — 회차 기록의 "완료" 서술은 실행되지 않은 계획일 수 있다
 - [KNOW-008](KNOW-008_cleanup_worktrees_classification_and_builtin_idle_gate.md) — 정리 도구 판정 Status 5종
 - [KNOW-009](KNOW-009_cleanup_onlypath_separator_silent_zero.md) — `cleanup-worktrees.ps1 -OnlyPath` 는 백슬래시 경로로만 동작
+- [KNOW-043](KNOW-043_orphan_remote_branch_needs_ownership_check_before_inheritance.md) — 위 판정표에 **소유 축** 이 빠져 있다 — "PR 이 없다" 와 "계승 대상이다" 는 다르다(계승 전 이슈 `cSn` · `csn-projects.json` · 커밋 저자 확인)
 
 ## 근거
 
