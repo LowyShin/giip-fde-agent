@@ -1123,6 +1123,47 @@ import 하지 않는다(로그·락 파일만 읽는다).
 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\register-gissue-liveness-task.ps1 [-OpsCsn <csn>]`.
 해제는 `-Unregister`.
 
+### 16-1) 이식 단위 = 스크립트 2종 — 부분 이식이 "조용한 퇴행"이 된다
+
+**무소식 에피소드 관리(§16 "알림 정책")는 스크립트 2개가 한 쌍이다.** 한쪽만 이식하면 조용히 퇴행한다.
+
+| 파일 | 역할 | 이식 시 |
+|---|---|---|
+| `scripts/gissue/check-gissue-liveness.ps1` | 판정 + 통지 오케스트레이션 | 필수 |
+| `scripts/gissue/lib/liveness-ops-issue.js` | 이슈 등록 · 진행 보고 · 회복 종료 (node 도구) | **같이 복사** |
+
+`lib/liveness-ops-issue.js` 없이 스크립트만 이식하면 **방향이 반대인 두 가지 침묵** 중 하나가 된다 — 둘 다 조용해서
+사람이 알아채기 어렵다.
+
+| 이식 상태 | 실제 동작 | 위험 |
+|---|---|---|
+| 구버전 스크립트 + 도구 없음 | 옛 경로(`list-issues.js` 중복 조회 + `register-issue.js` 등록)로 계속 등록 | **침묵 중 쿨다운(기본 6h)마다 새 `[OPS]` 이슈** — 2026-11 실제 6시간 간격 24건 누적 |
+| 신버전 스크립트 + 도구 없음 | 도구 호출 실패 → `LIST-FAIL` → **등록 자체를 하지 않음** | 무소식 알림이 침묵(중복은 없지만 알림도 없음) |
+
+구버전 스크립트는 등록을 `list-issues.js`(중복 조회) + `register-issue.js`(등록)로 나누어 호출하는데, 이 둘은
+**서로 다른 주체·CSN 스코프**를 써서 "중복 없음" 을 잘못 판단한다(§16 "근본 원인"). 현행 스크립트는 두 경로를
+`lib/liveness-ops-issue.js` 하나로 대체했다 — **따라서 "스크립트만 갱신"은 어느 방향으로도 안전하지 않다.**
+
+**드리프트 확인 — 파일 단위로** (폴더 전체 비교는 "차이가 있으나" 까지만 좁혀지고, 어떤 파일이 무소식 등록 경로인지까지
+는 가르지 못한다):
+
+```powershell
+# 배포 대상 경로에서 실행 (정본이면 scripts\gissue\ 아래)
+(Select-String -Path scripts\gissue\check-gissue-liveness.ps1 -Pattern 'Get-LivenessEpisode' | Measure-Object).Count
+Test-Path scripts\gissue\lib\liveness-ops-issue.js
+```
+
+- `Get-LivenessEpisode` **0회** + 도구 파일 **없음** → 구버전 **미이식**(중복 등록 위험 상태).
+- 스크립트만 최신이고 도구만 없음(또는 그 반대)도 **부분 이식** — 어느 한쪽이 빠져도 1건 정책이 성립하지 않는다.
+
+**반영 순서**: 정본 머지 → 배포 대상 소관자가 위 **2개 파일을 함께** 반영 → 위 명령으로 `Get-LivenessEpisode` ≥ 1회
++ 도구 파일 존재를 확인. 반영이 끝나기 전까지 새 `[OPS]` 이슈가 계속 등록될 수 있다 — 그것은 **새로운 사건이 아니라
+미이식 상태의 증상**이다.
+
+**스냅샷(2026-11-13)**: 정본은 반영 완료. 운영 사본(원본 저장소, §13-2)은 `Get-LivenessEpisode` 0회 · 도구 파일
+없음 = **미이식 상태**. 반영은 운영 사본 소관 영역이므로 정본 세션이 대신 쓰지 않는다(타 CSN 쓰기 금지) — 반영
+여부는 위 확인 명령으로 언제든 다시 확인한다.
+
 ## 미매핑 CSN 가드(Phase -2.5)의 응답 cSn 대조 (giip 4116 / 4139)
 
 - 용도: `csn-projects.json` 에 없는 csn 에 열린 이슈가 방치돼 있는지 감시한다(`run-gissue-claude.ps1` 의 `Invoke-GissueUnmappedCsnGuard`).
