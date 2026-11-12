@@ -171,3 +171,16 @@ audit 판정 요약이 **C6 "gissue 처리 로그 갱신 회복" = 미충족** �
 > - tKB: `KNOW-041` **kbSn 7023**(csn 70424) — 등록 후 본문 3153자 = 커밋 blob 문자 수와 동일
 >   (절단 없음 · U+FFFD 0). (등록 1차는 공유 체크아웃의 CRLF 판본 3227자였고, LF 원본(3153자)으로
 >   재동기화해 커밋 blob 와 동일하게 맞췄다.)
+
+> **추가(2026-11-12, 102차 후속 — 20:29 KST 재측정):** 위 "20:18 KST 예상 큐 = 37건 중 24건" 예측은 **2건 과다**였다.
+> 원인은 큐의 elapsed 기준이 **상태전이 시각이 아니라 최신 코멘트 시각**이기 때문이다(`scripts/gissue/list-issues.js`
+> 38~39행 헤더 계약 · 211행 `const basis = isUserReq ? regdate : (lastCmtDate || regdate)` · READY 진입은 경과 60분 기준).
+> 본 세션이 19:54:25(giip 4870)·19:54:32(giip 4860) 에 남긴 [H] 코멘트가 두 건의 **최신 코멘트 시각**이 되어,
+> 두 건의 큐 진입이 20:54 KST 로 밀렸다.
+> **20:29 KST 실측**: 큐 **35건 중 22건이 [OPS]** — 20:18 KST 예측(37건 중 24건) 대비 정확히 **2건 차이**(코멘트를 남긴 2건) ·
+> 비[OPS] 13건은 19:56 KST 와 동일.
+> `liveness-ops-issue.js find` → 열린 같은 제목 **24건 전부 READY**(상태 변화 아님 — 경과 60분 미달로 큐에서 빠진 것).
+> **20:37 KST 후속 재측정**: 큐 **35건 중 22건이 [OPS]** — 20:29 KST 상태 그대로 · 두 건은 여전히 큐 밖(elapsed 43분) ·
+> 두 건의 `last_comment_date` = 19:54:25 / 19:54:32 · 열린 같은 제목 **24건 전부 READY**.
+> → 교훈 노트 **KNOW-042** 신규 — `.agent/k_layer/notes/KNOW-042_queue_elapsed_basis_is_the_latest_comment_not_the_status_transition.md`
+> (tKB kbSn **7025** · csn 70424 · 본문 3989자 = 커밋 blob 문자 수와 동일).
