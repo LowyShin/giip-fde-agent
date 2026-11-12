@@ -61,6 +61,10 @@ These are never written, and when found in existing code they are removed:
   session or request when a single SQL/SP call can do the work. If rendering or
   handling one page requires **5 or more new SQL calls**, that is a defect:
   redesign it into an SP or a single set-based query.
+- **One aggregation, one home.** The same or near-identical SQL must not be
+  re-implemented in multiple procedures or pages and executed separately
+  against the same data. Consolidate it into a single SP (or a single
+  maintained result) and have every consumer call that one path.
 - **FK constraints: recommend removal at scale.** On large, hot tables, foreign
   keys hide a child-existence check on every parent write/delete and couple
   tables under locks — a net negative for large-scale services. Recommend
