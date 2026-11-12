@@ -131,3 +131,17 @@
 - 생존 판정: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gissue/check-gissue-liveness.ps1 -Json`
 - 게이트: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gissue/run-repo-gates.ps1`
 - CI: `gh run list --repo LowyShin/giip-fde-agent --limit 6`
+
+> **추가(2026-11-12, 101차 마무리):** 본 기록의 산출물은 **PR #393** 으로 머지되었다 —
+> 머지 커밋 `4c37c34`(2026-11-12T08:41:19Z) · CI run **43184713101**(`Repo Gates` · pull_request · success ·
+> head `e2d96f12`) · 로컬 게이트는 공유 체크아웃 `main`(`ff9b136`) 기준 exit 0 로 통과했다.
+>
+> - 공유 체크아웃 `main` ff-sync: `ff9b136` → `4c37c34`(커밋·스테이징 없이 `git merge --ff-only origin/main`).
+> - 원격 브랜치 `chore/csn70424-maint101-20261112-1735` 삭제 확인 — `git ls-remote --heads origin` 은
+>   `main` + **타 CSN 3건**(`bot/task-giip-4804` / `4805` / `4806` · 미접촉)뿐이다.
+> - 워크트리 회수: 정본 도구 `scripts/gissue/cleanup-worktrees.ps1` — `-RepoPath <저장소>` ·
+>   `-OnlyPath D:\temp\worktrees\giip-fde-agent\maint-101-1735` · `-MinIdleMinutes 0` —
+>   **DryRun 먼저**(제거 대상 1건 · MANUAL-REVIEW 0건 · 락 0건) → 본 실행 **Removed 1건** ·
+>   로컬 브랜치도 함께 정리.
+>   `git worktree list` 잔여 = 공유 체크아웃 + `maint-62-2331`(MANUAL-REVIEW 보존 · 미접촉) 2건.
+> - tKB: `KNOW-039` **kbSn 7007** · `KNOW-040` **kbSn 7008**(csn 70424) — 본문 대조 2807자 / 1390자(소스와 동일).
