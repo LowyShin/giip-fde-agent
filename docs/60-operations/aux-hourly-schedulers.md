@@ -185,6 +185,21 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\manage-gissue
 보조 태스크는 이 헬퍼가 등록하거나 시작하지 않습니다 — 즉시 1회 실행은 각 러너를 직접 부르거나
 `Start-ScheduledTask -TaskName <이름>` 을 씁니다.
 
+**⚠ 로그·락·CSN 타깃은 "이 저장소 기준"이다 (giip 5054)** — 위 명령은 **이 스크립트가 있는 저장소의**
+`scripts\gissue\logs` 와 `scripts\gissue\csn-projects.json` 만 봅니다. 스케줄러가 실제로 도는 배포본이
+다른 디렉터리면 **"락 0건 / 대상 CSN 0건" 이 운영 reality 와 반대인 거짓출력**이 됩니다(락이 살아 있는데
+없다고 보고하는 사고). 그럴 때는 실제 런타임 경로를 지정합니다:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\manage-gissue-scheduler.ps1 -Action Status -LogDir <runtime-log-dir> -ConfigPath <runtime-csn-projects.json>
+```
+
+- `-LogDir` — 로그·락 디렉터리. 락은 **PID 와 상태(`LIVE` / `STALE_DEAD_PID` / `STALE_OLD`)** 를 함께
+  보여줍니다 — "락이 죽은 프로세스의 것인지"를 이 화면에서 바로 판정할 수 있습니다.
+- `-ConfigPath` — CSN 맵(`csn-projects.json`). 지정하지 않으면 CSN 타깃이 0건으로 나옵니다.
+- 상태 출력 맨 위에 **지금 보고 있는 경로**가 항상 표시되므로, 어느 경로의 결과인지 헷갈리지 않습니다.
+- 두 파라미터는 `check-gissue-liveness.ps1` 의 `-LogDir` / `-ConfigPath` 와 같은 이름·같은 폴백 규약입니다.
+
 ### 4-5) 즉시 1회 실행(검증)
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\run-list-stale-pending.ps1    -Csn 47
