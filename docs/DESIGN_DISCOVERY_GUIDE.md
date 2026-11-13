@@ -2,11 +2,11 @@
 
 GIIP Agent System은 단순한 코딩을 넘어, 전문 디자이너의 감각을 프로젝트에 즉시 이식할 수 있는 **멀티 소스 디자인 탐색 시스템**을 내장하고 있습니다. 
 
-본 가이드는 `designmd.ai`, `designmd.app`, `getdesign.md`, `designmd.me` 등 4가지 주요 플랫폼을 활용하여 최적의 `DESIGN.md`를 찾고 에이전트에게 지시하는 방법을 설명합니다.
+본 가이드는 `designmd.ai`, `designmd.app`, `getdesign.md`, `designmd.me`, `designbookmark.com` 등 5가지 주요 플랫폼을 활용하여 최적의 `DESIGN.md`를 찾고 에이전트에게 지시하는 방법을 설명합니다. 앞의 4종이 디자인 시스템(토큰·스타일) 소스라면, `designbookmark.com/motion`은 **모션 컴포넌트** 소스입니다.
 
 ---
 
-## 🚀 4대 디자인 플랫폼 활용 매트릭스
+## 🚀 5대 디자인 플랫폼 활용 매트릭스
 
 사용자의 의도에 따라 에이전트가 최적의 소스를 선택합니다.
 
@@ -16,6 +16,7 @@ GIIP Agent System은 단순한 코딩을 넘어, 전문 디자이너의 감각�
 | **[designmd.app](https://designmd.app)** | **커뮤니티 라이브러리** | 423+개 파일, 에이전트 설정 가이드 | `CLAUDE.md`, `.cursorrules` 생성 |
 | **[getdesign.md](https://getdesign.md)** | **브랜드 복제 (Branding)** | Stripe, Vercel, Notion 등 유명 브랜드 | `npx getdesign add <brand>` |
 | **[designmd.me](https://designmd.me)** | **커스텀 디자인 추출** | URL/텍스트로 디자인 시스템 자동 생성 | 특정 사이트 디자인 즉시 추출 |
+| **[designbookmark.com/motion](https://designbookmark.com/motion)** | **모션 컴포넌트** | 라이브로 동작하는 애니메이션 컴포넌트(약 48종), Claude/Codex용 복사 제공 | 컴포넌트를 골라 복사 → 프로젝트에 붙여넣으면 에이전트가 그대로 구현 |
 
 ---
 
@@ -39,6 +40,12 @@ GIIP Agent System은 단순한 코딩을 넘어, 전문 디자이너의 감각�
 ### 4. 에이전트별 최적화 설정 (Agent Steering)
 선택된 디자인이 각 개발 도구(Cursor, Claude Code 등)에서 완벽하게 작동하도록 설정 파일을 생성합니다.
 - **에이전트 동작**: `designmd.app/guides`를 참조하여 `.cursorrules` 또는 `CLAUDE.md` 자동 업데이트.
+
+### 5. 모션 컴포넌트 적용하기 (Motion Components)
+버튼·툴팁·드롭다운 같은 UI 요소에 살아 있는 애니메이션을 넣고 싶을 때 사용합니다. 디자이너가 레퍼런스를 고르면 에이전트가 코드로 구현하는 흐름입니다.
+- **명령어 예시**: "이 버튼에 탄성 있는 모션을 넣어 줘." / "뽑은 드롭다운처럼 스프링 느낌으로 만들어 줘."
+- **에이전트 동작**: [designbookmark.com/motion](https://designbookmark.com/motion)에서 라이브 미리보기로 후보(예: Morph tooltip, Spring dropdown, Jelly slider, Pull to refresh, Command palette)를 제시 → 사용자가 고른 컴포넌트의 Claude/Codex용 복사를 프로젝트에 붙여넣어 명세대로 구현. 스프링·타이밍·이징 파라미터는 미리보기로 어림하지 말고 복사된 명세를 기준으로 합니다.
+- **참고**: 모션은 DESIGN.md의 토큰 체계를 대체하지 않습니다. 색상·타이포 등 스타일은 프로젝트의 `DESIGN.md`를 따르고, 이 소스는 "움직임"만 담당합니다.
 
 ---
 
