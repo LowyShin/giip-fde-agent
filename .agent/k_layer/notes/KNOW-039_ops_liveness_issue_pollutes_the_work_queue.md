@@ -37,6 +37,10 @@
    (제외는 **조회(큐) 계층**에만 — `list-issues.js --status <S>` 직접 조회와
    `check-gissue-liveness.ps1` 의 `find()` 경로는 영향받지 않아야 한다. 회복 시 코멘트·종료가
    계속 동작해야 한다).
+   **→ 2026-11-14 구현 완료(giip 4907).** `scripts/gissue/list-issues.js` 의 `runQueue()` 안쪽에서
+   제목 접두사(`[OPS] gissue 처리 무소식 감지`)로 걸러 제외한다. 회귀 테스트는
+   `scripts/gissue/tests/test-queue-ops-exclude.mjs` — `--queue` 에서는 빠지고 `--status` 에서는
+   그대로 조회되는지 **두 경로의 출력 차이**로 고정한다.
 2. **중복 감지 이슈는 상설 이슈로 통합한 뒤 닫는다.** 상설 이슈가 지정되면 나머지 중복은
    "상설 안내 + 중복 정리" 코멘트를 남기고 `DONE` 으로 종료한다. **감지 원문은 이슈 본문에 남아
    있으므로 중복 정리로 정보가 사라지지 않는다.**
@@ -64,4 +68,5 @@
 - `KNOW-040` — 코멘트 사후검증 `verified:false` 는 등록 실패가 아니다(재조회로 확인)
 - `scripts/gissue/list-issues.js --queue` · `scripts/gissue/lib/liveness-ops-issue.js` ·
   `scripts/gissue/check-gissue-liveness.ps1`
-- 후속 작업 이슈: `giip 4907` (큐에서 자동 감지 이슈 제외 — 정본 변경)
+- 후속 작업 이슈: `giip 4907` (큐에서 자동 감지 이슈 제외 — 정본 변경) → **2026-11-14 완료**
+  (`scripts/gissue/list-issues.js` · `scripts/gissue/tests/test-queue-ops-exclude.mjs`)
