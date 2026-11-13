@@ -68,9 +68,9 @@
 
 ### 회수(세션 워크트리 1건)
 
-- 본 회차 워크트리 `maint-112-1625` 는 **PR 머지 후** 정본 도구로 회수한다(아래 "회수 후 재측정" 참조).
+- 본 회차 워크트리 `maint-112-1625` 는 **PR #416 머지 후** 정본 도구로 회수했다(실측 결과는 아래 "회수 후 재측정" 절).
 
-### MANUAL-REVIEW 5건 — 미접촉
+### MANUAL-REVIEW 5건 — 미접촉(회수 전 측정 · 회수 후 4건)
 
 정본 도구 DryRun 실측(`-RepoPath` 모드): 삭제 0건 · locked 제외 0건 · MANUAL-REVIEW **5건** · `Aborted=False`.
 
@@ -84,6 +84,23 @@
 
 - 고아 워크트리 스캔(`-OrphanScan -DryRun -ScanRoot "D:\temp\worktrees\giip-fde-agent"`) →
   `.git` 보유 디렉터리 6건 전부 `Registered` · **고아 0건** · `Aborted=False`.
+
+### 회수 후 재측정(정본 도구 DryRun, 실측)
+
+- 본 회차 워크트리 회수(2026-11-13 16:43 KST) —
+  `scripts/gissue/cleanup-worktrees.ps1 -RepoPath "C:\Users\lowys\Downloads\projects\giip-fde-agent"
+  -OnlyPath "D:\temp\worktrees\giip-fde-agent\maint-112-1625" -MinIdleMinutes 0`
+  (DryRun 먼저 → 삭제 대상 1건 확인 → 본 실행). 판정: **머지 확인됨 · idle · locked 아님** → 삭제 1건.
+- **회수 전 안전 확인** — PR head 커밋(`c3adb25`)의 두 파일 blob sha256 이 `origin/main`(`cf79cb9`)의
+  같은 파일 blob sha256 과 **바이트 동일**함을 확인(2건 전건 동일) → 내용을 잃지 않음을 확인한 뒤 회수.
+  심볼릭 링크·정션 0건(`find -maxdepth 3 -type l -o -type j`) · 워크트리 working tree clean.
+- **회수 결과 실측** — `git worktree list` → 5줄(공유 체크아웃 + 잔여 4건) · 세션 워크트리 디렉터리 **삭제 확인** ·
+  로컬 브랜치 `chore/csn70424-maint112-20261113-1625` **삭제 확인** · 원격 ref `origin/chore/csn70424-maint112-20261113-1625`
+  **삭제 확인**(정본 도구가 머지 완료 분기 원격 정리를 수행).
+- **회수 후 재측정** — `-RepoPath` DryRun → 삭제 0건 · locked 제외 0건 · MANUAL-REVIEW **4건**
+  (`giip-5054-refine` · `maint-62-2331` · `verify-4139-c7` · `verify-5054-main`) · `Aborted=False`.
+  `-OrphanScan` DryRun → `.git` 보유 디렉터리 **5건 전부 `Registered`** · **고아 0건** · `Aborted=False`.
+- 공유 체크아웃은 `origin/main`(`cf79cb9`) 로 ff-sync 완료 · 미커밋 잔여는 타 세션 untracked 3건뿐(미접촉).
 
 ## [H] 최근 코멘트 논리 재검증 — 2시간 창 21건 / 24시간 창 51건
 
@@ -156,7 +173,8 @@
   [F] 오판 stash 0건 ·
   [H] 2시간 창 21건 / 24시간 창 51건 — **정정 1건 · 상태 전이 0건 · 이슈 쓰기 1건**.
 - 별도 act **0건** · **코드 변경 0건**(문서 2건만: 본 기록 + What's New 항목).
-- 워크트리 회수 **1건**(본 세션 워크트리 · PR 머지 후) · MANUAL-REVIEW 5건 미접촉 · 고아 0건.
+- 워크트리 회수 **1건**(본 세션 워크트리 · PR #416 머지 후 정본 도구로 회수 — 「회수 후 재측정」 절) ·
+  MANUAL-REVIEW 4건 미접촉(회수 전 5건) · 고아 0건.
 - 성역(giipApi/giipApiSk2) 미접촉 · main 직접 push 없음 · PR 경유 · 명시적 경로 스테이징만.
 
 ## 남은 사항 (다음 회차가 이어받을 것)
