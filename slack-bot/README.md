@@ -279,6 +279,32 @@ Jev 를 활용한 의도 분류 구조(구현 완료 — 단, 스위치 기본 O
 
 테스트: `node --test slack-bot/tests/runtime-artifact-guard.test.js`(임시 git 저장소로 실제 재현, LLM·네트워크 없음).
 
+## Q&A 프로젝트 격리 + 엔진 타임아웃 (giip 5144)
+
+> **적용 시점**: 이 변경은 코드 변경이므로 **pm2 재시작 후에 적용된다**(`pm2 restart <프로세스명>`). 이 문서/PR 은 봇을 재시작하지 않는다.
+> 환경변수 값 변경도 재시작 후 적용된다.
+
+### Q&A 프로젝트 격리 정책
+질문(Q&A) 경로는 "그 질문의 프로젝트"에 닫는다. 다른 프로젝트의 내용·변경이 섞이지 않게 하는 규칙:
+
+- **후보 저장소**: Q&A 안전망(답변 뒤 자동 브랜치/PR)은 `snapshotCandidateRepos(workDir, { siblings: false })` 로 workDir 을 포함한 저장소와 그 nested 저장소만 본다. `PROJECTS_ROOT` 의 형제 저장소는 보지 않는다(태스크 경로는 `siblings` 기본 true 로 종전과 같다). Q&A 엔진은 `--disallowedTools Write Edit NotebookEdit` 이므로 안전망이 잡는 변경은 Bash 로 만든 파일뿐이다.
+- **엔진 `--add-dir`**: workDir 과 agentDir 만. 롤백용으로 환경변수 `SLACKBOT_QNA_ALL_PROJECTS=1` 이면 종전처럼 `PROJECTS_ROOT` 도 허용한다(기본 off). 다른 프로젝트 질문은 프리픽스(`<project> …`)/채널 pin 으로 workDir 이 바뀐다.
+- **DM 대화 기록 키**: `convHistoryKey(channelId, projectName)`. 기본 프로젝트(BASE_DIR 폴더명)는 기존 키 `channelId` 를 유지(진행 중 대화가 끊기지 않음), 그 밖의 프로젝트는 `channelId:projectName`.
+- 미구현(후속): 질문 시작 이후 mtime 필터, 활성 락이 있는 저장소 skip.
+
+### 엔진 실행 타임아웃·heartbeat
+과거 엔진(`claude -p`) 실행은 20분 하드 타임아웃이라 긴 Q&A/태스크가 20분에 강제 종료되어 응답이 유실됐다. 이제 **기본은 타임아웃 없음(무제한)** 이다.
+
+| 환경변수 | 기본 | 의미 |
+|---|---|---|
+| `SLACKBOT_ENGINE_TIMEOUT_MIN` | 미설정=무제한 | 양의 정수(분)면 그 시간 뒤 강제 종료(`ETIMEDOUT`). 미설정·0·음수·정수 아님이면 타임아웃 없음 |
+| `SLACKBOT_ENGINE_HEARTBEAT_MIN` | 30 | 엔진 실행 중 N분마다 `[Bot] 엔진 실행 중 <분>분 경과 (pid=<pid>, 채널=<id>)` 로그(`spawnAsync` 경로). 0 이면 off |
+| `SLACKBOT_QNA_ALL_PROJECTS` | 미설정(off) | `1` 이면 Q&A 엔진에 `PROJECTS_ROOT` `--add-dir` 를 다시 허용(격리 롤백) |
+
+`task-manager.js` 의 `runClaude` 는 동기(`spawnSync`) 실행이라 타임아웃만 같은 환경변수를 따르고 heartbeat 는 없다.
+
+회귀 테스트(실제 Slack·claude·push·gh 호출 없음): `node tools/test-qna-isolation.js`, `node tools/test-engine-timeout.js`
+
 ## K-Layer Knowledge Base
 
 Place `.md` files in `.agent/knowledge/notes/` using the CLAIM format:

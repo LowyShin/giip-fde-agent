@@ -121,7 +121,7 @@ async function answerInChannel({ channelId, replyTs, text, workDir = BASE_DIR, t
   const uiT = require('./i18n-ui').t;
   const uiLang = config.resolveLangForProject(path.basename(workDir));
 
-  // 即時受付通知: callClaude は最大20分ブロックし、その間ユーザには何も返らないため
+  // 即時受付通知: callClaude は長時間ブロックし得て、その間ユーザには何も返らないため
   // 「먹통」に見える。実処理の前に受付メッセージを出して無応答体感を無くす。
   await postMessage(channelId, uiT(uiLang, 'qnaAck'), replyTs);
 
@@ -176,7 +176,11 @@ MANDATORY RULE — Task Number: If the user's message contains a 14-digit task n
   // commitAndPRChangedRepos 機械を再利用し、実行「前」に clean だったリポの
   // タスク由来変更だけを安全に commit·push·PR する(pre-dirty は触らず skip)。
   let qnaSnapshots = [];
-  try { qnaSnapshots = tm.snapshotCandidateRepos(workDir); }
+  // giip 5144(원본 giip 4902): Q&A 는 그 질문의 프로젝트 저장소(+nested)만 후보로 한정한다(siblings:false).
+  //   Q&A 엔진은 --disallowedTools Write Edit NotebookEdit 라 이 안전망이 잡을 변경은 Bash 로 만든
+  //   파일뿐이다. 형제 저장소까지 스냅샷하면 같은 PC 의 다른 세션 변경이 이 질문의 변경으로 오귀속돼
+  //   무관한 채널에 PR/수동필요 경고가 올라온다. 태스크 경로는 siblings 기본 true 로 불변.
+  try { qnaSnapshots = tm.snapshotCandidateRepos(workDir, { siblings: false }); }
   catch (e) { console.error('[Bot] answer snapshot error:', e.message); }
 
   try {
@@ -191,7 +195,7 @@ MANDATORY RULE — Task Number: If the user's message contains a 14-digit task n
   } catch (err) {
     const isTimeout = err.code === 'ETIMEDOUT' || (err.message && err.message.includes('ETIMEDOUT'));
     const msg2 = isTimeout
-      ? '⏱️ 処理がタイムアウトしました（20分超過）。もう少し短い要求に分けて送ってください。'
+      ? '⏱️ 処理がタイムアウトしました（SLACKBOT_ENGINE_TIMEOUT_MIN 設定超過）。もう少し短い要求に分けて送ってください。'
       : `回答エラー: ${err.message}`;
     await postMessage(channelId, msg2, replyTs);
   }
@@ -217,9 +221,17 @@ MANDATORY RULE — Task Number: If the user's message contains a 14-digit task n
   } catch (e) { console.error('[Bot] answer auto-PR error:', e.message); }
 }
 
+// giip 5144(원본 giip 4902): DM 대화 기록 키를 프로젝트별로 분리한다. 같은 DM 에서 프로젝트 접두사가 바뀌어도
+// 이전 프로젝트의 History 가 새 프로젝트 프롬프트에 섞이지 않는다. 기본 프로젝트(BASE_DIR)는
+// 기존 키(channelId)를 그대로 써서 진행 중 대화가 끊기지 않는다.
+function convHistoryKey(channelId, projectName) {
+  return projectName === path.basename(BASE_DIR) ? channelId : `${channelId}:${projectName}`;
+}
+
 // ── DM 처리 (일반 Q&A) ───────────────────────────────────────────────────────
 async function handleDM({ channelId, ts, threadTs, text, conversations, workDir = BASE_DIR }) {
-  const convKey = channelId;
+  const projectName = path.basename(workDir);
+  const convKey = convHistoryKey(channelId, projectName);
   const replyTs = threadTs || undefined;
   const cmd = text.trim().toLowerCase();
   // [giip #1971] UI 문자열 다국어화(범위: 이 함수 내 태스크 미발견/일반 오류, i18n-ui.js 참고).
@@ -318,7 +330,6 @@ async function handleDM({ channelId, ts, threadTs, text, conversations, workDir 
     issues = await getIssues();
   }
 
-  const projectName = path.basename(workDir);
   triggerCsnLangPrefetch(channelId, projectName);
   const agentDirDM = getAgentDir(workDir);
   let prompt = `You are giipclaude, an AI assistant. Always respond in ${config.resolveLangNameForProject(projectName)} regardless of the language the user writes in.\n\nWorking project: ${projectName}\nWorking directory: ${workDir}\nAgent context directory: ${agentDirDM} (roles/, rules/, skills/, workflows/)\nRead relevant files from the agent context directory to apply the correct role and rules.\n\nIMPORTANT: Answer based on your knowledge of the project and K-Layer context. If you do not know the answer, say "모르겠습니다" clearly.\n\n되묻지 말고 실측: 설정·사양은 직접 조회하라. giip 서비스 설정(SMTP 등)의 정본=giipdb \`docs/30_Specs/\` + DB(예: SMTP=\`tEmailServerConfig\`, API \`EmailServerConfigGetActive\`). 사람만 아는 값만 질문한다.\n\nMANDATORY RULE — Task Number: If the user's message contains a 14-digit task number (e.g. 20260630170105), you MUST start your response with "[태스크 \`<task_number>\`]" on the very first line. Never omit the task number from your response.`;
@@ -1673,6 +1684,7 @@ module.exports = {
   handleSimpleGitOp,
   answerInChannel,
   handleDM,
+  convHistoryKey,
   startTaskExecution,
   drainNextQueued,     // index.js の起動/定期リカバリが凍結キューを解凍するために使う
   handleChannelMention,

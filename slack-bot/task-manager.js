@@ -11,6 +11,7 @@ const { parseConflictFiles, isMergeableLogPath, mergeLogLines } = require('./bra
 const { stageDeliverables, branchHasDeliverables } = require('./runtime-artifact-guard'); // giip #4300
 const { searchKLayer } = require('./k-layer');
 const accounts = require('./claude-accounts');
+const { engineTimeoutMs } = require('./claude-cli'); // giip 5144: 엔진 타임아웃 단일 정의
 const minimax = require('./minimax-accounts');
 const { acquireRepoLock, releaseRepoLock } = require('./repo-lock');
 const config = require('./config'); // giip-974: 프로젝트별 응답 언어(resolveLangNameForProject)
@@ -131,7 +132,7 @@ function runClaude(args, cwd = BASE_DIR, input = null, opts = {}) {
     cwd,
     encoding: 'utf8',
     maxBuffer: 10 * 1024 * 1024,
-    timeout: 20 * 60 * 1000, // 20分
+    timeout: engineTimeoutMs(), // giip 5144(원본 giip 4902): 기본 무제한(SLACKBOT_ENGINE_TIMEOUT_MIN)
     windowsHide: true,
     // 프롬프트는 argv 대신 stdin 으로 전달(ENAMETOOLONG 회피). null 이면 미전달.
     ...(input != null ? { input } : {}),
@@ -1375,7 +1376,10 @@ function porcelainPathSet(root) {
 // 候補リポの root 一覧(Map<normRoot, root>)を返す。
 // = effWorkDir を含むリポ(toplevel) + その 1〜2 階層下の nested git repo。
 // repo を見つけたらその中へは降りない(サブサブ repo は追わない)。
-function candidateRepoRoots(effWorkDir) {
+// giip 5144(원본 giip 4902): opts.siblings(기본 true=기존 동작). false 면 PROJECTS_ROOT 형제 스캔을 생략해
+//   effWorkDir 의 저장소와 그 하위 nested 저장소만 후보로 한다 — Q&A(질문) 경로 전용.
+function candidateRepoRoots(effWorkDir, opts = {}) {
+  const siblings = opts.siblings !== false;
   const roots = new Map(); // normRoot -> 実際の root
   const addRoot = (dir) => {
     const top = repoToplevel(dir);
@@ -1410,8 +1414,10 @@ function candidateRepoRoots(effWorkDir) {
   //   → PROJECTS_ROOT を常に 1〜2 階層スキャンして兄弟 repo(giipprj/giipv3, giipprj/giipdb 等)も候補化。
   //   実際に「このタスクが変更した」repo だけが後段(commitAndPRChangedRepos)で preDirt 差分により
   //   commit/PR/skip 判定されるため、候補を広げても無関係リポには一切触れない。
-  const PROJECTS_ROOT = path.dirname(BASE_DIR); // …/projects
-  scanNested(PROJECTS_ROOT);
+  if (siblings) {
+    const PROJECTS_ROOT = path.dirname(BASE_DIR); // …/projects
+    scanNested(PROJECTS_ROOT);
+  }
 
   return roots;
 }
@@ -1576,8 +1582,8 @@ function reclaimCrashedTaskBranches(workDir, taskId) {
   return { restored, stranded };
 }
 
-function snapshotCandidateRepos(effWorkDir) {
-  const roots = candidateRepoRoots(effWorkDir);
+function snapshotCandidateRepos(effWorkDir, opts = {}) {
+  const roots = candidateRepoRoots(effWorkDir, opts);
   const snaps = [];
   for (const [norm, root] of roots) {
     snaps.push({
@@ -1938,6 +1944,7 @@ module.exports = {
   restoreTaskBranch,
   gitPushResultAndPR,
   snapshotCandidateRepos,
+  candidateRepoRoots,
   syncCandidateReposBase,
   prepareNestedBranches,
   restoreNestedBranches,
