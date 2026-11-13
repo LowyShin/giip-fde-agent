@@ -22,4 +22,4 @@ metadata:
 - 구현: `scripts/gissue/check-gissue-liveness.ps1`, `scripts/gissue/lib/gissue-liveness-lib.ps1`, `scripts/gissue/register-gissue-liveness-task.ps1`(사람이 실행)
 - 테스트: `scripts/gissue/tests/test-gissue-liveness.ps1`
 - 사양: `docs/60-operations/hourly-issue-scheduler.md` §16
-- 같은 계열 교훈: 이름과 주기 불일치 `task-cadence-guard.ps1`(giip #2480) — 등록은 성공하고 결과코드는 0 인데 의도와 다르게 도는 태스크.
+- 같은 계열 교훈: 이름과 주기 불일치 `task-cadence-guard.ps1`(giip 2480) — 등록은 성공하고 결과코드는 0 인데 의도와 다르게 도는 태스크.

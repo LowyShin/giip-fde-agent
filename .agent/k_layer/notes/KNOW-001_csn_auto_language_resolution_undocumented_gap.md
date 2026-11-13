@@ -1,6 +1,6 @@
 # KNOW-001: CSN 기반 응답 언어 자동해석은 이미 구현돼 있었으나 규칙 문서가 없었다
 
-- 근거: giip #1252 — https://giip.littleworld.net/ko/admin/giip-issues/1252
+- 근거: giip 1252 — https://giip.littleworld.net/ko/admin/giip-issues/1252
 - 작업 CSN: 70424
 - 관련 파일: `slack-bot/csn-lang-cache.js`, `slack-bot/config.js#resolveLangForProject`,
   `slack-bot/giip-api.js#corpLangGet`, `slack-bot/handlers.js#triggerCsnLangPrefetch`,
@@ -9,7 +9,7 @@
 
 ## 원인분석
 
-giip #1252 요구사항("csn 이 인식되면 그 csn 의 cLang 을 읽어 그 언어로 답변")은 이미 코드로
+giip 1252 요구사항("csn 이 인식되면 그 csn 의 cLang 을 읽어 그 언어로 답변")은 이미 코드로
 구현돼 있었고 실제로 동작도 하고 있었다(사용자 확인). 그러나 이 메커니즘을 설명하는
 `.agent/rules/` 문서가 지금까지 하나도 없었다. 사용자가 이를 깨달은 계기는 "지금까지
 `project-lang.json`(수동 언어 맵)에 이미 언어가 잘 들어가 있어서 신경 쓸 필요가 없었는데,

@@ -135,3 +135,52 @@ main 에 이미 반영됐는지까지 실측**해 유실 위험을 확정했다.
   `[2026-11-14 05:40:41] [WARN][RUN-CLEANUP] … 'Test-GissueRepoMerged' is not recognized …` (다음 실행이 busy-wait 를 물게 만든다),
   PR-ATTRIBUTION 의 파일 범위 판정 호출이 전 회차 실패(`exit=-1`) → 안전 폴백 경고 17건.
   러너(`run-gissue-claude.ps1` 계열)는 **lowyworkenv 오케스트레이션 레포(CSN 33) 소관**이라 이 세션이 고치지 않는다.
+
+---
+
+## 후속 — k-layer 환류 · rule 60 교정 (2026-11-14 07:05 KST, 119차 PR #433 머지 후 같은 회차의 후속)
+
+### 정정 — 위 워크트리 실측 표의 서술 3곳 교정
+
+> 원 결론 **"미커밋 유실 위험 0건"** 은 그대로 유효하며, 근거는 오히려 직접 재측정으로 뒷받침된다.
+> 아래는 **수치·원인 설명**의 교정이다 (rule 73 — 발견 즉시 정확하게 고친다).
+
+1. `giip-5054-refine` — "줄바꿈 CR 차이만" 은 **재현되지 않는다**. 워크트리 파일·인덱스 blob·`origin/main` blob 이
+   모두 **CRLF 0 · 13089 bytes 로 바이트 동일**(`cmp` 결과 동일)이었다. 실제 원인은 **대조 기준**이다 —
+   워크트리 HEAD(`57397cb`) 에 이 파일이 없어 `git diff --cached` 가 **152 insertions** 로 보이고,
+   `git diff --numstat origin/main -- <파일>` 은 **빈 출력**(= 동일)이다.
+2. `giip-5142-svcguard` — 미추적 은 **5건이 아니라 7건**이다 (`.tmp-*` 3 + `scripts/svcguard/` 3 + 회귀 테스트 1).
+   main 과 바이트 동일한 것은 **4건**(svcguard 3 + 회귀 테스트 1)이고 `.tmp-*` 스크래치는 **3건**이다.
+   tracked 4건의 `origin/main` 대비 numstat 은 `.gitignore` **미출력(= 동일)** · `docs/HISTORY.md` **1/1** ·
+   `docs/WHATS_NEW.md` **1/8** · `scripts/gissue/run-repo-gates.ps1` **3/6** 이고, 셋 다 **main 이 신선본**이다
+   (`$ExpectedPs1TestCount` 40→41 · `$ExpectedMjsTestCount` 7→8).
+3. `maint-62-2331` — "HISTORY 추가 25줄 전건 main 에 존재, WHATS_NEW 제거 106줄 전건 main 에 부재" 는 수치가 다르다.
+   실측 numstat(`git diff --numstat origin/main --`): `docs/HISTORY.md` = **0 insertions / 68 deletions**
+   (worktree 188줄 **전건** main 에 존재하고 main 이 68줄 더 최신) · `docs/WHATS_NEW.md` = **38/43**.
+   worktree 기준 "main 에 없는 34줄" 중 **28줄은 main 의 `docs/HISTORY.md` 로 이관**(WHATS_NEW 롤링 7일 창)됐고,
+   나머지 6줄은 날짜 헤더(`## 2026-10-26` 등)와 "기준일 (as of)" 문구(구조물)다.
+   ⇒ "main 에 부재" 가 아니라 **"이관됨"** 이 정확한 서술이며, 유실 위험 0건 판정은 동일하다.
+
+재측정 근거: [KNOW-050](../k_layer/notes/KNOW-050_stale_worktree_reclaim_check_must_target_origin_main.md) (tKB kbSn 7177)
+
+### k-layer 환류 (규칙 80) · rule 60 교정
+
+| 항목 | 내용 | 결과 |
+|---|---|---|
+| KNOW-050 신규 | 자동 회수가 막힌 워크트리의 대조 기준(`origin/main`)·미추적 파일 포함·본문 대조 | 노트 생성 + INDEX 행 + **tKB kbSn 7177** |
+| KNOW-038 INDEX 누락 | PR #387(2026-11-11)이 노트만 추가하고 INDEX 행·tKB 등록을 하지 않은 상태였다 | INDEX 행 추가 + **tKB kbSn 7176** |
+| rule 60 (bare `#N`) | k-layer 노트 6개 파일의 `giip #N` 형태 **16건** | 전량 `giip N` 형태로 교정 |
+
+- tKB 등록은 `node scripts/gissue/tkb.js sync-klayer --csn 70424 --dir <노트 디렉터리> --project giip-fde-agent --note "<파일>"`
+  (스크립트는 lowyworkenv 소관, 계정 csn 70424). 두 건 모두 **4000자 미만**이라 절단 없음 ·
+  등록 후 **재조회로 본문 일치 확인**(verified) · INDEX 행의 kbSn 은 등록 반환값을 그대로 적었다.
+- 이 후속이 만든 변경은 **문서 8건**(노트 6 · INDEX 1 · 본 기록 1)이고 **코드 변경 0건**이다.
+
+### 남은 사항 (후속 회차)
+
+- **rule 60 저장소 전체 스윕 미착수** — k-layer 노트만 교정했다. 저장소 전체를 스캔하면
+  `.agent/work_history` **48건** · `docs` **104건** · `.agent/rules` **43건** · `scripts` 다수에 `giip #N` 형태가 남아 있다.
+  이번 회차 범위(4축 점검 + k-layer 환류)를 넘어서므로 **별도 단위 작업**으로 분리했다.
+  `PR #806` 처럼 종류가 밝혀진 GitHub PR 표기는 허용 대상이다.
+- 나머지 남은 사항은 위 "남은 사항 (다음 회차가 이어받을 것)" 절과 동일하다( 워크트리 6건 회수 검토 ·
+  giip 5140 라이브 이식(CSN 33) · giip 5142 / giip 5175 REVIEW 유지 · 러너 복귀 경로 결함(CSN 70424 범위 밖)).
