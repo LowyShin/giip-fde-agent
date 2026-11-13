@@ -694,7 +694,31 @@ author 를 클라이언트가 지정할 수 없고 서버(`pApiGiipIssueComment*
 충분히 변별됩니다. **이 규약을 깨고 에스컬레이션 본문에 마커 원문을 넣으면 그 코멘트 자신이
 다음 회차 카운트를 부풀립니다.**
 
-### 13-1-4) 시크릿 파일 위치 — `GIIP_ACCOUNTS_FILE`
+### 13-1-4) 저장소 후보 수집 판정 — 커밋 0건 제외 + EAP 비파괴 probe (giip 5102)
+
+러너·스윕 계열이 "담당 프로젝트 + 직계 nested git 레포" 를 후보로 모을 때, `.git` 존재만으로
+후보를 받으면 **`git init` 만 된 커밋 0건 잔여 스캐폴드**가 저장소로 오인됩니다. 그러면 두 증상이 납니다.
+
+1. **busy-wait/auto-unblock 이 예외로 죽음** — 커밋 0건(unborn HEAD) 디렉터리에서 `git rev-parse` 가
+   실패하는데, Windows PowerShell 5.1 + `$ErrorActionPreference='Stop'` 환경에서는 네이티브 git 의
+   stderr 가 `2>$null` 이어도 `NativeCommandError` 로 **throw** 됩니다.
+2. **스윕 3종 전멸** — `pr-gate-sweep.ps1` / `review-done-audit.ps1` / `pr-attribution-sweep.ps1` 은 모두
+   EAP=Stop 이라, `Get-NestedRepoPaths`(`gissue-audit-lib.ps1`) 의 `remote get-url origin` probe 가
+   같은 이유로 throw 되어 **저장소 수집 단계에서** 스윕 전체가 죽습니다(관측: `No such remote 'origin'`).
+   의도된 "origin 없는 디렉터리 제외" 로직이 한 번도 실행되지 않습니다.
+
+판정 규칙(현행 구현):
+
+- `Get-GissueGitRepoPaths`(러너 메인/잡 스코프 + `run-slackbot-restart-check.ps1` 사본)는 **후보 루프 안에서**
+  `git rev-parse --verify HEAD` 를 EAP=Continue + `$LASTEXITCODE` 로 판정해, 실패(커밋 0건)면 그 디렉터리를
+  `[WARN][EMPTY-REPO-SKIP]` 로그와 함께 제외합니다. **자기 저장소(`$workdir`)는 루프 바깥에서 먼저 추가**되므로
+  이 판정 대상이 아니며 커밋 0건이어도 항상 유지됩니다(빠지면 러너 전체가 무력화됩니다).
+- `Get-NestedRepoPaths` 의 origin probe 도 EAP=Continue + 종료코드로 판정해 예외 없이 돌리고, origin 이
+  없는 디렉터리만 제외합니다(로컬 전용 저장소를 잘못 버리지 않기 위해 **origin 부재는 커밋 0건 판정과 별개**).
+- 회귀 테스트: `scripts/gissue/tests/test-git-repo-paths.ps1` — AST 로 배포본 함수 본문을 그대로 추출해
+  모든 사본을 검증하고, neg 컨트롤로 판정의 변별력(빈 통과 배제)을 확인합니다.
+
+### 13-1-5) 시크릿 파일 위치 — `GIIP_ACCOUNTS_FILE`
 
 `slack-bot/.secrets/giip-accounts.json` 은 git 비추적이라 **워크트리 체크아웃에는 없습니다**.
 원본은 이 PC 절대경로를 폴백으로 박아 뒀지만 이 레포는 그럴 수 없으므로, 환경변수
@@ -708,7 +732,7 @@ GIIP_ACCOUNTS_FILE=/path/to/giip-accounts.json node scripts/gissue/lib/resolve-a
 AK 자체는 이 레포에서 발급/조회할 수 없습니다(DB 전용). 절차는
 `scripts/gissue/AI_ACTOR_ACCOUNTS.md` §0-1 의 절별 가부 표를 보세요.
 
-### 13-1-5) PR 탐지 범위 — `audit-extra-repos.json` (giip #2504)
+### 13-1-6) PR 탐지 범위 — `audit-extra-repos.json` (giip #2504)
 
 어느 프로젝트 폴더 아래에도 clone 되지 않은 레포(예: `LowyShin/giipAgentLinux`)의 PR 은 워크디렉터리
 스캔으로는 절대 안 잡혀, PR-gate 가 "PR 없음"으로 REVIEW 를 되돌립니다. `audit-extra-repos.json`
@@ -718,7 +742,7 @@ AK 자체는 이 레포에서 발급/조회할 수 없습니다(DB 전용). 절�
 `lib/audit-repos.mjs`)가 반드시 같은 파일을 읽습니다 — 한쪽만 넓히면 같은 오탐이 계속 납니다**
 (giip #2464 의 교훈). 이 단일 출처 구조를 깨지 마세요.
 
-### 13-1-6) 감사 대상 workdir 지정 — `audit-review-prs.mjs --workdir`
+### 13-1-7) 감사 대상 workdir 지정 — `audit-review-prs.mjs --workdir`
 
 원본은 감사 대상 컨테이너 이름을 `giipprj` 로 하드코딩했습니다. 이 레포는 다음 우선순위로 찾습니다:
 
@@ -730,7 +754,7 @@ AK 자체는 이 레포에서 발급/조회할 수 없습니다(DB 전용). 절�
 GIIP_ACCOUNTS_FILE=<...> node scripts/gissue/audit-review-prs.mjs --csn <csn> --json
 ```
 
-### 13-1-7) 회귀 테스트 — 이식/수정 후 반드시 돌린다
+### 13-1-8) 회귀 테스트 — 이식/수정 후 반드시 돌린다
 
 ```powershell
 # 먼저 레포 전체 .ps1 의 구문 + BOM 일괄 검사
