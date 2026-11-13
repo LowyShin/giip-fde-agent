@@ -72,7 +72,10 @@ try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } 
 # 2026-11-13: -LogDir/-ConfigPath 경로 지정 회귀 테스트 1건(test-manage-gissue-scheduler-logdir.ps1, giip 5054) 추가 → 37 → 38.
 # 2026-11-13: 저장소 후보 수집 회귀 테스트 1건(test-git-repo-paths.ps1, giip 5102 — 커밋 0건 제외 + EAP 비파괴 probe) 추가 → 38 → 39.
 # 2026-11-14: 큐에서 자동 감지 [OPS] 이슈 제외 회귀 테스트 1건(test-queue-ops-exclude.mjs, giip 4907) 추가 → 7 → 8.
-$ExpectedPs1TestCount = 39
+# 2026-11-14: svcguard 측정/조건부 재기동 회귀 테스트 1건(test-svcguard-restart-on-memory.ps1, giip 5142) 추가 → 39 → 40.
+#   + 실측 결과 main 에 이미 test-worktree-claude-session-guard.ps1(giip 5175, PR #428)이 기대값 상향 없이
+#     들어와 실제 40건이었음(기대 39 과 1건 슬랙) → svcguard 1건까지 반영해 실측 41건에 정확히 고정 → 41.
+$ExpectedPs1TestCount = 41
 $ExpectedMjsTestCount = 8
 
 function Write-Gate([string]$Message) {
