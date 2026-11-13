@@ -46,6 +46,17 @@
 //   elapsed/lastAuthor/has_comment 는 추가 호출 없이 계산한다. 코멘트 본문이 실제로 필요한
 //   경우(REVIEW/TESTED dedup, [USER-REQUEST] 판정)에만, 그리고 코멘트가 1건이라도 있는
 //   이슈에 한해 giipIssueComments 를 1회 조회한다.
+//
+// ── 자동 감지(무소식) 이슈의 큐 제외 (giip #4907) ─────────────────────────
+// `[OPS] gissue 처리 무소식 감지` 는 **자동 등록된 "감지 기록"** 이지 "작업"이 아니다.
+//   기본 상태가 PENDING 이고 코멘트가 없으므로, 그 제목만으로 큐(PENDING 우선순위 1)에
+//   걸려 러너 세션 1회분이 감지 건마다 소모된다(큐 오염).
+// ⇒ **조회(큐) 계층에서만** 제외한다. 아래 경로들은 **의도적으로 영향받지 않는다**:
+//   · `--status <S>` 직접 조회 — 감지 이슈를 직접 조회·정리하려면 필요
+//   · check-gissue-liveness.ps1 → lib/liveness-ops-issue.js find() — 열린 감지 이슈를
+//     찾아 회복 코멘트 후 DONE 으로 닫는 경로(여기가 막히면 무소식 에피소드가 영원히 안 끝난다)
+// 제외 판정은 **제목 접두사** 기준이다 — 제목 문자열에 "[OPS]" 가 *포함*된 후속 이슈(예:
+//   "[후속] [큐 오염] 무소식 감지 [OPS] 이슈가 …") 를 잘못 잡지 않도록 접두사 전체 일치로 좁힌다.
 ///////////////////////////////////////////////////////////////////////////
 const https = require('https');
 const fs = require('fs');
@@ -78,9 +89,23 @@ const REVIEW_TESTED_MAX_AGE_MIN = args['review-tested-max-age-minutes'] ? Number
 const AS_JSON = !!args.json;
 const QUEUE_MODE = !!args.queue;
 
-if (!CSN || (!QUEUE_MODE && !STATUSES.length)) {
-  console.error('사용법: node list-issues.js --csn <N> (--status PENDING[,READY,...] [--min-age-minutes <N>] [--hours-back <N>] | --queue) [--json]');
-  process.exit(2);
+// 자동 감지(무소식) 이슈 제목 접두사 — 이 제목의 이슈는 "작업"이 아니라 "감지 기록"이므로
+// **작업 큐(--queue)의 대상이 아니다**(giip #4907 · 큐 오염 2차 방어선).
+//
+// ⚠ 커플링: 이 문자열은 `scripts/gissue/check-gissue-liveness.ps1` 의 `$title` 과 **반드시
+//   동일**해야 한다(그 스크립트가 등록하는 자동 감지 이슈의 제목). 한쪽만 고치면 큐 제외가
+//   조용히 깨진다 — 회귀 테스트(test-queue-ops-exclude.mjs)가 두 값의 일치를 함께 고정한다.
+// 판정 규칙은 lib/liveness-ops-issue.js 의 titleMatch(rowTitle, canonical) 와 동일하다
+//   (정확 일치 또는 그로 시작).
+const AUTO_OPS_TITLE_PREFIX = '[OPS] gissue 처리 무소식 감지';
+
+// 인자 검증은 main() 안에서 한다 — 이 파일을 require 하는 회귀 테스트가 모듈 로드 시
+// process.exit(2) 로 죽지 않게 하기 위해서다(rule 42 — 검사기가 0건을 보고 PASS 하지 않도록).
+function validateArgs() {
+  if (!CSN || (!QUEUE_MODE && !STATUSES.length)) {
+    console.error('사용법: node list-issues.js --csn <N> (--status PENDING[,READY,...] [--min-age-minutes <N>] [--hours-back <N>] | --queue) [--json]');
+    process.exit(2);
+  }
 }
 
 function resolveSk(csn) {
@@ -165,6 +190,21 @@ async function fetchComments(sk, isn) {
   return res.status === 200 ? (res.body?.comments || []) : [];
 }
 
+/**
+ * 자동 감지(무소식) 이슈인가 — 즉 "작업"이 아니라 "감지 기록"인가(giip #4907).
+ * 판정 규칙은 lib/liveness-ops-issue.js 의 titleMatch(rowTitle, canonical) 와 동일하다
+ *   (제목이 정확히 같거나, 그 문자열로 시작).
+ * 제목에 "[OPS]" 가 **포함**된 후속 이슈는 잡지 않는다 — 접두사 전체 일치로 좁힌다.
+ *
+ * @param {string} title 이슈 제목 (가공 전 원문)
+ * @returns {boolean} 자동 감지 이슈면 true
+ */
+function isAutoDetectionOpsTitle(title) {
+  const t = String(title == null ? '' : title).trim();
+  if (!t) return false;
+  return t === AUTO_OPS_TITLE_PREFIX || t.startsWith(AUTO_OPS_TITLE_PREFIX);
+}
+
 async function runQueue() {
   const sk = resolveSk(CSN);
   const rows = [];
@@ -178,6 +218,11 @@ async function runQueue() {
     for (const issue of (res.body?.issues || [])) {
       const isn = issue.isn ?? issue.Isn;
       if (isn == null) continue;
+      // 자동 감지([OPS] 무소식) 이슈는 **작업이 아니라 감지 기록**이므로 작업 큐에서 제외한다.
+      // 제외는 **조회(큐) 계층 한정** — `--status` 직접 조회와 liveness 의 find() 경로는 영향받지 않는다.
+      // 판정을 코멘트 조회보다 앞에서 한다 — 제외될 이슈마다 코멘트 API 조회가 낭비되지 않게.
+      const rawTitle = issue.title ?? issue.Title ?? '';
+      if (isAutoDetectionOpsTitle(rawTitle)) continue;
       const regdate = issue.regdate ?? issue.Regdate ?? null;
       const lastCmtDate = issue.last_comment_date ?? issue.lastCommentDate ?? null;
       const lastAuthor = issue.last_comment_author ?? issue.lastCommentAuthor ?? '';
@@ -254,6 +299,7 @@ async function runQueue() {
 }
 
 async function main() {
+  validateArgs();
   if (QUEUE_MODE) { await runQueue(); return; }
   const sk = resolveSk(CSN);
   const results = [];
@@ -305,4 +351,14 @@ async function main() {
   }
 }
 
-main().catch((e) => { console.error('❌', e.message); process.exit(1); });
+// 이 파일을 직접 실행할 때만 main() 을 돌린다 — 회귀 테스트가 require 해서 순수 함수만
+// 가져올 수 있게 한다(모듈 로드 시점에 인자 검증으로 process.exit 하지 않는다).
+if (require.main === module) {
+  main().catch((e) => { console.error('❌', e.message); process.exit(1); });
+}
+
+// 회귀 테스트 대상(giip #4907).
+//   isAutoDetectionOpsTitle — 순수 판정 함수(제외 대상 판정)
+//   AUTO_OPS_TITLE_PREFIX  — 판정 기준 문자열(커플링 검증 대상)
+//   main / runQueue        — 회귀 테스트가 전송 계층만 바꿔 실제로 돌릴 수 있게 공개
+module.exports = { isAutoDetectionOpsTitle, AUTO_OPS_TITLE_PREFIX, main, runQueue };

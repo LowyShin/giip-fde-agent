@@ -92,6 +92,11 @@ powershell.exe -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass `
   `qprio → is_user_req DESC → has_comment ASC → elapsedMin DESC` 순으로 정렬해 돌려줍니다.
   qprio 는 STALE_IN_PROGRESS(0) → PENDING(1) → READY(2) → REVIEW·TESTED(3) 이며, REVIEW·TESTED 재확인은
   READY 실작업이 모두 끝난 뒤에 처리됩니다.
+  **자동 감지 이슈는 작업 큐의 대상이 아니다**(giip #4907). `[OPS] gissue 처리 무소식 감지` 는
+  자동 등록되는 **감지 기록**이지 "작업"이 아니므로, `--queue` 결과에서 제외된다(제목 접두사 기준 —
+  제목에 `[OPS]` 가 *포함*된 후속 이슈는 정상 작업 항목이라 빠지지 않는다). 제외는
+  **조회(큐) 계층 한정**이다 — `--status <S>` 직접 조회와 `check-gissue-liveness.ps1` 의
+  `find()`(열린 감지 이슈에 회복 코멘트 후 DONE 으로 닫는 경로)는 영향받지 않는다.
   이는 lowyworkenv 운영 러너가 giipdb 직접접속(단일 T-SQL, giip #1472/#1560/#1564/#1651)으로 뽑던
   큐와 **같은 정렬 계약**을 API로 재현한 것입니다. 후속 이슈 자동 등록(시간박스 초과 시)은
   `scripts/gissue/register-issue.js`가 담당합니다. CSN 교차오염 방지 게이트(giip #1053/#1079)가 내장돼 있어 별도 조치가 필요 없습니다.
@@ -1090,10 +1095,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\check-ps1-par
 | 스크립트 | `scripts/gissue/check-gissue-liveness.ps1` (판정 함수는 `scripts/gissue/lib/gissue-liveness-lib.ps1`) |
 | 읽는 곳 | `scripts/gissue/logs/gissue_csn<N>.log` 의 mtime, `gissue_csn<N>.lock`(`PID\|시작\|마지막로그`), 대상 CSN 은 `csn-projects.json` 의 `enabled` CSN(없으면 로그 파일명) |
 | 쓰는 곳 | 기본은 **없음(읽기 전용)**. `-Notify -OpsCsn <csn>` 일 때만 giip 이슈 DB 의 `[OPS] gissue 처리 무소식 감지` 이슈 1건(= 무소식 에피소드)과 `logs/gissue_liveness_state.json`(에피소드 상태) |
-| 소비처 | 종료코드(0 정상 / 1 무소식·판정 불가)는 점검 태스크의 `LastTaskResult`, `-Json` 은 대시보드·사람, `[OPS]` 이슈는 운영 큐 |
+| 소비처 | 종료코드(0 정상 / 1 무소식·판정 불가)는 점검 태스크의 `LastTaskResult`, `-Json` 은 대시보드·사람, `[OPS]` 이슈는 **사람이 보는 알림 채널**이지 작업 큐가 아니다(giip #4907 — §4 참고) |
 | 등록 | `scripts/gissue/register-gissue-liveness-task.ps1` (매시 :37, 태스크명 `GIIP_GissueLiveness_Hourly`). **사람이 실행한다** — 스케줄러 변경은 자동화하지 않는다 |
 | 이슈 도구 | `scripts/gissue/lib/liveness-ops-issue.js` (열린 이슈 찾기 / 진행 보고 코멘트 / 회복 시 DONE 닫기 / 최초 등록 — stdout 은 JSON 1줄, 실패는 `ok=false`+종료코드 1) |
-| 테스트 | `scripts/gissue/tests/test-gissue-liveness.ps1` (가짜 로그 디렉터리 + mtime 픽스처 + 스텁 도구 주입 — 중복 방지·진행 보고·회복 종료·조회 실패 미등록·쓰기 CSN 계약·에피소드 외부 종료 가드), `scripts/gissue/tests/test-liveness-ops-issue.mjs` (제목 매칭·조회 후보 CSN·조회 SK 선택 규칙 + `find()` 조회 흐름 — 네트워크 주입으로 후보 CSN·SK 선택·응답 cSn 가드·실패 전파 고정) |
+| 테스트 | `scripts/gissue/tests/test-gissue-liveness.ps1` (가짜 로그 디렉터리 + mtime 픽스처 + 스텁 도구 주입 — 중복 방지·진행 보고·회복 종료·조회 실패 미등록·쓰기 CSN 계약·에피소드 외부 종료 가드), `scripts/gissue/tests/test-liveness-ops-issue.mjs` (제목 매칭·조회 후보 CSN·조회 SK 선택 규칙 + `find()` 조회 흐름 — 네트워크 주입으로 후보 CSN·SK 선택·응답 cSn 가드·실패 전파 고정), `scripts/gissue/tests/test-queue-ops-exclude.mjs` (자동 감지 `[OPS]` 이슈의 **작업 큐 제외** — 제목 접두사 판정 + `check-gissue-liveness.ps1` 의 `$title` 과의 커플링 + `--queue`/`--status` 두 경로의 출력 차이) |
 
 **판정**
 - CSN 별: `OK`(최근 `-MaxSilentHours` 이내 로그 갱신, 기본 3h = 스케줄 1h + 긴 실행 상한 105분 여유) /

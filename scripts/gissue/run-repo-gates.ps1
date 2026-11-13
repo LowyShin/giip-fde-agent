@@ -71,8 +71,9 @@ try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } 
 # 2026-11-13: -AuxTaskNames 기본 배열 회귀 테스트 1건(test-manage-gissue-scheduler.ps1, giip 5053) 추가 → 36 → 37.
 # 2026-11-13: -LogDir/-ConfigPath 경로 지정 회귀 테스트 1건(test-manage-gissue-scheduler-logdir.ps1, giip 5054) 추가 → 37 → 38.
 # 2026-11-13: 저장소 후보 수집 회귀 테스트 1건(test-git-repo-paths.ps1, giip 5102 — 커밋 0건 제외 + EAP 비파괴 probe) 추가 → 38 → 39.
+# 2026-11-14: 큐에서 자동 감지 [OPS] 이슈 제외 회귀 테스트 1건(test-queue-ops-exclude.mjs, giip 4907) 추가 → 7 → 8.
 $ExpectedPs1TestCount = 39
-$ExpectedMjsTestCount = 7
+$ExpectedMjsTestCount = 8
 
 function Write-Gate([string]$Message) {
     Write-Output ("[REPO-GATE] " + $Message)
