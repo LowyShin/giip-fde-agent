@@ -305,6 +305,38 @@ Jev 를 활용한 의도 분류 구조(구현 완료 — 단, 스위치 기본 O
 
 회귀 테스트(실제 Slack·claude·push·gh 호출 없음): `node tools/test-qna-isolation.js`, `node tools/test-engine-timeout.js`
 
+## 무수신(connected-but-no-inbound) 감지·자가복구 (giip 5141)
+
+> **적용 시점**: 코드 변경이므로 **pm2 재시작 후에 적용된다**(`pm2 restart <프로세스명>`).
+
+기존 self-heal 은 "재연결 실패"와 "ack 연속 실패"만 봤다. **소켓은 `connected` 인데 인바운드
+프레임이 한 건도 오지 않는** 상태는 어느 타이머도 울리지 않아 pm2 가 재시작하지 않고 봇이
+무한 무응답이 된다(2026-11-13 재시작 직후 `!help` 무응답 실측).
+
+이제 마지막 인바운드 프레임 수신 시각을 기록하고, 임계(기본 15분)를 넘기면 **능동 점검**을 돌린다.
+"봇이 반드시 이벤트를 받았어야 하는 메시지(DM, 봇 멘션, 또는 앱이 채널 메시지 이벤트를 주는
+경우의 채널 사람 메시지)가 실제로 도착했는데 우리 쪽 프레임이 0건" 이 확인되면
+`dieAndRestart()` → `exit(1)` → pm2 재시작으로 스스로 복구한다.
+진짜 무트래픽 시간대나 권한 부족으로 판정할 수 없는 경우에는 **죽이지 않는다**(오탐 방지).
+대조 창은 슬랙 **서버 ts** 영역에서만 비교해, 로컬 시계가 서버보다 느린 PC 에서
+"이미 받은 메시지"를 "놓친 메시지"로 오인해 반복 재시작하는 오탐을 막는다.
+
+| 상수 (`slack-bot/index.js`) | 기본값 | 의미 |
+|---|---|---|
+| `INBOUND_IDLE_MS` | 15분 | 무수신으로 간주하는 임계 (오탐 방지 하한) |
+| `INBOUND_PROBE_INTERVAL_MS` | 5분 | 임계 초과 후 능동 점검 주기 |
+
+필요한 스코프: `channels:history` / `groups:history` / `im:history` (없으면 대조가 불가능해
+자가 재시작이 동작하지 않는다). **재시작 후 첫 인바운드 프레임 확인 절차**와 오탐 방지 조건,
+필요 스코프, 알려진 한계는 [`docs/INBOUND_IDLE_WATCHDOG.md`](docs/INBOUND_IDLE_WATCHDOG.md) 참고.
+
+무수신 상태를 인위적으로 만들어 자가 재시작까지 확인하려면(배포 후 검증, **테스트 전용**):
+`SLACKBOT_SIMULATE_NO_INBOUND=1` 로 재시작하면 소켓을 연결하지 않고 "인바운드 프레임 0건" 상태를
+만든다 → 워치독이 감지하면 자가 재시작 로그가 찍힌다. **확인 후 반드시 환경변수를 제거할 것**
+(사양 §5.2).
+
+회귀 테스트(실제 Slack·네트워크 호출 없음): `node --test slack-bot/tests/inbound-idle-watchdog.test.js`
+
 ## K-Layer Knowledge Base
 
 Place `.md` files in `.agent/knowledge/notes/` using the CLAIM format:

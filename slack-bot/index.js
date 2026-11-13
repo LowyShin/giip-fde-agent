@@ -26,6 +26,7 @@ const { loadJSON, saveJSON, isBotEngagedThread } = require('./state');
 const { slackGet } = require('./slack-api');
 const { onSlackMessage, drainNextQueued } = require('./handlers');
 const lssnAgent = require('./lssn-agent'); // [giip #2349] 기동 시 lssn 자동등록 + 처리마다 상태보고
+const { attachInboundIdleWatchdog } = require('./inbound-idle-watchdog'); // [giip #5141] 무수신(connected-but-no-inbound) 감지
 
 // ── 重複プロセス検出・自己終了 ───────────────────────────────────────────────
 function killDuplicateBots() {
@@ -260,6 +261,19 @@ async function main() {
   // socket so pm2 restarts us with a fresh connection.
   const RECONNECT_GRACE_MS = 120 * 1000; // must recover within 2min of losing the socket
   const ACK_FAIL_LIMIT = 6;              // consecutive ack failures => socket is stuck
+  // [giip #5141] 무수신(no inbound frame) 감지 상수.
+  //   INBOUND_IDLE_MS — 소켓이 살아 있는데 인바운드 프레임이 안 오는 상태로 간주하는 임계.
+  //     오탐 방지 하한: 15분. (진짜 무트래픽 시간대에 자가 재시작하지 않도록 넉넉히 둔다.
+  //     사양: slack-bot/docs/INBOUND_IDLE_WATCHDOG.md)
+  //   INBOUND_PROBE_INTERVAL_MS — 임계 초과 후 능동 점검(트래픽 대조) 주기.
+  const INBOUND_IDLE_MS = 15 * 60 * 1000;
+  const INBOUND_PROBE_INTERVAL_MS = 5 * 60 * 1000;
+  // [giip #5141] 무수신 상태 **재현용** 스위치 (운영에서는 절대 설정하지 않는다).
+  //   SLACKBOT_SIMULATE_NO_INBOUND=1 이면 소켓을 연결하지 않고 '연결된 것처럼' 행동해
+  //   "인바운드 프레임이 0건" 상태를 인위적으로 만든다 → 워치독이 감지해 자가 재시작하는
+  //   경로를 실제 프로세스에서 재현·검증할 수 있다(사양 §5.2).
+  //   사용 후에는 반드시 환경변수를 제거한다(남으면 15분 주기로 재시작 루프가 된다).
+  const SIMULATE_NO_INBOUND = process.env.SLACKBOT_SIMULATE_NO_INBOUND === '1';
   let ackFailStreak = 0;
   let reconnectTimer = null;
   const dieAndRestart = (why) => {
@@ -363,8 +377,39 @@ async function main() {
     console.error('[Bot] Socket Mode error:', error.message || error);
   });
 
-  await socketClient.start();
-  console.log('[Bot] Socket Mode 接続完了 — イベント待機中');
+  // [giip #5141] 무수신(connected-but-no-inbound) 감지 배선.
+  // 기존 self-heal 워치독은 "재연결 실패"와 "ack 연속 실패"만 봤고, 소켓이 살아 있는데
+  // 이벤트 프레임이 한 건도 오지 않는 상태는 어느 타이머도 울리지 않아 pm2 가 재시작하지
+  // 않았다(2026-11-13 13:08 재시작 직후 !help 무응답). 여기서 임계( INBOUND_IDLE_MS )를
+  // 넘기면 능동 점검(슬랙 쪽 트래픽 대조)을 돌리고, "받았어야 할 이벤트가 실제로 도착했는데
+  // 우리 쪽 프레임이 0건" 이 확인되면 dieAndRestart → exit(1) → pm2 가 재시작한다.
+  // (판정 불가·진짜 유휴 일 때는 죽이지 않는다 — 오탐 방지. 사양: slack-bot/docs/INBOUND_IDLE_WATCHDOG.md)
+  const inboundIdle = attachInboundIdleWatchdog({
+    socketClient,
+    apiGet: slackGet,
+    botUserId: () => config.getBotUserId(),
+    selfBotId: () => config.getSelfBotId(),
+    allowedChannelIds: () => CHANNEL_IDS,
+    idleMs: INBOUND_IDLE_MS,
+    probeIntervalMs: INBOUND_PROBE_INTERVAL_MS,
+    // 재현 모드에서는 소켓이 없으므로 점검 타이머가 프로세스를 붙잡아야 한다.
+    keepAlive: SIMULATE_NO_INBOUND,
+    onSuspect: (why) => dieAndRestart(why),
+  });
+
+  if (SIMULATE_NO_INBOUND) {
+    // [giip #5141] 무수신 상태 재현 모드 — 소켓을 연결하지 않는다.
+    //   즉, "연결은 되어 있다고 간주하지만 인바운드 프레임이 한 건도 오지 않는" 상태를
+    //   실제 프로세스에서 만든다. 워치독만 '연결된 것처럼' 간주해 감지 경로를 태운다.
+    console.warn('[Bot] ⚠ SLACKBOT_SIMULATE_NO_INBOUND 활성 — 소켓을 연결하지 않고 무수신 상태를 재현합니다(테스트 전용).');
+    console.warn('[Bot] ⚠ 워치독이 무수신을 감지하면 자가 재시작(exit 1)합니다. 확인 후 반드시 환경변수를 제거하세요.');
+    inboundIdle.noteConnected();
+  } else {
+    await socketClient.start();
+    console.log('[Bot] Socket Mode 接続完了 — イベント待機中');
+  }
+  // 무수신 감지 주기 점검 시작 (연결 직후부터 인바운드 프레임이 없는지 감시)
+  inboundIdle.start();
 }
 
 if (require.main === module) {
