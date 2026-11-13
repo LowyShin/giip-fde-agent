@@ -69,7 +69,8 @@ try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } 
 #   mjs 는 PR #389 가 테스트 1건(test-liveness-ops-issue.mjs)을 추가하면서 이 수를 올리지 않아
 #   6 으로 남아 있었다 — 실재는 7건이라 "mjs 테스트가 사라져도 게이트가 통과" 하는 상태였음 → 7 로 교정.
 # 2026-11-13: -AuxTaskNames 기본 배열 회귀 테스트 1건(test-manage-gissue-scheduler.ps1, giip 5053) 추가 → 36 → 37.
-$ExpectedPs1TestCount = 37
+# 2026-11-13: -LogDir/-ConfigPath 경로 지정 회귀 테스트 1건(test-manage-gissue-scheduler-logdir.ps1, giip 5054) 추가 → 37 → 38.
+$ExpectedPs1TestCount = 38
 $ExpectedMjsTestCount = 7
 
 function Write-Gate([string]$Message) {

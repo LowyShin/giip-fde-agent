@@ -16,6 +16,12 @@ calling it by that name silently does nothing when it is absent (giip #2559).
 Paths are resolved relative to this file, so a fresh clone works without editing anything.
 Task names are deployment-specific: override -TaskName / -AuxTaskNames when one PC hosts more
 than one deployment.
+
+Log/lock locations (giip 5054): -Action Status reads the log/lock directory and the CSN map of
+THIS deployment only, so "no locks / no CSN targets" can be false when the scheduler actually runs
+from a different deployment directory. Point -LogDir / -ConfigPath at the runtime paths to see them:
+
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\manage-gissue-scheduler.ps1 -Action Status -LogDir <runtime-log-dir> -ConfigPath <runtime-csn-projects.json>
 #>
 param(
     [ValidateSet('Status', 'Request', 'DryRun', 'RunOnce')]
@@ -24,6 +30,17 @@ param(
     [string]$OnlyCsn = '',
 
     [string]$TaskName = 'GIIP_Gissue_Claude',
+
+    # 로그·락 디렉터리. 비우면 이 스크립트 옆 기본값(<script-dir>\logs).
+    # 배포마다 로그 위치가 다를 수 있으므로, 실제 런타임 경로를 지정할 수 있게 한다 (giip 5054).
+    [string]$LogDir = '',
+
+    # CSN 맵(csn-projects.json). 비우면 이 스크립트 옆 기본값(<script-dir>\csn-projects.json).
+    [string]$ConfigPath = '',
+
+    # 락이 이 시간(시) 이상 묵으면 멈춘 실행으로 본다(살아있는 PID 여도 진행 중으로 치지 않는다).
+    # check-gissue-liveness.ps1 과 같은 기준값을 쓴다.
+    [double]$StaleLockHours = 2,
 
     # Auxiliary hourly schedulers registered by register-*-task.ps1 (see docs/60-operations/
     # aux-hourly-schedulers.md). Status only — this helper never registers or starts them.
@@ -40,10 +57,21 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# 콘솔 출력 인코딩을 UTF-8 로 고정한다 — 이 PC 기본 코드페이지(cp932) 로는 아래 한글 라벨
+# ("로그 디렉터리:" 등)이 깨져 사람도 기계도 못 읽는다 (같은 묶음 도구들의 공통 관례).
+try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } catch { }
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Runner = Join-Path $Root 'run-gissue-claude.ps1'
-$MapFile = Join-Path $Root 'csn-projects.json'
-$LogDir = Join-Path $Root 'logs'
+
+# 경로 파라미터의 기본값(=이 저장소 기준). 지정값과 비교해 "이 저장소 기준이 아님" 을 표시한다 (giip 5054).
+$DefaultLogDir = Join-Path $Root 'logs'
+$DefaultConfigPath = Join-Path $Root 'csn-projects.json'
+if (-not $LogDir)     { $LogDir = $DefaultLogDir }
+if (-not $ConfigPath) { $ConfigPath = $DefaultConfigPath }
+
+# 락 해석(PID·생존 판정)은 liveness 라이브러리를 재사용한다 — 같은 판정을 두 벌 만들지 않는다.
+$LivenessLib = Join-Path (Join-Path $Root 'lib') 'gissue-liveness-lib.ps1'
+if (Test-Path -LiteralPath $LivenessLib) { . $LivenessLib }
 
 function Write-Section($title) {
     Write-Output ''
@@ -83,8 +111,8 @@ function Get-TaskInfoFor($name) {
 function Get-TaskInfo { Get-TaskInfoFor $TaskName }
 
 function Get-CsnMap {
-    if (-not (Test-Path $MapFile)) { return @() }
-    $json = Get-Content -LiteralPath $MapFile -Raw | ConvertFrom-Json
+    if (-not (Test-Path $ConfigPath)) { return @() }
+    $json = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
     $items = @()
     foreach ($prop in $json.csn.PSObject.Properties) {
         if ($OnlyCsn -and $prop.Name -ne $OnlyCsn) { continue }
@@ -117,7 +145,28 @@ function Get-RecentLogLines($csn) {
     return $lines
 }
 
+function Get-LockState {
+    # 락 파일 1건의 PID·생존 상태. 판정 로직은 liveness 라이브러리를 재사용한다(두 벌 만들지 않는다).
+    # 라이브러리가 없으면 판정 불가로 표시한다 — 조용히 "정상" 으로 보이면 안 된다.
+    param([string]$LockPath, [datetime]$Now)
+    if (Get-Command -Name Get-LivenessLock -CommandType Function -ErrorAction SilentlyContinue) {
+        $lock = Get-LivenessLock -LockPath $LockPath -Now $Now -StaleLockHours $StaleLockHours
+        return [pscustomobject]@{ Pid = $lock.Pid; State = $lock.State; AgeHours = $lock.AgeHours }
+    }
+    return [pscustomobject]@{ Pid = $null; State = 'UNKNOWN'; AgeHours = $null }
+}
+
 function Show-Status {
+    # 조회 경로를 맨 위에 명시한다 — "락 0건 / CSN 0건" 이 실제 런타임과 반대일 수 있으므로 (giip 5054).
+    $logNote = if ($LogDir -eq $DefaultLogDir) { '이 저장소 기준(기본값)' } else { '지정 경로(기본값 아님)' }
+    $cfgNote = if ($ConfigPath -eq $DefaultConfigPath) { '이 저장소 기준(기본값)' } else { '지정 경로(기본값 아님)' }
+    Write-Output "로그 디렉터리: $LogDir ($logNote)"
+    Write-Output "CSN 맵: $ConfigPath ($cfgNote)"
+    if ($LogDir -ne $DefaultLogDir -or $ConfigPath -ne $DefaultConfigPath) {
+        Write-Output '※ 기본 경로가 아닌 디렉터리를 보고 있습니다 — 지정 경로에 로그·락·CSN 맵이 있어야 표시됩니다.'
+    }
+    Write-Output ''
+
     Write-Section 'Scheduled Task'
     Get-TaskInfo | Format-List
 
@@ -136,10 +185,25 @@ function Show-Status {
 
     Write-Section 'Locks'
     if (Test-Path $LogDir) {
-        $locks = @(Get-ChildItem -LiteralPath $LogDir -Filter 'gissue_csn*.lock' -ErrorAction SilentlyContinue |
-            Sort-Object LastWriteTime -Descending |
-            Select-Object Name, LastWriteTime, Length)
-        if ($locks.Count -eq 0) { Write-Output 'No active lock files.' } else { $locks | Format-Table -AutoSize }
+        $lockFiles = @(Get-ChildItem -LiteralPath $LogDir -Filter 'gissue_csn*.lock' -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending)
+        if ($lockFiles.Count -eq 0) {
+            Write-Output 'No active lock files.'
+        } else {
+            # "락이 죽은 프로세스의 것인지"를 상태 조회만으로 판정할 수 있게 PID·상태를 함께 보여준다 (giip 5054).
+            $lockNow = Get-Date
+            $locks = @($lockFiles | ForEach-Object {
+                $st = Get-LockState -LockPath $_.FullName -Now $lockNow
+                [pscustomobject]@{
+                    Name          = $_.Name
+                    LastWriteTime = $_.LastWriteTime
+                    Length        = $_.Length
+                    Pid           = if ($null -ne $st.Pid) { $st.Pid } else { '' }
+                    State         = $st.State
+                }
+            })
+            $locks | Format-Table -AutoSize
+        }
     } else {
         Write-Output 'Log directory does not exist.'
     }
