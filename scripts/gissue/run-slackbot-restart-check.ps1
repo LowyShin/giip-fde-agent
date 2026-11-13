@@ -46,14 +46,51 @@
 #   3) pm2 out/err 로그 staleness — 최근 $QuietMinutes(기본 5분) 이내 활동이 있으면 보류.
 #      (좀비 워치독의 25분 기준보다 짧게 잡아 짧은 태스크 중 재시작을 피한다 — 설계 §3-3.)
 #
-# ※ 용어/한계(giip 5140, 2026-11-13): 여기서 '태스크' = slack-bot task-manager 태스크(slack-bot/.task-state.json
-#   의 running)이며 gissue 스케줄러의 claude -p 프로세스가 아니다. 신호 1 만 태스크의 직접 신호다. 신호 3 은
-#   pm2 로그에 채널 메시지마다 '[Debug ws] events_api message' 줄이 쌓이므로 'Slack 이벤트 트래픽'을 재며 태스크
-#   신호가 아니다(running=0 이어도 보류됨). 보류 사유는 (a) 신호 1~3, (b) pm2 조회 실패(예약 태스크에서만 장기
-#   누적, 원인 미규명, giip 5140), (c) status != online 세 가지다. (개선안 미구현: Debug ws 줄 제외 / running 직접 참조.)
+# ── 용어 정의(giip 5140) ─────────────────────────────────────────────────────────
+#   · '태스크' = slack-bot task-manager.js 가 Slack 요청을 받아 실행하는 작업(slack-bot/.task-state.json
+#     의 `running`). gissue 스케줄러(:07)가 돌리는 claude -p 프로세스와는 완전히 무관하다(혼동 주의).
+#   · '배포 커밋' = 지금 pm2 로 돌고 있어야 할 코드의 기준 커밋(위 §2 의 마커 파일).
+#
+# ── 신호별 '실제 측정 대상'과 '한계'(giip 5140 — 신호 이름이 재는 것과 실제로 재는 것이 다름에 주의) ──
+#   신호 1(busy repo): 측정 대상 = nested repo 가 base 브랜치가 아닌지. 태스크 실행의 **직접** 신호다
+#     (task-manager 가 작업 중에만 bot/task-* 로 체크아웃). 한계: 태스크가 체크아웃을 끝내고 base 로
+#     복원한 직후의 짧은 후처리 구간은 못 잡는다.
+#   신호 2(repo-lock): 측정 대상 = .agent/locks/*.lock 중 살아있는 락. 태스크가 아니라 **repo-lock.ps1
+#     을 쓰는 임의 작업**(사람 세션·다른 봇 포함)의 신호다. 한계: 락을 안 잡는 태스크는 못 잡는다.
+#   신호 3(pm2 로그 staleness): 측정 대상 = pm2 out/err 로그의 마지막 쓰기 시각. **태스크 실행 신호가
+#     아니다** — slack-bot 은 채널 메시지마다 '[Debug ws] events_api message ...' 를 out 로그에 찍으므로
+#     사실상 'Slack 이벤트 트래픽'을 잰다. 한계: running=0(실행 중 태스크 없음)이어도 Slack 에 메시지가
+#     오가면 보류된다(실측: running=0 인데 신호 3 으로 18회 연속 보류). 보수적으로 설계된 오탐이다.
+#   (개선안 — 구현하지 말고 제안으로만, 별도 이슈 후보: (i) 신호 3 에서 '[Debug ws]' 줄 제외 후 판정,
+#    (ii) slack-bot/.task-state.json 의 running 을 직접 참조해 '실제 태스크 실행' 여부로 대체.)
+#
+# ── 보류(HOLD) 사유 3종 구분(로그에서 reason 문구로 식별 가능) ─────────────────────
+#   (a) 유휴 신호 1/2/3 미통과 — "유휴신호N 실패 …"(위 신호별 측정 대상 참조).
+#   (b) pm2 조회 실패 — "pm2 프로세스 목록에 … 없음 또는 pm2 조회 실패". **원인 규명·수정 완료(giip 5140,
+#       2026-11-14)**: 예약 태스크(headless)의 OutputEncoding 이 CP932 라 pm2 의 UTF-8 박스드로잉 출력이
+#       깨져 status 정규식이 불매치했던 것. 위 '[giip 5140] … OutputEncoding = UTF8' 블록으로 고쳤다.
+#       (수정 후 이 사유로 새 HOLD 가 쌓이면, pm2 데몬 자체가 죽었거나 ProcessName 불일치일 가능성 — 체크
+#       리스트 참조.)
+#   (c) pm2 status != online — "pm2 status=… (online 아님)". 비정상 상태 복구는 :07 워치독 소관.
+#
+# ── [ALERT](연속 보류가 $HoldWarnThreshold 회 이상) 시 점검 체크리스트 ──────────────
+#   로그에 [ALERT] 가 보이면(강제 재시작은 안 하므로 사람이 아래를 확인):
+#   1) 로그의 최근 HOLD reason 이 (a)/(b)/(c) 중 무엇인지 먼저 식별한다.
+#   2) (b) pm2 조회 실패가 계속이면: (i) 대화형이 아닌 예약 태스크 컨텍스트에서 실제로 실행되는지,
+#      (ii) `pm2 describe <ProcessName>` 이 수동으로는 online 을 반환하는지, (iii) 위 OutputEncoding
+#      고정이 반영된 최신 커밋으로 돌고 있는지(이식본 포함)를 확인한다.
+#   3) (c) status != online 이면 pm2 데몬/프로세스 자체 문제 → :07 워치독 로그와 함께 확인.
+#   4) (a) 신호 미통과가 6시간+ 지속이면: 신호 3 오탐(Slack 트래픽) 가능성이 높다 — 위 개선안 검토 대상.
+#   5) 어느 경우든 강제 재시작은 설계상 금지(진행 중 태스크 손실 방지 — 설계 §3 마지막 항목). 필요하면
+#      사람이 유휴를 확인한 뒤 수동으로 `pm2 restart <ProcessName>` 한다.
 #
 # 보류가 연속 $HoldWarnThreshold(기본 6회 ≈ 6시간) 넘으면 로그에 [ALERT] 를 남겨 사람이 인지하게 한다.
 # 강제 재시작은 하지 않는다(진행 중 태스크 손실 방지 우선 — 설계 §3 마지막 항목).
+#
+# ── 정본↔이식본 동기(giip 5140) ───────────────────────────────────────────────────
+# 이 파일은 giip-fde-agent 정본이다(CLAUDE.md: 정본은 giip-fde-agent). 라이브 런타임(예약 태스크
+# GIIP_SlackbotRestart_Hourly)은 lowyworkenv 이식본을 돌리므로, 위 OutputEncoding 수정과 이 문서
+# 보강은 정본에서 먼저 반영하고 lowyworkenv 이식본에도 동일하게 이식해야 실제 1391회 HOLD 가 멈춘다.
 #
 # ── 사용법 ─────────────────────────────────────────────────────────────────────
 #   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\run-slackbot-restart-check.ps1
@@ -74,6 +111,18 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# ── [giip 5140] 예약 태스크(headless) 컨텍스트의 pm2 출력 디코딩 고정 ──────────────
+# 실측(2026-11-14): 이 스크립트를 등록하는 예약 태스크 GIIP_SlackbotRestart_Hourly 는
+#   conhost.exe --headless powershell.exe -NoProfile -WindowStyle Hidden -NonInteractive ...
+# 로 기동되는데, 그 headless 콘솔은 chcp=932(shift_jis)로 잡혀 [Console]::OutputEncoding 이
+# CP932 가 된다(대화형 콘솔은 chcp=65001/UTF-8 이라 재현 안 됨 — 그래서 "예약 태스크에서만" 실패).
+# pm2 describe 는 UTF-8 박스드로잉(│, U+2502 = E2 94 82)으로 표를 그리는데, OutputEncoding 이
+# CP932 면 PowerShell 이 그 바이트를 CP932 로 잘못 디코딩해 '│' 가 '笏' 등으로 깨진다. 그 결과
+# 아래 pm2 status 파싱 정규식('│\s*status\s*│...')이 영구히 불매치 → Invoke-Hold "pm2 조회 실패"
+# 가 무한 누적됐다(라이브 배포에서 1391회 연속 HOLD 실측, giip 5140). 네이티브 명령 stdout 을
+# UTF-8 로 캡처하도록 고정하면 headless 에서도 describe 출력이 60줄·정규식 매칭에 성공한다(재검증 완료).
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
 
 $ScriptDir  = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 $RepoRoot   = Split-Path -Parent (Split-Path -Parent $ScriptDir)   # scripts/gissue -> scripts -> repo root
