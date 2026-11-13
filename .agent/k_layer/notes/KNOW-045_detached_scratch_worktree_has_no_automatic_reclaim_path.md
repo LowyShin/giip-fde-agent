@@ -57,3 +57,30 @@
 - [KNOW-009](KNOW-009_cleanup_onlypath_separator_silent_zero.md) — `-OnlyPath` 는 경로 구분자를 정규화하지 않는다
 - [KNOW-023](KNOW-023_dead_session_uncommitted_diff_can_be_older_than_main.md) — MANUAL-REVIEW 보류분은 미접촉 유지 대상
 - [KNOW-044](KNOW-044_log_callback_pollutes_the_return_value_of_a_value_returning_function.md) — 같은 정리 엔진의 fail-open 결함(fail-closed 로 교정된 축)
+
+## 정정 (2026-11-13) — PR #408 머지 후 스크래치 워크트리 상태 재측정
+
+> 정정(2026-11-13 10:55 KST): 위 실측(2026-11-13 109차)의 **"HEAD == `origin/main`"** 은 **측정 시점에는 참**이었다.
+> 이 세션 자신의 PR #408(squash 머지 커밋 `102a2e22`)이 `origin/main` 에 랜딩된 **직후** `origin/main` 이 1커밋 앞서면서
+> 대상 스크래치 워크트리 `D:\temp\worktrees\giip-fde-agent\verify-5054-main` 의 상태가 바뀌었다.
+
+### 재측정값 (PR #408 머지 직후)
+
+| 항목 | 값 |
+|---|---|
+| `HEAD` | `41de980` |
+| `origin/main` | `102a2e22` |
+| `git rev-list --count HEAD..origin/main` | **1** (1커밋 뒤처짐) |
+| `git status --short` | **빈 값**(clean) |
+| `git stash list` | **0건** |
+| `git log --oneline origin/main..HEAD` | **0줄**(고유 커밋 0) |
+| `git merge-base --is-ancestor HEAD origin/main` | **true** |
+
+- 뒤처진 1커밋은 **이 세션 자신의 PR #408 머지본**이므로 `origin/main` 에 이미 반영되어 있다.
+
+### 규칙 4 판정 기준 정정
+
+- 규칙 4 의 문자열 **"HEAD == `origin/main`"** 은 **이 시점부터 그대로 성립하지 않는다.**
+  판정 기준은 "HEAD 가 `origin/main` 의 **조상**(HEAD == origin/main 포함)이고 고유 커밋 0 + stash 0 + clean" 으로 읽어야 한다.
+- **"내용 유실 위험 없음" 판정은 그대로 유효**하다 — 유일하게 뒤처진 커밋은 이미 `origin/main` 에 반영되어 있어
+  이 워크트리에만 존재하는 내용이 없다.

@@ -97,7 +97,7 @@ API 로 전건 대조했다.
   `loadedRole` 이 `.agent/roles/orchestrator.md` 임을 확인했다.
 - **코드 변경 0건.**
 
-## 워크트리 인벤토리
+## 워크트리 인벤토리 (2026-11-13 10:23 KST 측정 시점)
 
 | 워크트리 | 브랜치/HEAD | 상태 | 판정 |
 |---|---|---|---|
@@ -150,3 +150,36 @@ API 로 전건 대조했다.
   MANUAL-REVIEW 4건(`maint-62-2331` · `giip-5054-refine` · `verify-4139-c7` · `verify-5054-main`) 미접촉.
 - 성역(giipApi/giipApiSk2) 미접촉 · main 직접 push 없음 · PR 경유.
 - k-layer `KNOW-045` 신규 + `INDEX.md` 행 추가 → tKB **kbSn 7096** 등록·본문 대조 완료(2540자 바이트 동일).
+
+## 사후 메모 — PR #408 머지 후 스크래치 워크트리 재측정
+
+> 정정(2026-11-13 10:55 KST): 위 "워크트리 인벤토리" 절의 표는 **2026-11-13 10:23 KST 측정 시점의 스냅샷**이며,
+> 그 표의 값은 **당시 기준으로는 참**이었다. 이 세션 자신의 PR #408(squash 머지 커밋 `102a2e22`)이 `origin/main` 에
+> 랜딩된 **직후** `origin/main` 이 1커밋 앞서면서 `verify-5054-main` 의 상태가 바뀌었으므로 아래에 재측정값을 기록한다.
+
+### 재측정값 (PR #408 머지 직후)
+
+| 항목 | 값 |
+|---|---|
+| `HEAD` | `41de980` |
+| `origin/main` | `102a2e22` |
+| `git rev-list --count HEAD..origin/main` | **1** (1커밋 뒤처짐) |
+| `git status --short` | **빈 값**(clean) |
+| `git stash list` | **0건** |
+| `git log --oneline origin/main..HEAD` | **0줄**(고유 커밋 0) |
+| `git merge-base --is-ancestor HEAD origin/main` | **true** |
+
+- 뒤처진 1커밋은 **이 세션 자신의 PR #408 머지본**이므로 `origin/main` 에 이미 반영되어 있다.
+
+### 판정
+
+- `verify-5054-main` 의 **"내용 유실 위험 없음" 판정은 유지**된다 —
+  유일하게 뒤처진 커밋이 이미 `origin/main` 에 반영되어 있고, 워크트리는 clean · 고유 커밋 0 · stash 0 이다.
+- 다만 k-layer 노트(KNOW-045) 규칙 4 의 문자열 **"HEAD == `origin/main`"** 은 이 시점부터 그대로 성립하지 않는다 —
+  판정 기준은 "HEAD 가 `origin/main` 의 **조상**(HEAD == origin/main 포함)이고 고유 커밋 0 + stash 0 + clean" 이다.
+
+### 세션 워크트리 회수
+
+- 세션 워크트리 `maint-109-1023` 은 정본 정리 도구(`scripts/gissue/cleanup-worktrees.ps1`)로 **회수 완료** +
+  원격 브랜치 **삭제 완료**(로컬 브랜치도 정리됨).
+- `git worktree prune` **완료**.
