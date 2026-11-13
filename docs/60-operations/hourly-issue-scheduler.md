@@ -650,6 +650,34 @@ DONE 이거나 이슈 자체가 없고 (c) 24시간 이상 방치된** 것만 �
 REVIEW/TESTED 이슈에 연결된 워크트리와 `git worktree list` 에 정식 등록된 워크트리는 **절대**
 건드리지 않습니다(사람이 그 안에서 작업 중일 수 있습니다). 배경은 §10 과 giip #1540 입니다.
 
+> **정정(2026-11-14, isn=5175)** — 위 문장은 **orphan 정리(`-OrphanScan`) 경로**에 대한 것입니다.
+> `git worktree list` 에 **정식 등록된** 워크트리는 별도 경로(`-RepoPath` / `-AllRepos`)에서
+> "머지 확인 → 미커밋 변경 확인 → 링크 선검사 → idle 가드" 를 태워 **삭제될 수 있습니다**
+> (사람이 작업 중이거나 미반영 커밋이 있으면 protected / MANUAL-REVIEW 로 남습니다).
+>
+> 또한 Claude Code 격리 계열(`.claude/worktrees/agent-*`) 은 이전까지 **무조건 제외**됐으나,
+> 그 결과 어떤 자동 정리 경로에도 잡히지 않아 레포당 수십 개가 무한 누적됐습니다
+> (2026-11-13 실측: 27건 + `D:\temp\worktrees` 60여 건). 이제 이 계열도 **같은 안전 요건을
+> 태운 뒤에야** 정리 대상이 되며, 이 계열에만 3가지가 추가됩니다.
+>
+> 1. **"고유 커밋 없음" 판정 병행** — 이 계열의 브랜치(`worktree-agent-<id>`)에는 PR 이 없는
+>    로컬 전용 브랜치가 많아 PR 머지 게이트만으로는 정리 대상이 0건이 됩니다. 그래서
+>    "worktree 의 HEAD 커밋이 `origin/main` 의 조상인가"(= 고유 커밋이 이미 main 에 반영됨 →
+>    내용 유실 없음)를 판정해 병행합니다. 판정 불가·미반영은 모두 **삭제 금지(fail-closed)** 이며,
+>    squash 머지 브랜치는 조상이 아니므로 PR 게이트와 서로를 보완합니다.
+> 2. **격리 메커니즘 산출물의 dirty 제외** — Claude Code 는 worktree 마다 세션 권한을
+>    `.claude/settings.local.json` 에 기록하므로, 산출물로 취급하면 이 계열이 영영 정리 대상 0건이
+>    됩니다. **이 파일만** dirty 판정에서 제외하고(제외 사실은 로그에 남깁니다), 그 밖의 미커밋
+>    변경은 어떤 경우에도 자동 삭제 금지입니다. 미추적 디렉터리는 `git status -uall` 로 개별
+>    파일로 펼쳐야 경로 매칭이 통합니다.
+> 3. **idle 하한 240분** — 라이브 서브에이전트가 오래 붙잡고 있는 경우를 보호합니다
+>    (idle 가드가 실행 중 에이전트 보호를 겸함).
+>
+> 정리 도구가 **못** 지우는 것(타 세션 소유 · 미커밋 산출물 · 진행 중)은 위임자(오케스트레이터)가
+> 직접 판단해 정리하거나 보고합니다 → [오케스트레이터 역할](../../.agent/roles/orchestrator.md).
+> 근거 규칙: [규칙 47](../../.agent/rules/47_auto_cleanup_safety_requirements.md) ·
+> 회귀 테스트: `scripts/gissue/tests/test-worktree-claude-session-guard.ps1`.
+
 **실행 셸**: 이 레포의 배포 대상에는 PowerShell 7(`pwsh`)이 없을 수 있습니다. 문서 예시와 실제
 호출은 전부 `powershell -NoProfile -ExecutionPolicy Bypass -File "<경로>"`(Windows PowerShell 5.1)
 로 씁니다 — `pwsh` 로 부르면 `command not found` 로 **아무 일도 하지 않고** 끝납니다(giip #2559).

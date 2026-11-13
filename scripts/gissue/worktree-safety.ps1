@@ -329,6 +329,42 @@ function ConvertTo-GissueComparablePath([string]$p) {
 $script:GissueScanRootManagementDirNames = @('.git', '.agent', '.github', '.githooks', '.husky', '.claude')
 $script:GissueProtectedBranches = @('dev', 'stg', 'main', 'master')
 
+# ---------------------------------------------------------------------------
+# giip 5175 — Claude Code 격리 worktree 계열(`.claude/worktrees/agent-*`) 전용 안전 게이트
+#
+# 이 계열은 지금까지 **무조건 제외**돼 어떤 자동 정리 경로에도 잡히지 않았다
+# → 레포당 수십 개가 누적됐다(2026-11-13 실측: lowyworkenv `.claude/worktrees` 27건 +
+# D:/temp/worktrees 60여 건). 원인은 코드 판단이 아니라 **문서·도구 동작**이었다 —
+# "Claude Code 자체 세션 격리 메커니즘이라 완전히 별개 — 항상 제외" 라는 과거 서술이
+# 이 계열을 어떤 정리 경로에서도 도달 불가로 만들었다.
+#
+# 이 계열은 일반 worktree 와 두 가지가 다르다. 그래서 **일반 경로와 다른 판정**을 붙인다.
+#
+#   ① 브랜치가 `worktree-agent-<id>` 처럼 **PR 이 없는 로컬 전용 브랜치**다.
+#      `gh pr list --state merged` 게이트만으로는 전부 "미머지"로 남아 정리 대상이 0건이다.
+#      (실측: lowyworkenv `.claude/worktrees/agent-*` 27건 중 머지된 PR 이 붙은 것은 8건뿐)
+#      → "HEAD 커밋이 origin/main 의 조상인가"(= 이 worktree 에 고유한 커밋이 이미 main 에 반영됨)
+#        판정을 **병행**한다. squash 머지 브랜치도 이 판정으로는 "조상"이 아니므로 PR 게이트와
+#        서로를 보완한다(어느 쪽이든 fail-closed).
+#
+#   ② Claude Code 는 만든 worktree 마다 세션 권한(allow 목록)을 `.claude/settings.local.json` 에
+#      기록한다. 이 파일의 미커밋 변경은 **격리 메커니즘의 부산물**이지 작업 산출물이 아니다.
+#      (실측: lowyworkenv 27건 중 26건이 이 파일 하나 때문에 "미커밋 변경"으로 잡혔다)
+#      → 이를 산출물로 취급하면 이 계열은 **영영 정리 대상이 0건**이 되어 원 문제가 그대로 남는다.
+#      → 그래서 **이 파일만** dirty 판정에서 제외한다. 그 밖의 미커밋 변경은 어떤 경우에도
+#        자동 삭제 금지(일반 경로와 동일 — rule 57 "❌ 미커밋 변경이 있는 worktree 삭제").
+#
+# ★ 위 ①② 는 **이 계열에만** 적용한다. 일반 worktree 경로는 손대지 않는다(surgical).
+# ---------------------------------------------------------------------------
+$script:GissueClaudeWorktreeInfrastructurePaths = @(
+    '.claude/settings.local.json'
+)
+# 이 계열에 적용할 idle 하한(분). 일반 worktree(MinIdleMinutes 기본 120)보다 보수적으로 잡는다 —
+# 라이브 서브에이전트가 오래 붙잡고 있는 경우를 보호하기 위함이다.
+# (일반 경로의 idle 가드도 "실행 중 세션 보호"를 겸하지만, 이 계열은 격리 세션이 길게 붙잡고
+#  있는 일이 잦아 하한을 올린다. 0 이면 하한을 적용하지 않는다 — 호출자가 명시적으로 끈 경우.)
+$script:GissueClaudeWorktreeMinIdleMinutes = 240
+
 function Get-GissueLiveWorkdirs {
     param([string]$MapFile = (Join-Path $PSScriptRoot 'csn-projects.json'))
     $out = @()
@@ -1056,10 +1092,106 @@ function Test-GissueWorktreeIdleEnough {
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
+# 6.6 giip 5175 — Claude Code 격리 worktree 계열 전용 판정 2종
+# ──────────────────────────────────────────────────────────────────────────────
+
+# (1) "이 worktree 에 고유한 커밋이 이미 main 에 반영되었는가" 판정 — fail-closed.
+#
+#     왜 필요한가: Claude Code 격리 worktree 의 브랜치는 `worktree-agent-<id>` 처럼
+#     **PR 이 없는 로컬 전용 브랜치**가 많다. PR 머지 게이트(`gh pr list --state merged`)
+#     만으로는 이 계열 전부가 "미머지"로 남아 정리 대상이 0건이 된다(= 무한 누적의 원인).
+#
+#     판정: worktree 의 HEAD 커밋 H 가 `origin/main` 의 **조상**(ancestor)이면
+#       → 이 worktree 에 고유한 커밋이 main 에 이미 반영된 상태(내용 유실 없음) → 정리 후보.
+#       → H 가 origin/main 에 없으면 아직 반영되지 않음 → 삭제 금지.
+#     판정 불가(HEAD 를 못 읽음 · MainRef 없음 · git 실패)는 Determined=$false → 삭제 금지.
+#
+#     주의: squash 머지된 브랜치는 조상이 아니다 — 그래서 이 판정은 PR 게이트를 대체하지 않고
+#     **병행**한다(어느 쪽이든 fail-closed 라 "조용히 삭제"는 없다).
+function Test-GissueWorktreeContentInMain {
+    param(
+        [Parameter(Mandatory = $true)][string]$RepoPath,
+        [Parameter(Mandatory = $true)][string]$WorktreePath,
+        [string]$MainRef = 'origin/main'
+    )
+    $head = $null
+    try { $head = (git -C $WorktreePath rev-parse HEAD 2>$null | Select-Object -First 1) } catch {}
+    $head = ("$head").Trim()
+    if (-not $head) {
+        return [pscustomobject]@{ Determined = $false; InMain = $false; Head = $null
+            Detail = 'worktree HEAD 커밋을 읽을 수 없음 — 판정 불가(fail-closed)' }
+    }
+    # MainRef 자체가 없으면(미 fetch 등) 판정 불가 — "모르면 지우지 않는다"(rule 55).
+    $refExists = $false
+    try {
+        git -C $RepoPath rev-parse --verify --quiet $MainRef 2>$null | Out-Null
+        $refExists = ($LASTEXITCODE -eq 0)
+    } catch { $refExists = $false }
+    if (-not $refExists) {
+        return [pscustomobject]@{ Determined = $false; InMain = $false; Head = $head
+            Detail = "$MainRef ref 없음(미 fetch 등) — 판정 불가(fail-closed)" }
+    }
+    $isAncestor = $false
+    try {
+        git -C $RepoPath merge-base --is-ancestor $head $MainRef 2>$null | Out-Null
+        $isAncestor = ($LASTEXITCODE -eq 0)
+    } catch { $isAncestor = $false }
+    if ($isAncestor) {
+        return [pscustomobject]@{ Determined = $true; InMain = $true; Head = $head
+            Detail = "HEAD $head 가 $MainRef 의 조상 — 이 worktree 에 고유한 커밋 없음(내용 유실 없음)" }
+    }
+    return [pscustomobject]@{ Determined = $true; InMain = $false; Head = $head
+        Detail = "HEAD $head 가 $MainRef 에 없음 — 아직 main 에 반영되지 않음" }
+}
+
+# (2) worktree 의 미커밋 변경 경로 목록 — "基础设施 부산물"은 제외할 수 있게 한다.
+#
+#     $IgnorePaths 에 준 경로(슬래시 정규화 상대경로)는 결과에서 빠진다. 제외된 항목도
+#     호출자가 로그에 남길 수 있도록 Ignored 로 함께 돌려준다(숨기지 않는다).
+#     renames(`R  old -> new`)는 양쪽 경로를 모두 펼친다.
+function Get-GissueWorktreeDirtyPaths {
+    param(
+        [Parameter(Mandatory = $true)][string]$WorktreePath,
+        [string[]]$IgnorePaths = @()
+    )
+    $ignore = @{}
+    foreach ($ip in @($IgnorePaths)) {
+        if ($ip) { $ignore[(([string]$ip) -replace '\\', '/' ).TrimStart('/').ToLowerInvariant()] = $true }
+    }
+    $dirty = @(); $ignored = @()
+    $out = @()
+    # `-uall`(untracked-files=all): 미추적 **디렉터리**를 통째로(`?? .claude/`) 접지 않고
+    # 개별 파일로 펼친다. 접으면 격리 산출물(`.claude/settings.local.json`) 하나가
+    # "디렉터리 1개"로 뭉개져 경로 매칭이 통하지 않는다 → 이 계열이 영영 정리 대상 0건이 된다.
+    try { $out = @(git -C $WorktreePath status --porcelain -uall 2>$null) } catch { $out = @() }
+    foreach ($line in $out) {
+        $s = [string]$line
+        if (-not $s.Trim()) { continue }
+        if ($s.Length -lt 4) { continue }
+        $code = $s.Substring(0, 2)
+        $rest = $s.Substring(3)
+        $paths = @()
+        if ($code -match 'R' -and $rest -match '^(.*?) -> (.*)$') { $paths = @($Matches[1], $Matches[2]) }
+        else { $paths = @($rest) }
+        foreach ($p in $paths) {
+            $norm = (([string]$p) -replace '\\', '/').TrimStart('/').ToLowerInvariant()
+            if ($ignore.ContainsKey($norm)) { $ignored += $p } else { $dirty += $p }
+        }
+    }
+    return [pscustomobject]@{ Dirty = @($dirty); Ignored = @($ignored) }
+}
+
+# ──────────────────────────────────────────────────────────────────────────────
 # 7. 단일 레포 정리 엔진 — 두 호출자가 **동일 정책**을 쓰게 하는 지점
 # ──────────────────────────────────────────────────────────────────────────────
 # 정책(= rule 55 + giip #2438 예외 + giip #2440 판정 수정):
-#   - 주 worktree / `.claude\worktrees\` / locked / detached → 건드리지 않음
+#   - 주 worktree / locked / detached → 건드리지 않음
+#   - `.claude\worktrees\` (Claude Code 격리 worktree) → **giip 5175 로 정책 변경**:
+#     "무조건 제외" 를 폐기하고 일반 worktree 와 **동일한 가드**(머지확인 → 링크 선검사 →
+#     idle 가드 → dirty 판정)를 태운다. 이 계열 전용으로 ① "HEAD 커밋이 origin/main 의 조상"
+#     (= 고유 커밋 없음, 내용 유실 없음) 판정을 PR 머지 판정과 **병행**하고,
+#     ② `.claude/settings.local.json`(격리 메커니즘 자체의 부산물)만 dirty 판정에서 제외한다.
+#     그 밖의 미커밋 변경 · locked · detached · 미머지는 여전히 자동 삭제 금지다.
 #   - 머지판정은 `gh pr list --state merged` 로만 한다(ahead-count 금지 — squash-merge 오판).
 #     "워킹트리가 clean 하고 push 됐다"는 것만으로는 절대 삭제하지 않는다 — 세션은 push 이후에도
 #     CI 대기·머지·이슈 코멘트·사양서 갱신을 계속한다(giip #2463). 머지된 PR + idle 가드 둘 다 통과해야 한다.
@@ -1147,7 +1279,15 @@ function Invoke-GissueWorktreeCleanupForRepo {
         if ($result.Aborted) { break }
         $ePath = try { (Resolve-Path -LiteralPath $e.Path -ErrorAction Stop).Path } catch { $e.Path }
         if ($ePath -ieq $repoFull) { continue }                                   # 주 worktree
-        if ($ePath -match '\.claude[\\/]worktrees[\\/]') { continue }             # Claude Code 세션 격리
+        # ★ giip 5175(2026-11-14): `.claude/worktrees` 를 **무조건 제외하지 않는다**.
+        #   과거 판단("Claude Code 자체 세션 격리 메커니즘이라 완전히 별개 — 항상 제외")이
+        #   서브에이전트 worktree 를 어떤 자동 정리 경로에서도 못 지우게 만들어 무한 누적
+        #   (lowyworkenv `.claude/worktrees` 27건 + D:/temp/worktrees 60여 건)을 만든 것이 원인.
+        #   이제는 아래 일반 worktree 와 **동일한 가드**를 태우고, 이 계열에 맞춰 두 가지를 더한다:
+        #     ① "고유 커밋 없음"(HEAD 가 origin/main 의 조상) 판정을 PR 머지 판정과 병행
+        #     ② `.claude/settings.local.json` 만 dirty 판정에서 제외(격리 메커니즘의 부산물)
+        #   일반 worktree 경로는 손대지 않는다(surgical).
+        $isClaudeSessionWorktree = ($ePath -match '\.claude[\\/]worktrees[\\/]')
         # -OnlyPath 지정 시 그 항목 하나만 처리한다(핀포인트 정리/검증용).
         if ($OnlyPath -and (([string]$ePath).TrimEnd('\', '/') -ine ([string]$OnlyPath).TrimEnd('\', '/'))) { continue }
         $ePathNorm = ([string]$ePath).TrimEnd('\', '/')
@@ -1183,6 +1323,7 @@ function Invoke-GissueWorktreeCleanupForRepo {
         #   머지판정만 fail-open 으로 남아 있었다 — giip #2463 의 의도와 어긋난다.
         #   "판정 불가" 와 "미머지" 는 결론(삭제 금지)은 같지만 사유가 다르므로 분리해 기록한다.
         $mergedBranches = $null
+        $mergeBasisNote = '머지 확인'
         if ($null -ne $merged) { $mergedBranches = $merged.Branches }
         if ($null -eq $mergedBranches) {
             & $say "MANUAL-REVIEW(머지판정 불가 — 자동삭제 대상 아님): $ePath (branch=$($e.Branch))"
@@ -1195,9 +1336,29 @@ function Invoke-GissueWorktreeCleanupForRepo {
             continue
         }
         if (-not $mergedBranches.Contains($e.Branch)) {
-            & $say "MANUAL-REVIEW(미머지 — 자동삭제 대상 아님): $ePath (branch=$($e.Branch))"
-            $result.ManualReview += [pscustomobject]@{ Path = $ePath; Branch = $e.Branch; Reason = '머지 PR 없음(사람 확인 필요 — 미완료 작업일 수 있음)' }
-            continue
+            # ── giip 5175: Claude Code 격리 worktree 계열은 "고유 커밋 없음" 판정을 병행한다 ──
+            #   이 계열의 브랜치(`worktree-agent-<id>`)는 PR 이 없는 로컬 전용 브랜치가 대부분이라
+            #   PR 머지 게이트만으로는 정리 대상이 0건이다(실측 27건 중 8건만 머지 PR 있음).
+            #   "HEAD 커밋이 origin/main 의 조상"이면 **이 worktree 에 고유한 커밋이 이미 main 에
+            #   반영된 상태**이므로 내용 유실 없이 정리할 수 있다.
+            #   판정 불가/미반영은 둘 다 삭제 금지(fail-closed)로 수렴한다.
+            $contentInMain = $null
+            if ($isClaudeSessionWorktree) {
+                $contentInMain = Test-GissueWorktreeContentInMain -RepoPath $repoFull -WorktreePath $ePath
+                if ($contentInMain.Determined -and $contentInMain.InMain) {
+                    $mergeBasisNote = '머지 판정(고유 커밋 없음 — HEAD 가 origin/main 의 조상)'
+                    & $say "MERGED-BY-ANCESTRY(giip 5175 — PR 없음이나 고유 커밋이 이미 main 에 반영됨): $ePath (branch=$($e.Branch)) — $($contentInMain.Detail)"
+                } else {
+                    & $say "MANUAL-REVIEW(미머지 — 자동삭제 대상 아님): $ePath (branch=$($e.Branch)) — $($contentInMain.Detail)"
+                    $result.ManualReview += [pscustomobject]@{ Path = $ePath; Branch = $e.Branch
+                        Reason = "머지 PR 없음 + 아직 main 에 미반영(사람 확인 필요 — 미완료 작업일 수 있음): $($contentInMain.Detail)" }
+                    continue
+                }
+            } else {
+                & $say "MANUAL-REVIEW(미머지 — 자동삭제 대상 아님): $ePath (branch=$($e.Branch))"
+                $result.ManualReview += [pscustomobject]@{ Path = $ePath; Branch = $e.Branch; Reason = '머지 PR 없음(사람 확인 필요 — 미완료 작업일 수 있음)' }
+                continue
+            }
         }
 
         # ── rule 55 §1: 링크 선검사(DryRun 포함 항상) ──
@@ -1233,7 +1394,16 @@ function Invoke-GissueWorktreeCleanupForRepo {
         #   읽으면 무엇이든 "방금 활동함"으로 보이고 정리가 영영 멈춘다(테스트에서 실제로 재현됐다).
         #   그래서 dirty 검사는 아래 idle 통과 이후로 내렸다.
         $activity = Get-GissueWorktreeActivity -WorktreePath $ePath -Scan $linkScan
-        $idleVerdict = Test-GissueWorktreeIdleEnough -Activity $activity -MinIdleMinutes $MinIdleMinutes
+        # ── giip 5175: Claude Code 격리 worktree 계열은 idle 하한을 더 보수적으로 잡는다 ──
+        #   라이브 서브에이전트가 붙잡고 있는 세션을 보호하기 위한 하한이다(실행 중 에이전트 보호를
+        #   idle 가드가 겸한다). 일반 worktree 의 임계는 그대로 둔다(surgical).
+        $effectiveIdleMinutes = $MinIdleMinutes
+        if ($isClaudeSessionWorktree -and $script:GissueClaudeWorktreeMinIdleMinutes -gt 0) {
+            if ($effectiveIdleMinutes -lt $script:GissueClaudeWorktreeMinIdleMinutes) {
+                $effectiveIdleMinutes = $script:GissueClaudeWorktreeMinIdleMinutes
+            }
+        }
+        $idleVerdict = Test-GissueWorktreeIdleEnough -Activity $activity -MinIdleMinutes $effectiveIdleMinutes
         if (-not $idleVerdict.Idle) {
             & $say "SKIP($($idleVerdict.Reason)): $ePath"
             $result.ManualReview += [pscustomobject]@{ Path = $ePath; Branch = $e.Branch; Reason = $idleVerdict.Reason }
@@ -1242,17 +1412,35 @@ function Invoke-GissueWorktreeCleanupForRepo {
 
         # ── dirty 판정(giip #2440 원인 2): 머지 확인된 경우에만 --force 로 진행 ──
         # (giip #2463: 위 idle 판정 뒤로 내렸다 — 이 `git status` 자체가 관리 디렉터리를 갱신하기 때문)
+        # ── giip 5175: Claude Code 격리 worktree 계열은 **실제 산출물만** dirty 로 본다 ──
+        #   `.claude/settings.local.json` 은 격리 메커니즘이 세션 권한을 기록하는 파일이라
+        #   worktree **전체**에 항상 붙어 있다(실측 27건 중 26건). 이를 산출물로 취급하면
+        #   이 계열은 영영 정리 대상이 0건이 된다. 그 밖의 미커밋 변경이 있으면 자동 삭제 금지.
         $dirtyNote = ''
-        try {
-            $dirtyStatus = git -C $ePath status --porcelain 2>&1
-            if ("$dirtyStatus".Trim()) { $dirtyNote = ' [dirty 상태였음 — 머지 PR 확인되어 진행]' }
-        } catch {}
+        if ($isClaudeSessionWorktree) {
+            $dirtyInfo = Get-GissueWorktreeDirtyPaths -WorktreePath $ePath -IgnorePaths $script:GissueClaudeWorktreeInfrastructurePaths
+            if (@($dirtyInfo.Dirty).Count -gt 0) {
+                & $say "MANUAL-REVIEW(미커밋 변경 있음 — 자동삭제 대상 아님): $ePath — $($dirtyInfo.Dirty -join ', ')"
+                $result.ManualReview += [pscustomobject]@{ Path = $ePath; Branch = $e.Branch
+                    Reason = "미커밋 변경(실제 산출물) 존재 — 삭제 금지(rule 57): $($dirtyInfo.Dirty -join ', ')" }
+                continue
+            }
+            if (@($dirtyInfo.Ignored).Count -gt 0) {
+                $dirtyNote = " [격리 메커니즘 부산물만 미커밋($($dirtyInfo.Ignored -join ', ')) — 산출물 아님]"
+                & $say "NOTE(giip 5175 — 격리 메커니즘 부산물로 보고 미커밋 판정에서 제외): $ePath — $($dirtyInfo.Ignored -join ', ')"
+            }
+        } else {
+            try {
+                $dirtyStatus = git -C $ePath status --porcelain 2>&1
+                if ("$dirtyStatus".Trim()) { $dirtyNote = ' [dirty 상태였음 — 머지 PR 확인되어 진행]' }
+            } catch {}
+        }
 
         if ($DryRun) {
             if ($exemption) {
-                & $say "[DRY-RUN] 삭제 예정(머지 확인 + $($idleVerdict.Reason) + rule 55 §2-예외 적용): $ePath (branch=$($e.Branch)) / 제거할 정션=$($exemption.JunctionPath) -> 대상(보존)=$($exemption.TargetPath)"
+                & $say "[DRY-RUN] 삭제 예정($mergeBasisNote + $($idleVerdict.Reason) + rule 55 §2-예외 적용): $ePath (branch=$($e.Branch)) / 제거할 정션=$($exemption.JunctionPath) -> 대상(보존)=$($exemption.TargetPath)"
             } else {
-                & $say "[DRY-RUN] 삭제 예정(머지 확인, $($idleVerdict.Reason), 링크 없음 확인됨): $ePath (branch=$($e.Branch))$dirtyNote"
+                & $say "[DRY-RUN] 삭제 예정($mergeBasisNote, $($idleVerdict.Reason), 링크 없음 확인됨): $ePath (branch=$($e.Branch))$dirtyNote"
             }
             $result.Removed += [pscustomobject]@{ Path = $ePath; Branch = $e.Branch; Exempt = [bool]$exemption }
             continue
@@ -1293,12 +1481,12 @@ function Invoke-GissueWorktreeCleanupForRepo {
             if ($LASTEXITCODE -ne 0) {
                 if (-not $dirtyNote) {
                     & $say "WARN: worktree remove 실패(clean 인데도, 원인 불명 — 수동 확인 필요): $ePath — $rmOut"
-                    $result.ManualReview += [pscustomobject]@{ Path = $ePath; Branch = $e.Branch; Reason = "머지 확인됨, clean 인데도 remove 실패: $rmOut" }
+                    $result.ManualReview += [pscustomobject]@{ Path = $ePath; Branch = $e.Branch; Reason = "$mergeBasisNote, clean 인데도 remove 실패: $rmOut" }
                 } else {
                     $rmOut2 = git -C $repoFull worktree remove --force $ePath 2>&1
                     if ($LASTEXITCODE -ne 0) {
-                        & $say "WARN: worktree remove --force 도 실패(머지 확인됐는데도): $ePath — $rmOut2"
-                        $result.ManualReview += [pscustomobject]@{ Path = $ePath; Branch = $e.Branch; Reason = "머지 확인됨, --force 도 remove 실패: $rmOut2" }
+                        & $say "WARN: worktree remove --force 도 실패($mergeBasisNote 인데도): $ePath — $rmOut2"
+                        $result.ManualReview += [pscustomobject]@{ Path = $ePath; Branch = $e.Branch; Reason = "$mergeBasisNote, --force 도 remove 실패: $rmOut2" }
                     } else { $removedOk = $true }
                 }
             } else { $removedOk = $true }
@@ -1327,7 +1515,7 @@ function Invoke-GissueWorktreeCleanupForRepo {
             & $say "  worktree 제거 후 정션 대상 재검증 OK — $($finalHealth.Detail)"
         }
         if (-not $removedOk) { continue }
-        & $say "삭제됨(머지 확인, $($idleVerdict.Reason), 인접 레포 무결성 재검증 통과)$dirtyNote : $ePath (branch=$($e.Branch))"
+        & $say "삭제됨($mergeBasisNote, $($idleVerdict.Reason), 인접 레포 무결성 재검증 통과)$dirtyNote : $ePath (branch=$($e.Branch))"
         try { git -C $repoFull branch -D $e.Branch 2>&1 | Out-Null } catch {}
         if ($DeleteRemoteBranch) {
             try {

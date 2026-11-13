@@ -16,10 +16,24 @@
 #
 # 안전 원칙(무인 삭제 금지 — 사람 미완료 작업일 수 있음):
 #   - 머지 확인된 것만 자동 삭제(worktree remove + 로컬/원격 브랜치 삭제). 확인 없이 바로 삭제하되,
-#     아래 세이프가드(주 worktree 제외/locked 제외/.claude\worktrees 제외)는 항상 적용한다.
+#     아래 세이프가드(주 worktree 제외/locked 제외)는 항상 적용한다.
 #   - 머지 안 된 것은 절대 삭제하지 않는다 — 목록만 만들어 사람에게 제안(REPORT 섹션에 출력).
 #   - locked worktree 는 이유 불문 절대 건드리지 않는다.
-#   - `.claude\worktrees\` 경로는 Claude Code 자체 세션 격리 메커니즘이라 완전히 별개 — 항상 제외.
+#
+# > 정정(2026-11-14, isn=5175): 위 세이프가드 목록에서 "`.claude\worktrees` 제외" 를 **폐기**했다.
+#   과거 문장("`.claude\worktrees\` 경로는 Claude Code 자체 세션 격리 메커니즘이라 완전히 별개 —
+#   항상 제외.")은 **삭제하지 않고 여기 남긴다** — 그 판단이 실제로 무한 누적의 원인이었다.
+#   서브에이전트 격리 worktree 는 어떤 자동 정리 경로에도 잡히지 않아 레포당 수십 개가 쌓였다
+#   (2026-11-13 실측: lowyworkenv `.claude/worktrees` 27건 + D:/temp/worktrees 60여 건).
+#   이제 이 계열도 **일반 worktree 와 동일한 가드**(머지확인 → 링크 선검사 → idle 가드 → dirty 판정)를
+#   태운다. 판정 엔진(`worktree-safety.ps1`) 은 이 계열 전용으로 두 가지를 더 붙인다 —
+#     ① "HEAD 커밋이 origin/main 의 조상"(= 고유 커밋 없음) 판정을 PR 머지 판정과 병행
+#        (이 계열의 `worktree-agent-<id>` 브랜치에는 PR 이 없어 PR 게이트만으로는 0건이 된다)
+#     ② `.claude/settings.local.json`(격리 메커니즘이 세션 권한을 기록하는 파일)만 dirty 판정에서 제외
+#        (실측 27건 중 26건이 이 파일 하나 때문에 미커밋으로 잡혔다 — 산출물로 취급하면 영영 0건)
+#   그 밖의 미커밋 변경 · 미반영 · locked · detached 는 여전히 자동 삭제 금지다.
+#   상세: `worktree-safety.ps1` 의 `$script:GissueClaudeWorktreeInfrastructurePaths` 와
+#        `Test-GissueWorktreeContentInMain` / `Get-GissueWorktreeDirtyPaths` 헤더.
 #
 # 사용법:
 #   [실행 셸] 이 배포 대상에는 PowerShell 7(pwsh)이 없을 수 있다 — 항상 Windows PowerShell 5.1 로
