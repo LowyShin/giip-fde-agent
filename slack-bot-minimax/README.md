@@ -235,6 +235,22 @@ slack-bot/
 
 ---
 
+## Q&A プロジェクト隔離 + エンジンタイムアウト (giip 5144)
+
+> **適用タイミング**: コード変更のため **pm2 再起動後に適用される**(`pm2 restart <プロセス名>`)。この PR はボットを再起動しない。環境変数の変更も再起動後に反映される。
+
+### Q&A プロジェクト隔離ポリシー
+- **候補リポジトリ**: Q&A 安全網(回答後の自動ブランチ/PR)は `snapshotCandidateRepos(workDir, { siblings: false })` で、workDir を含むリポとその nested リポだけを対象にする。`PROJECTS_ROOT` の兄弟リポは見ない(タスク経路は `siblings` 既定 true で従来どおり)。
+- **エンジンの `--add-dir`**: workDir と agentDir のみ。ロールバック用に環境変数 `SLACKBOT_QNA_ALL_PROJECTS=1` で従来どおり `PROJECTS_ROOT` も許可(既定 off)。
+- **DM 会話履歴キー**: `convHistoryKey(channelId, projectName)`。既定プロジェクト(BASE_DIR)は従来キー `channelId`、それ以外は `channelId:projectName`。
+
+### エンジン実行タイムアウト・heartbeat
+従来の 20 分ハードタイムアウトを廃止し、**既定は無制限**。`SLACKBOT_ENGINE_TIMEOUT_MIN`(正の整数=分で強制終了、未設定/0/負/非整数=無制限)、`SLACKBOT_ENGINE_HEARTBEAT_MIN`(既定 30、0=off、`spawnAsync` 経路のみ)。`task-manager.js` の `runClaude` は同期実行のためタイムアウトのみ同変数に従う。
+
+回帰テスト: `node tools/test-qna-isolation.js`, `node tools/test-engine-timeout.js`
+
+---
+
 ## トラブルシューティング
 
 **Bot が起動しない**

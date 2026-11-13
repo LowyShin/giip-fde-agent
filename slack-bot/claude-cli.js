@@ -9,6 +9,29 @@ const modelConfig = require('./model-config'); // giip-1063: 모델명 하드코
 const costTracker = require('./cost-tracker');
 const batchPlanner = require('./batch-planner');
 
+// ── 엔진 실행 타임아웃/heartbeat (giip 5144, 원본 giip 4902 이식) ──────────────
+// 기본은 타임아웃 없음(무제한). 과거 20분 하드 타임아웃은 긴 Q&A 를 강제 종료해 응답을 유실시켰다.
+// SLACKBOT_ENGINE_TIMEOUT_MIN: 양의 정수(분)면 그 시간 뒤 강제 종료, 미설정·0·음수·정수 아님이면 타임아웃 없음.
+function engineTimeoutMs(env = process.env) {
+  const raw = String(env.SLACKBOT_ENGINE_TIMEOUT_MIN ?? '').trim();
+  if (!/^\d+$/.test(raw)) return undefined;
+  const min = parseInt(raw, 10);
+  return min > 0 ? min * 60 * 1000 : undefined;
+}
+// SLACKBOT_ENGINE_HEARTBEAT_MIN: 엔진 실행 중 N분마다 경과 로그(기본 30, 0 이면 off).
+function engineHeartbeatMs(env = process.env) {
+  const raw = String(env.SLACKBOT_ENGINE_HEARTBEAT_MIN ?? '').trim();
+  if (!/^\d+$/.test(raw)) return 30 * 60 * 1000;
+  return parseInt(raw, 10) * 60 * 1000; // 0 → 0(off)
+}
+// 엔진 spawnAsync 공통 옵션. label 에는 채널 id 등 식별자만 넣는다(프롬프트·비밀 금지).
+function engineSpawnOpts(label = '') {
+  return { timeout: engineTimeoutMs(), heartbeatMs: engineHeartbeatMs(), label };
+}
+
+// giip 5144(원본 giip 4902): Q&A 엔진의 PROJECTS_ROOT 접근 롤백 스위치(기본 off).
+function qnaAllProjects(env = process.env) { return String(env.SLACKBOT_QNA_ALL_PROJECTS || '').trim() === '1'; }
+
 // ── spawn → Promise 래퍼 (이벤트 루프 비차단) ────────────────────────────────
 function spawnAsync(cmd, args, opts = {}) {
   return new Promise((resolve, reject) => {
@@ -34,9 +57,20 @@ function spawnAsync(cmd, args, opts = {}) {
         reject(e);
       }, opts.timeout);
     }
-    child.on('error', err => { clearTimeout(timer); reject(err); });
+    // 선택적 heartbeat: 무제한 실행 좀비 식별용. pid·경과분·label 만 로그(프롬프트·토큰 금지).
+    let hb;
+    if (opts.heartbeatMs > 0) {
+      const t0 = Date.now();
+      hb = setInterval(() => {
+        const min = Math.round((Date.now() - t0) / 60000);
+        console.log(`[Bot] 엔진 실행 중 ${min}분 경과 (pid=${child.pid}${opts.label ? `, 채널=${opts.label}` : ''})`);
+      }, opts.heartbeatMs);
+      if (hb.unref) hb.unref();
+    }
+    child.on('error', err => { clearTimeout(timer); clearInterval(hb); reject(err); });
     child.on('close', code => {
       clearTimeout(timer);
+      clearInterval(hb);
       resolve({
         status: code,
         stdout: Buffer.concat(stdout).toString('utf8'),
@@ -132,7 +166,9 @@ async function callClaude(prompt, workDir = BASE_DIR, opts = {}) {
     '--dangerously-skip-permissions',
     '--add-dir', workDir,        // プロジェクトディレクトリ (サンドボックスに明示追加)
     '--add-dir', agentDir,       // roles/rules/skills/workflows アクセス
-    '--add-dir', PROJECTS_ROOT,  // 全プロジェクト横断アクセス
+    // giip 5144(원본 giip 4902): 기본은 그 질문의 프로젝트(workDir)+agentDir 만. 전 프로젝트 횡단(PROJECTS_ROOT)은
+    // SLACKBOT_QNA_ALL_PROJECTS=1 롤백 수단으로만 허용(다른 프로젝트 내용이 답변에 섞이는 것 방지).
+    ...(qnaAllProjects() ? ['--add-dir', PROJECTS_ROOT] : []),
   ];
   // 우선순위(사용자 지정): MiniMax 먼저 시도 → 실패해야만 Claude 계정 풀로 폴백.
   let mmExhausted = false;
@@ -142,7 +178,7 @@ async function callClaude(prompt, workDir = BASE_DIR, opts = {}) {
     const t0 = Date.now();
     const result = await spawnAsync('claude', [...baseArgs, '--model', mm.model], {
       cwd: workDir,
-      timeout: 20 * 60 * 1000,
+      ...engineSpawnOpts(),
       env: minimax.envFor(mm),
       input: prompt,
     });
@@ -173,7 +209,7 @@ async function callClaude(prompt, workDir = BASE_DIR, opts = {}) {
     const t1 = Date.now();
     const result = await spawnAsync('claude', args, {
       cwd: workDir,
-      timeout: 20 * 60 * 1000, // 20分
+      ...engineSpawnOpts(),
       env,
       input: prompt, // 프롬프트는 stdin 으로 (ENAMETOOLONG 회피)
     }); // ETIMEDOUT 등은 그대로 throw
@@ -210,4 +246,4 @@ async function callClaude(prompt, workDir = BASE_DIR, opts = {}) {
   throw new Error('claude 호출 실패 — 모든 계정/재시도 소진');
 }
 
-module.exports = { spawnAsync, isClaudeAuthed, reAuthClaude, callClaude };
+module.exports = { qnaAllProjects, engineTimeoutMs, engineHeartbeatMs, engineSpawnOpts, spawnAsync, isClaudeAuthed, reAuthClaude, callClaude };
