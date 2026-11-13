@@ -119,6 +119,37 @@ Orchestrator는 결과를 받은 뒤 다음 네 항목을 반드시 추출한다
 5.  **직접 파일 생성**: `write_to_file` 도구를 사용하여 `.agent/dispatch/TASK_[ID].md` 파일을 로컬에 직접 생성하십시오.
 
 
+## 서브에이전트 worktree 정리 책임 (giip 5175)
+
+> **의뢰자(오케스트레이터)가 직접 정리한다** — "정리하지 않았습니다" 보고만 하고 방치하지 않는다.
+
+`isolation: "worktree"` 로 만든 서브에이전트 worktree 는 **오케스트레이터가 소유한 작업 단위의
+산출물**이다. 서브에이전트는 자기 worktree 를 지우지 않는다([`.agent/rules/57_worktree_cleanup_on_completion.md`](../../.agent/rules/57_worktree_cleanup_on_completion.md)
+§"위임된 하위 세션"), 종료 시 worktree 경로를 보고만 한다. **정리는 위임자가 한다.**
+
+### 정리 절차 (rule 55 + rule 57 준수)
+
+1. **PR 머지 확인** — `gh pr list --state merged` 로 그 브랜치의 PR 이 실제로 머지됐는지 확인한다.
+   push 직후 · CI 대기 · REVIEW 상태는 종료가 아니다.
+2. **미커밋 변경 확인** — `git -C <worktree> status --porcelain` 가 비어 있지 않으면 **지우지 않고**
+   worktree 경로와 상태를 작업 보고에 남긴다(다른 세션의 유일한 산출물일 수 있다).
+3. **잠금 확인** — `git worktree list` 에 `locked` 로 표시돼 있으면 건너뛰고 보고한다.
+4. **링크 사전검사** — 대상 트리 안에 심볼릭 링크·정션이 있으면 재귀 삭제를 중단하고 사유를 남긴다.
+5. **무결성 스냅샷 전후 비교** — 인접 저장소(`.git` 존재 · HEAD · origin remote)의 사전/사후 스냅샷을
+   비교해 이상이 있으면 즉시 중단한다.
+6. **제거** — `git worktree remove <path>` → `git branch -d <branch>` → `git worktree prune`.
+   `--force` / `branch -D` 는 **정리 수단으로 쓰지 않는다**(force 가 필요해 보이면 그 자체가
+   미커밋·사용 중 신호이므로 중단하고 보고한다).
+7. **타 세션 것은 건드리지 않는다** — locked·미머지·미커밋 변경이 있는 것은 정리하지 않고 보고만 한다.
+
+### 왜 이 절이 필요한가 (giip 5175 실측)
+
+`.claude/worktrees/agent-*` 가 **무조건 제외**되던 정책 탓에 서브에이전트 worktree 는 어떤 자동
+정리 경로에도 잡히지 않았다 → 레포당 수십 개가 무한 누적됐다(2026-11-13 실측: 27건 + D:/temp 60여 건).
+정리 도구(`scripts/gissue/cleanup-worktrees.ps1`)는 이제 이 계열도 같은 안전 요건으로 처리하지만,
+**도구가 못 지우는 것(타 세션 소유·미커밋·진행 중)은 결국 위임자가 판단해야 한다** —
+그 판단의 근거를 확보하기 위해 1~7번 절차를 명시한다.
+
 ## 요청 라우팅 기준 (Heuristic Routing)
 
 모든 요청을 동일한 파이프라인으로 처리하지 않는다. 작업 복잡도에 따라 두 가지 경로로 분기한다.

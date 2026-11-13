@@ -52,6 +52,36 @@ push 직후의 clean 상태는 작업의 끝이 아니라 중간 지점이다.
 `PENDING/READY/IN_PROGRESS/REVIEW/TESTED/NEEDS_DECISION` 에 연결된 워크트리와, `git worktree list`
 에 정식 등록된 워크트리는 **절대** 건드리지 않는다.
 
+## Claude Code 격리 worktree(`.claude/worktrees/agent-*`) 계열 (giip 5175 신설)
+
+> **정정(2026-11-14, isn=5175)** — 이 계열은 이전까지 **무조건 제외**됐다
+> ("Claude Code 자체 세션 격리 메커니즘이라 완전히 별개 — 항상 제외"). 그 판단이 실제로
+> 무한 누적의 원인이었다: 어떤 자동 정리 경로에도 잡히지 않아 레포당 수십 개가 쌓였다
+> (2026-11-13 실측: lowyworkenv `.claude/worktrees` 27건 + `D:\temp\worktrees` 60여 건).
+> **과거 판단은 남기고, 여기서 정책을 정정한다.**
+
+이 계열은 위 5가지 안전 요건을 **동일하게** 태운다(무조건 skip 하지 않는다). 다만 판정 방식이
+일반 worktree 와 달라 **두 가지가 추가**된다.
+
+1. **"고유 커밋 없음" 판정 병행** — 이 계열의 브랜치(`worktree-agent-<id>`)는 PR 이 없는 로컬 전용
+   브랜치가 대부분이라 `gh pr list --state merged` 게이트만으로는 정리 대상이 0건이 된다
+   (실측 27건 중 머지 PR 이 붙은 것은 8건). 그래서 **"worktree 의 HEAD 커밋이 `origin/main` 의 조상"**
+   (= 이 worktree 에 고유한 커밋이 이미 main 에 반영됨 → 내용 유실 없음) 판정을 병행한다.
+   판정 불가·미반영은 모두 삭제 금지(fail-closed)다. squash 머지 브랜치는 조상이 아니므로
+   PR 게이트와 서로를 보완한다.
+2. **격리 메커니즘 산출물의 dirty 제외** — Claude Code 는 만든 worktree 마다 세션 권한을
+   `.claude/settings.local.json` 에 기록한다(실측 27건 중 26건이 이 파일 하나 때문에 "미커밋 변경"으로
+   잡혔다). 이는 **격리 메커니즘의 부산물**이지 작업 산출물이 아니다 — 산출물로 취급하면 이 계열은
+   영영 정리 대상이 0건이 되어 원 문제가 그대로 남는다. 그래서 **이 파일만** dirty 판정에서 제외하고
+   (제외 사실은 로그에 남긴다), **그 밖의 미커밋 변경은 어떤 경우에도 자동 삭제 금지**다.
+
+추가로 이 계열은 idle 임계가 일반 worktree 보다 보수적(`240분` 하한)이다 — 라이브 서브에이전트가
+오래 붙잡고 있는 경우를 보호하기 위함이며, "idle 가드가 실행 중 에이전트 보호를 겸한다".
+
+정리 도구가 **못** 지우는 것(타 세션 소유 · 미커밋 산출물 · 진행 중)은
+[`.agent/rules/57_worktree_cleanup_on_completion.md`](57_worktree_cleanup_on_completion.md) 절차로
+**위임자(오케스트레이터)가 직접** 판단해 정리하거나 보고한다.
+
 ## 관련 규칙
 
 - `docs/60-operations/hourly-issue-scheduler.md` §10 — orphan `.worktrees` 자가정리의 존재 이유와 구현.
