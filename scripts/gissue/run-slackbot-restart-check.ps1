@@ -46,6 +46,12 @@
 #   3) pm2 out/err 로그 staleness — 최근 $QuietMinutes(기본 5분) 이내 활동이 있으면 보류.
 #      (좀비 워치독의 25분 기준보다 짧게 잡아 짧은 태스크 중 재시작을 피한다 — 설계 §3-3.)
 #
+# ※ 용어/한계(giip 5140, 2026-11-13): 여기서 '태스크' = slack-bot task-manager 태스크(slack-bot/.task-state.json
+#   의 running)이며 gissue 스케줄러의 claude -p 프로세스가 아니다. 신호 1 만 태스크의 직접 신호다. 신호 3 은
+#   pm2 로그에 채널 메시지마다 '[Debug ws] events_api message' 줄이 쌓이므로 'Slack 이벤트 트래픽'을 재며 태스크
+#   신호가 아니다(running=0 이어도 보류됨). 보류 사유는 (a) 신호 1~3, (b) pm2 조회 실패(예약 태스크에서만 장기
+#   누적, 원인 미규명, giip 5140), (c) status != online 세 가지다. (개선안 미구현: Debug ws 줄 제외 / running 직접 참조.)
+#
 # 보류가 연속 $HoldWarnThreshold(기본 6회 ≈ 6시간) 넘으면 로그에 [ALERT] 를 남겨 사람이 인지하게 한다.
 # 강제 재시작은 하지 않는다(진행 중 태스크 손실 방지 우선 — 설계 §3 마지막 항목).
 #
