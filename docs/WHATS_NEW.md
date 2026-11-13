@@ -6,9 +6,12 @@
 >
 > *(EN/JP 독자는 각 항목을 AI 에이전트에 번역 요청하세요. / Ask your AI assistant to translate entries.)*
 
-**기준일 (as of): 2026-11-13**
+**기준일 (as of): 2026-11-14**
 
 ---
+
+## 2026-11-14
+- **저장소 위생 정비 115차 — [0]/[E]/[F] 대상 0건 · [H] 2시간 창 9건 / 24시간 창 43건 재검증 → 정정 0건 · 잔여 원격 브랜치 1건 정리** — 열린 PR 0건(병합충돌 대상 0) · 원격 CI run 8건 **전건 success** · `git stash list` 0건(오판 stash 0) · [H] 검증 4축 — ① giip 5175 작업 지시서의 파일·행번호 주장 5건(`worktree-safety.ps1:1150`·`:1062`·`:329` · `cleanup-worktrees.ps1:19`·`:22`) **전건 실측 일치** ② giip 4220 PR·커밋 귀속 주장 전건 일치(PR #365 존재·CLOSED / PR #418 MERGED `a567085` / `docs/WHATS_NEW.md` 포함) ③ watchdog `[BUDGET]` 스냅샷의 `STALE_IN_PROGRESS` 는 `list-issues.js` 의 **큐 파생 라벨**(API status `IN_PROGRESS`)이라 거짓 주장 아님 ④ giip 5174·5208·4219·5054·5144·5153 의 완료 노트(파일 존재·테스트 결과·PR 머지) **전건 실측 일치**(테스트 4/4·27/27 재실행, verify-runner 4219·5054·5141 PASS) ⇒ **정정 0건 · 상태 전이 0건 · 이슈 쓰기 0건**. 정리 — 머지되어 main 에 전건 반영된 잔여 원격 브랜치 `test/giip-5174-config-paths`(PR #424 MERGED · 브랜치 고유 파일 0건) 1건을 로컬·원격 함께 삭제. 워크트리 7건 인벤토리 — MANUAL-REVIEW 3건(활성 이슈 세션 소유분) + detached HEAD 3건(clean·`origin/main` 조상이나 자동 회수 경로 없음) **미접촉**. 코드 변경 0건(문서 2건만) · 성역 미접촉 · main 직접 push 없음 · PR 경유 → [작업 기록](../.agent/work_history/20261114_0035_csn70424_repo-maintenance.md)
 
 ## 2026-11-13
 - **slack-bot-minimax: 사용자 경로 하드코딩 제거 — 기동 위치 기준으로 작업 폴더를 인식 (giip 5174) + 회귀 테스트 신설** — `config.js` 가 하드코딩하던 `PROJECTS_ROOT`/`BASE_DIR` 를 없애고, 봇을 **기동한 위치**(봇 폴더의 상위) 기준으로 결정하되 `WORKSPACE_DIR`/`PROJECTS_ROOT` 환경변수로 재정의할 수 있게 했다. 다른 PC·다른 폴더에서 봇을 띄울 때 하드코딩된 경로로 튀던 문제를 막는다. 임시 디렉터리 구조에서 해석 결과를 검증하는 회귀 테스트(`node --test slack-bot-minimax/tests/config-paths.test.js`)를 추가했다. → [slack-bot-minimax README](../slack-bot-minimax/README.md), [회귀 테스트](../slack-bot-minimax/tests/config-paths.test.js)
