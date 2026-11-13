@@ -15,8 +15,8 @@
 - 작업 워크트리 `D:\temp\worktrees\giip-fde-agent\maint-109-1023`
   (브랜치 `chore/csn70424-maint109-20261113-1023`, base = `origin/main` `41de980`).
   **머지된 브랜치를 재사용하지 않고** `origin/main` 에서 새로 분기했다.
-- 사전 락 불요 — 이 저장소는 CSN 70424 소관이며 lowyworkenv 자신(CSN 33)이 아니다
-  (`scripts/gissue/csn-projects.json` 매핑: csn 33 → lowyworkenv / csn 70424 → giip-fde-agent).
+- 사전 락 불요 — 이 저장소는 CSN 70424 소관이며 lowyworkenv 자신(다른 CSN)이 아니다
+  (`scripts/gissue/csn-projects.json` 매핑: csn 70424 → giip-fde-agent, lowyworkenv 자신은 다른 CSN 매핑).
   프롬프트의 "대상 저장소가 lowyworkenv 자신의 CSN 일 때만 락" 조건 = false → 락 미획득·미해제.
 
 ## [0] PR merge conflict — 대상 0건
