@@ -15,6 +15,10 @@
 #   B. Get-NestedRepoPaths (gissue-audit-lib) — EAP=Stop 에서 커밋 0건·origin 없는 디렉터리에
 #      예외를 던지지 않고 그 디렉터리를 제외하며 정상 반환.
 #   C. neg 컨트롤 — rev-parse HEAD 판정이 실제 변별력을 가지는지 스스로 확인(빈 통과 배제).
+#   D. Get-GissueBusyRepo (러너 메인 스코프 + 잡 스코프 사본 전부) — busy 판정의
+#      `git rev-parse --abbrev-ref HEAD` probe 가 EAP=Stop 에서 예외를 던지지 않는다 /
+#      비-base 브랜치 저장소를 여전히 busy 로 판정한다 / 모든 사본이 EAP 비파괴 패턴을 갖는다 /
+#      neg 컨트롤로 비파괴화 전 형태는 실제로 throw 함을 확인(빈 통과 배제).
 #
 # 구현 방식 — AST 로 **실제 배포본 함수 본문을 그대로 추출**해 호출한다:
 #   이 레포의 러너는 4000줄 단일 파일이라 dot-source 하면 러너 본문이 실행된다. 그래서
@@ -195,10 +199,157 @@ try {
     Assert-True ($emptyRc -ne 0)     'C-1 빈 저장소: rev-parse HEAD 실패(비0)'   "rc=$emptyRc"
     Assert-True ($committedRc -eq 0) 'C-2 커밋 저장소: rev-parse HEAD 성공(0)'    "rc=$committedRc"
     Assert-True ($emptyRc -ne $committedRc) 'C-3 두 결과가 달라야 변별력 성립(neg 컨트롤)' "empty=$emptyRc committed=$committedRc"
+
+    # ── D. Get-GissueBusyRepo — EAP=Stop 비파괴 probe (giip 5180) ─────────────────────
+    # 결함: busy-wait/auto-unblock 이 "이 저장소가 지금 다른 세션이 쓰는 중인가" 를 판정할 때
+    #   `git rev-parse --abbrev-ref HEAD` 를 `2>$null` 로만 감싼다. Windows PowerShell 5.1 +
+    #   EAP=Stop 환경에서는 네이티브 stderr 가 `2>$null` 이어도 NativeCommandError 로 throw 되므로
+    #   **저장소 후보 수집이 아니라 그 다음 단계에서 러너/잡 전체가 죽는다.**
+    #   같은 계열의 결함(커밋 0건 판정 · origin probe)은 이미 EAP 비파괴화돼 있으므로,
+    #   busy-repo 판정 사본(러너 메인 스코프 + 잡 스코프)이 같은 형태로 고쳐졌는지를 여기서 고정한다.
+    Write-Output 'D. Get-GissueBusyRepo — EAP=Stop 비파괴 probe'
+
+    $busyDefs = @(Get-FunctionSourceTexts -Path $runnerFile -Name 'Get-GissueBusyRepo')
+    Assert-True ($busyDefs.Count -ge 2) 'D-0 러너에 Get-GissueBusyRepo 사본이 2개 이상 있다(메인 스코프 + 잡 스코프)' "개수=$($busyDefs.Count)"
+
+    # busy 판정이 의존하는 두 헬퍼도 **배포본 소스에서 그대로** 추출해 평가한다 —
+    # 복사본을 만들어 테스트하면 사본 drift 가 그대로 통과한다.
+    $repoPathsDefs = @(Get-FunctionSourceTexts -Path $runnerFile -Name 'Get-GissueGitRepoPaths')
+    $baseBranchDefs = @(Get-FunctionSourceTexts -Path $runnerFile -Name 'Get-RepoBaseBranch')
+    Assert-True ($repoPathsDefs.Count -ge 1) 'D-0 저장소 후보 수집 함수 소스를 찾았다' "개수=$($repoPathsDefs.Count)"
+    Assert-True ($baseBranchDefs.Count -ge 1) 'D-0 base 브랜치 판정 함수 소스를 찾았다' "개수=$($baseBranchDefs.Count)"
+    # A 그룹이 마지막에 평가한 것은 재시작 점검 스크립트 사본(($workdir) 만 받는 1인자형)이라,
+    # 러너 사본(-Log 있는 2인자형)을 다시 평가해 호출 계약이 맞는 상태로 맞춘다.
+    Invoke-Expression $repoPathsDefs[0]
+    Invoke-Expression $baseBranchDefs[0]
+
+    # EAP 비파괴 probe 패턴 판정 — try/finally + 'Continue' + $LASTEXITCODE 판정, 그리고
+    # `2>$null` 만으로 감싼 형태가 남아 있지 않을 것.
+    function Test-EapSafeRevParseProbe {
+        param([string]$Text)
+        if (-not $Text) { return $false }
+        $hasTry      = [bool]($Text -match '(?m)\btry\s*\{')
+        $hasFinally  = [bool]($Text -match '(?m)\bfinally\s*\{')
+        $hasContinue = [bool]($Text -match '\$ErrorActionPreference\s*=\s*''Continue''')
+        $hasExitCode = [bool]($Text -match '\$LASTEXITCODE\s*-eq\s*0')
+        # `2>$null` 은 PS 5.1 + EAP=Stop 에서 stderr 를 삼키지 못한다 — 남아 있으면 비파괴화 전 상태.
+        $hasBareRedir = [bool]($Text -match 'rev-parse[^\r\n]*2>\$null')
+        return ($hasTry -and $hasFinally -and $hasContinue -and $hasExitCode -and -not $hasBareRedir)
+    }
+
+    # D-1 입력 — 두 가지 "probe 가 stderr 를 남기는 저장소" 상태.
+    #   (a) 커밋 0건(unborn HEAD) 저장소 — `git init` 만 된 잔여 스캐폴드.
+    #   (b) .git 파일이 깨진 디렉터리(gitdir 링크가 존재하지 않는 clone 잔여).
+    # 둘 다 `git rev-parse --abbrev-ref HEAD` 가 stderr 와 함께 실패한다(rc != 0).
+    if (Test-Path $emptySelf) { Remove-Item -LiteralPath $emptySelf -Recurse -Force }
+    New-EmptyRepo $emptySelf
+    $brokenSelf = Join-Path $tmpRoot ("gissue-git-repo-paths-broken-" + $PID)
+    if (Test-Path $brokenSelf) { Remove-Item -LiteralPath $brokenSelf -Recurse -Force }
+    New-Item -ItemType Directory -Path $brokenSelf -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $brokenSelf '.git') -Value 'gitdir: /nonexistent-git-dir-for-probe' -Encoding ASCII
+
+    # 양의 대조 — 커밋이 있고 base 가 아닌 브랜치에 있는 저장소는 busy 로 판정되어야 한다.
+    # (비파괴화 때문에 "안 죽는 대신 아무것도 못 판정" 으로 퇴화하지 않았는지 확인.)
+    $busyRepo = Join-Path $tmp 'busy-branch-repo'
+    if (Test-Path $busyRepo) { Remove-Item -LiteralPath $busyRepo -Recurse -Force }
+    New-CommittedRepo $busyRepo
+    Invoke-Git $busyRepo @('checkout', '-q', '-b', 'feature/branch')
+
+    for ($i = 0; $i -lt $busyDefs.Count; $i++) {
+        $label = "run-gissue-claude.ps1#$($i + 1)"
+        Write-Output "D. Get-GissueBusyRepo — $label"
+
+        # 실제 배포본 함수 본문을 그대로 평가한다(사본이 아니라 소스를 검증).
+        Invoke-Expression $busyDefs[$i]
+        $cmd = Get-Command Get-GissueBusyRepo
+        $hasLogParam = $cmd.Parameters.ContainsKey('Log')
+
+        foreach ($probe in @(
+            [pscustomobject]@{ Name = '커밋 0건(unborn HEAD) 저장소'; Dir = $emptySelf },
+            [pscustomobject]@{ Name = '.git 깨진 디렉터리';          Dir = $brokenSelf }
+        )) {
+            $threw = $false
+            $result = @()
+            $savedEap = $ErrorActionPreference
+            try {
+                $ErrorActionPreference = 'Stop'
+                if ($hasLogParam) { $result = @(Get-GissueBusyRepo $probe.Dir -Log $logCollector) }
+                else { $result = @(Get-GissueBusyRepo $probe.Dir) }
+            } catch {
+                $threw = $true
+            } finally {
+                $ErrorActionPreference = $savedEap
+            }
+            # D-1 예외를 던지지 않는다(수정 전이면 여기서 throw → FAIL)
+            Assert-True (-not $threw) "D-1 $label EAP=Stop 에서 예외를 던지지 않는다 — $($probe.Name)" "threw=$threw"
+            # D-1b 반환 계약 — 객체(Repo/Branch/Base) 또는 null. 다른 값이 섞이면 안 된다.
+            $objs = @($result | Where-Object { $null -ne $_ })
+            $shapeOk = $true
+            foreach ($o in $objs) {
+                if ($null -eq $o.Repo -or $null -eq $o.Branch -or $null -eq $o.Base) { $shapeOk = $false }
+            }
+            Assert-True ($shapeOk) "D-1b $label 반환 계약이 지켜진다(Repo/Branch/Base 객체 또는 null) — $($probe.Name)" "objects=$($objs.Count)"
+        }
+
+        # D-1c 양의 대조 — 비-base 브랜치 저장소는 여전히 busy 로 판정된다.
+        $busyThrew = $false
+        $busyResult = $null
+        $savedEap2 = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = 'Stop'
+            if ($hasLogParam) { $busyResult = @(Get-GissueBusyRepo $busyRepo -Log $logCollector) }
+            else { $busyResult = @(Get-GissueBusyRepo $busyRepo) }
+        } catch {
+            $busyThrew = $true
+        } finally {
+            $ErrorActionPreference = $savedEap2
+        }
+        $busyObj = @($busyResult | Where-Object { $null -ne $_ }) | Select-Object -First 1
+        Assert-True ((-not $busyThrew) -and $null -ne $busyObj -and $busyObj.Repo -eq $busyRepo -and $busyObj.Branch -eq 'feature/branch') `
+            "D-1c $label 비-base 브랜치 저장소를 busy 로 판정한다(비파괴화가 판정까지 무력화하지 않음)" `
+            "threw=$busyThrew result=$(($busyResult | ForEach-Object { "$_" }) -join '; ')"
+
+        # D-2 모든 사본이 EAP 비파괴 패턴을 갖고 있다(패턴 누락 = 사본 하나만 수정된 drift).
+        # 라벨 문자열은 큰따옴표가 아니라 작은따옴표로 만든다 — $LASTEXITCODE/$null 이
+        # 값으로 전개되면 판정 문구가 아니라 실제 값이 출력된다.
+        $d2Label = 'D-2 ' + $label + ' EAP 비파괴 패턴(try/finally + ''Continue'' + $LASTEXITCODE 판정, 2>$null 없음)을 갖고 있다'
+        Assert-True (Test-EapSafeRevParseProbe $busyDefs[$i]) $d2Label "사본#$($i + 1)"
+    }
+
+    # ── D-3 neg 컨트롤 — 비파괴화되지 않은 형태로는 위 판정이 FAIL 한다(빈 통과 배제) ────
+    Write-Output 'D. neg 컨트롤 — 비파괴화되지 않은 형태(원본)는 실제로 throw 하고 패턴 판정도 FAIL 한다'
+    $unfixedText = @'
+function Get-GissueBusyRepoUnfixedProbe($workdir, $restBranch = '', [scriptblock]$Log) {
+    foreach ($repo in (Get-GissueGitRepoPaths $workdir $Log)) {
+        $branch = (git -C $repo rev-parse --abbrev-ref HEAD 2>$null)
+        if (-not $branch) { continue }
+        if ($restBranch -and $branch -eq $restBranch) { continue }
+        $base = Get-RepoBaseBranch $repo
+        if ($branch -ne $base) { return [pscustomobject]@{ Repo = $repo; Branch = $branch; Base = $base } }
+    }
+    return $null
+}
+'@
+    # D-3a 패턴 판정기가 "항상 참" 이 아니다 — 비파괴화 전 형태는 FAIL 로 판정된다.
+    Assert-True (-not (Test-EapSafeRevParseProbe $unfixedText)) 'D-3a neg 컨트롤: 비파괴화되지 않은 형태는 EAP 비파괴 패턴 판정을 FAIL 한다(빈 통과 배제)' ''
+    # D-3b 동작 판정에도 변별력이 있다 — 비파괴화 전 형태는 EAP=Stop 에서 실제로 throw 한다.
+    Invoke-Expression $unfixedText
+    $ctrlThrew = $false
+    $savedEap3 = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Stop'
+        $null = Get-GissueBusyRepoUnfixedProbe $emptySelf -Log $logCollector
+    } catch {
+        $ctrlThrew = $true
+    } finally {
+        $ErrorActionPreference = $savedEap3
+    }
+    Assert-True ($ctrlThrew) 'D-3b neg 컨트롤: 비파괴화되지 않은 형태는 EAP=Stop 에서 실제로 throw 한다(D-1 판정이 변별력을 가짐)' "threw=$ctrlThrew"
 }
 finally {
     if (Test-Path $tmp) { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }
     if (Test-Path $emptySelf) { Remove-Item -LiteralPath $emptySelf -Recurse -Force -ErrorAction SilentlyContinue }
+    if (Test-Path $brokenSelf) { Remove-Item -LiteralPath $brokenSelf -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
 Write-Output ''
