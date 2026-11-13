@@ -715,8 +715,16 @@ author 를 클라이언트가 지정할 수 없고 서버(`pApiGiipIssueComment*
   이 판정 대상이 아니며 커밋 0건이어도 항상 유지됩니다(빠지면 러너 전체가 무력화됩니다).
 - `Get-NestedRepoPaths` 의 origin probe 도 EAP=Continue + 종료코드로 판정해 예외 없이 돌리고, origin 이
   없는 디렉터리만 제외합니다(로컬 전용 저장소를 잘못 버리지 않기 위해 **origin 부재는 커밋 0건 판정과 별개**).
+- `Get-GissueBusyRepo`(러너 메인 스코프 + 잡 스코프 사본)의 **브랜치 probe** 도 같은 형태로 비파괴화돼
+  있습니다 — `git rev-parse --abbrev-ref HEAD` 를 EAP=Continue + `$LASTEXITCODE` 로 판정해, unborn HEAD
+  나 깨진 `.git` 처럼 probe 가 실패한 저장소는 busy 판정 대상에서 건너뛰고 **예외를 던지지 않습니다**.
+  이 판정이 없으면 busy-wait/auto-unblock 이 저장소 후보 수집이 끝난 **그 다음 단계에서** 러너/잡
+  전체를 죽입니다(giip 5180).
 - 회귀 테스트: `scripts/gissue/tests/test-git-repo-paths.ps1` — AST 로 배포본 함수 본문을 그대로 추출해
-  모든 사본을 검증하고, neg 컨트롤로 판정의 변별력(빈 통과 배제)을 확인합니다.
+  모든 사본을 검증하고, neg 컨트롤로 판정의 변별력(빈 통과 배제)을 확인합니다. D 그룹은
+  `Get-GissueBusyRepo` 사본 전부에 대해 ① EAP=Stop 에서 예외 미발생 ② 반환 계약(Repo/Branch/Base
+  객체 또는 null) ③ 비-base 브랜치 저장소의 busy 판정이 여전히 동작 ④ 모든 사본의 EAP 비파괴 패턴
+  존재를 확인하고, neg 컨트롤로 비파괴화 전 형태가 실제로 throw 함을 확인합니다.
 
 ### 13-1-5) 시크릿 파일 위치 — `GIIP_ACCOUNTS_FILE`
 

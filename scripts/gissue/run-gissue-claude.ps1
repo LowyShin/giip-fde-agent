@@ -1515,7 +1515,16 @@ function Get-GissueGitRepoPaths($workdir, [scriptblock]$Log) {
 }
 function Get-GissueBusyRepo($workdir, $restBranch = '', [scriptblock]$Log) {
     foreach ($repo in (Get-GissueGitRepoPaths $workdir $Log)) {
-        $branch = (git -C $repo rev-parse --abbrev-ref HEAD 2>$null)
+        # [giip 5102] PS 5.1 + EAP=Stop 에서 `2>$null` 이어도 네이티브 git 의 stderr 가
+        # NativeCommandError 로 throw 된다 — 여기서 죽으면 러너 전체가 종료된다.
+        # EAP 를 잠시 Continue 로 내리고 종료코드로 판정해, 실패한 저장소만 건너뛴다.
+        $branch = $null
+        $prevEap = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = 'Continue'
+            $revOut = @(git -C $repo rev-parse --abbrev-ref HEAD 2>&1)
+            if ($LASTEXITCODE -eq 0) { $branch = ($revOut | Where-Object { $_ -is [string] } | Select-Object -First 1) }
+        } finally { $ErrorActionPreference = $prevEap }
         if (-not $branch) { continue }
         if ($restBranch -and $branch -eq $restBranch) { continue }
         $base = Get-RepoBaseBranch $repo
@@ -2897,7 +2906,16 @@ foreach ($csn in $map.PSObject.Properties.Name) {
         }
         function Get-GissueBusyRepo($wd, $restBranch = '', [scriptblock]$Log) {
             foreach ($repo in (Get-GissueGitRepoPaths $wd $Log)) {
-                $branch = (git -C $repo rev-parse --abbrev-ref HEAD 2>$null)
+                # [giip 5102] PS 5.1 + EAP=Stop 에서 `2>$null` 이어도 네이티브 git 의 stderr 가
+                # NativeCommandError 로 throw 된다 — 여기서 죽으면 잡/러너 전체가 종료된다.
+                # EAP 를 잠시 Continue 로 내리고 종료코드로 판정해, 실패한 저장소만 건너뛴다.
+                $branch = $null
+                $prevEap = $ErrorActionPreference
+                try {
+                    $ErrorActionPreference = 'Continue'
+                    $revOut = @(git -C $repo rev-parse --abbrev-ref HEAD 2>&1)
+                    if ($LASTEXITCODE -eq 0) { $branch = ($revOut | Where-Object { $_ -is [string] } | Select-Object -First 1) }
+                } finally { $ErrorActionPreference = $prevEap }
                 if (-not $branch) { continue }
                 if ($restBranch -and $branch -eq $restBranch) { continue }
                 $base = Get-RepoBaseBranch $repo
