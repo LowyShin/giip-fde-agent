@@ -4,6 +4,7 @@
 > Messages 호환 엔드포인트)을 1순위 실행 엔진으로 쓰고, 한도 소진 시에만 Claude 계정 풀로 폴백한다
 > (`minimax-accounts.js` + `task-manager.js`/`claude-cli.js`의 폴백 로직 참조).
 > `slack-bot`(기본, Claude 전용) 폴더와 나란히 두는 독립 배포본이다.
+> 정정(2026-11-13, giip 5174): 위 `lowyworkenv/slack-bot` 은 이 변형본의 복사 원본을 가리키는 과거 기록이다. 현재 이 폴더의 코드는 특정 프로젝트 폴더명·사용자 경로에 의존하지 않는다(작업 폴더는 기동 위치 기준, 아래 §환경 변수 참조).
 
 Claude CLI(또는 MiniMax Anthropic 호환 엔드포인트)를 호출해 태스크 분석·실행·Q&A를 채널에서 조작할 수 있다.
 
@@ -58,8 +59,15 @@ SLACK_BOT_TOKEN=xoxb-...        # Bot User OAuth Token
 SLACK_APP_TOKEN=xapp-...        # App-Level Token (Socket Mode 用)
 GITHUB_TOKEN=ghp_...            # GitHub PAT (repo 権限)
 GITHUB_REPO=LowyShin/smartorder-works
+# WORKSPACE_DIR=/path/to/your/workspace   # 任意。既定: slack-bot-minimax の親フォルダ（起動位置基準）
+# PROJECTS_ROOT=/path/to/projects         # 任意。既定: WORKSPACE_DIR の親フォルダ
 SLACK_CHANNEL_IDS=C0XXXXXXXXX  # 監視チャンネル ID (カンマ区切り)
 ```
+
+> **작업 폴더 결정 (giip 5174)**: 경로는 코드에 하드코딩하지 않고 봇을 기동한 위치를 기준으로 정한다(`slack-bot` 과 동일).
+> - `WORKSPACE_DIR` — 기본 작업 폴더(`.agent/` 위치, git push 대상). 미설정 시 `slack-bot-minimax` 폴더의 **상위 폴더**.
+> - `PROJECTS_ROOT` — 프로젝트 프리픽스(`<project> ...`) 전환의 상위 폴더. 미설정 시 `WORKSPACE_DIR` 의 **상위 폴더**.
+> - 이 변경은 코드 수정이므로 **운영 중인 봇에 반영하려면 그 봇을 운영하는 곳에서 `git pull` 후 재시작(pm2 restart)해야 한다**(이 PR 은 봇을 재시작하지 않는다).
 
 > **チャンネル ID の確認方法**: Slack でチャンネルを右クリック → View channel details → 最下部に表示
 
@@ -104,7 +112,7 @@ npm start
 
 ```bash
 # 初回登録
-pm2 start index.js --name slack-bot --cwd C:\Users\lowyshin\Downloads\projects\smartorder-works\slack-bot
+pm2 start index.js --name slack-bot --cwd <workspace>\slack-bot-minimax
 
 # プロセス保存（リカバリ用）
 pm2 save
@@ -122,20 +130,20 @@ pm2 restart slack-bot
 pm2 stop slack-bot
 ```
 
-> **現在の pm2 パス**: `C:\Users\lowyshin\AppData\Roaming\npm\pm2.cmd`  
+> **pm2 パス**: `<npm-global-dir>\pm2.cmd`（例: `%APPDATA%\npm\pm2.cmd`）  
 > PATH に通っていない場合は `npm install -g pm2` でグローバルインストール済み
 
 ### PC 再起動後の自動起動（設定済み）
 
 Windows Task Scheduler に `PM2-SlackBot-Resurrect` タスクが登録済み。  
-`lowyshin` でログオン時に自動的に `pm2 resurrect` が実行される。
+運用ユーザー(`<user>`)でログオン時に自動的に `pm2 resurrect` が実行される。
 
 手動で再登録する場合（管理者 PowerShell で実行）:
 
 ```powershell
 schtasks /Create /TN "PM2-SlackBot-Resurrect" ^
-  /TR "cmd /c C:\Users\lowyshin\AppData\Roaming\npm\pm2.cmd resurrect" ^
-  /SC ONLOGON /RU "lowyshin" /RL HIGHEST /F
+  /TR "cmd /c %APPDATA%\npm\pm2.cmd resurrect" ^
+  /SC ONLOGON /RU "<user>" /RL HIGHEST /F
 ```
 
 ---
@@ -169,9 +177,9 @@ schtasks /Create /TN "PM2-SlackBot-Resurrect" ^
 | `!klayer <キーワード>` | K-Layer 知識検索 |
 | `!help` | ヘルプ表示 |
 
-> **rule — プロジェクト別 CSN ルーティング**: `<プロジェクト名> issue 등록 <内容>` の CSN 対応は `slack-bot/project-csn.json` の `map` で管理する（コード変更不要）。編集は Slack から `giip project set <프로젝트명> <csn>` / `giip project list` / `giip project del <프로젝트명>` で行える（`config.js` の `setProjectCsn`/`listProjectCsn`/`deleteProjectCsn` が `map` だけ更新し `_comment` を保存、読み込みは毎回読み直すので**再起動不要**）。プロジェクト名が `PROJECTS_ROOT` 直下の同名フォルダなら作業フォルダ切替も兼ね、フォルダが無くても map にあれば名前だけで CSN ルーティングされる（その場合 workDir は lowyworkenv に安全フォールバック）。解決は `config.resolveProjectCsn(projectName || workDir)`。map に無ければ account 既定 CSN にフォールバック。
+> **rule — プロジェクト別 CSN ルーティング**: `<プロジェクト名> issue 등록 <内容>` の CSN 対応は `slack-bot/project-csn.json` の `map` で管理する（コード変更不要）。編集は Slack から `giip project set <프로젝트명> <csn>` / `giip project list` / `giip project del <프로젝트명>` で行える（`config.js` の `setProjectCsn`/`listProjectCsn`/`deleteProjectCsn` が `map` だけ更新し `_comment` を保存、読み込みは毎回読み直すので**再起動不要**）。プロジェクト名が `PROJECTS_ROOT` 直下の同名フォルダなら作業フォルダ切替も兼ね、フォルダが無くても map にあれば名前だけで CSN ルーティングされる（その場合 workDir は BASE_DIR（既定の作業フォルダ）に安全フォールバック）。解決は `config.resolveProjectCsn(projectName || workDir)`。map に無ければ account 既定 CSN にフォールバック。
 >
-> **rule — チャンネル固定プロジェクトルーティング (task giip-724)**: 「このチャンネルの発話はすべて `<project>` として処理」を `slack-bot/channel-project.json` の `map`（`channelId → プロジェクト名`）で管理する。編集は Slack から `giip channel set <프로젝트명> [채널ID]` / `giip channel list` / `giip channel del [채널ID]`（`config.js` の `setChannelProject`/`listChannelProject`/`deleteChannelProject`、読み込みは毎回読み直すので**再起動不要**）。適用は `processMessage` で `config.applyChannelPin(channelId, parseProjectPrefix(text))`。**優先順位（設計判断）**: メッセージ先頭に実フォルダ / `project-csn.json` 登録名の**明示的プロジェクト接頭辞があればそれが勝つ**（Rule 32 の絶対規則を維持）。接頭辞が無いときだけチャンネルの既定プロジェクトが適用され、本来 `lowyworkenv` に潰れていた workDir/projectName（→ CSN）をそのプロジェクトで埋める。既定値: `C0B5TV2T43S → ecokaku-aidc`（CSN 70417）。⚠️ CSN ルーティングが実際に効くには bot ユーザ(uSn 29)がその CSN のメンバである必要がある（`giip project set` が自動付与）。
+> **rule — チャンネル固定プロジェクトルーティング (task giip-724)**: 「このチャンネルの発話はすべて `<project>` として処理」を `slack-bot/channel-project.json` の `map`（`channelId → プロジェクト名`）で管理する。編集は Slack から `giip channel set <프로젝트명> [채널ID]` / `giip channel list` / `giip channel del [채널ID]`（`config.js` の `setChannelProject`/`listChannelProject`/`deleteChannelProject`、読み込みは毎回読み直すので**再起動不要**）。適用は `processMessage` で `config.applyChannelPin(channelId, parseProjectPrefix(text))`。**優先順位（設計判断）**: メッセージ先頭に実フォルダ / `project-csn.json` 登録名の**明示的プロジェクト接頭辞があればそれが勝つ**（Rule 32 の絶対規則を維持）。接頭辞が無いときだけチャンネルの既定プロジェクトが適用され、本来 BASE_DIR（既定の作業フォルダ）に潰れていた workDir/projectName（→ CSN）をそのプロジェクトで埋める。既定値: `C0B5TV2T43S → ecokaku-aidc`（CSN 70417）。⚠️ CSN ルーティングが実際に効くには bot ユーザ(uSn 29)がその CSN のメンバである必要がある（`giip project set` が自動付与）。
 >
 > **rule — `go <番号>` の追加指示 (D-2026-07-15)**: `go <Task番号>` の後ろ（同一メッセージ・改行以降でも可）に続けたテキストは、その Task 専用の「追加指示」として扱う。実行直前に Task の `.agent/tasks/<ID>.md` へ `## 추가 지시 (Slack, …)` ブロックとして追記され、サブエージェントが必ず読む。**コメントは任意** — 付ければ反映し `📎 追加指示 … 反映しました` と返信、無ければ従来どおり素の `go` として実行する。判定正規式は末尾 `$` を張らず `\b` 止まり（`handlers.js` の `goWithId`）。旧仕様（`$` 固定）ではコメントを付けると bare `go` に落ちて Task 一覧が出るバグがあった（PR #306 で修正）。
 
@@ -265,7 +273,7 @@ pm2 logs slack-bot --lines 50
 schtasks /Query /TN "PM2-SlackBot-Resurrect" /FO LIST
 
 # 手動で resurrect
-C:\Users\lowyshin\AppData\Roaming\npm\pm2.cmd resurrect
+%APPDATA%\npm\pm2.cmd resurrect
 ```
 
 **重複起動**  
