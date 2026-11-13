@@ -32,7 +32,8 @@ param(
         'GIIP_StaleReview_Hourly',
         'GIIP_AuditReviewPrs_Hourly',
         'GIIP_GateEscalation_Hourly',
-        'GIIP_SlackbotRestart_Hourly'
+        'GIIP_SlackbotRestart_Hourly',
+        'GIIP_GissueLiveness_Hourly'
     ),
 
     [int]$Tail = 8

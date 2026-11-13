@@ -1,7 +1,7 @@
 # 보조 시간별 스케줄러 — 표준 스펙과 제어법
 
 > 정본입니다. 메인 스케줄러(`:07`, 이슈 처리 본체)는 `./hourly-issue-scheduler.md` 를 보고, 이 문서는
-> **그 옆에서 같이 도는 보조 스케줄러 5종**과 **태스크 등록 게이트**를 다룹니다.
+> **그 옆에서 같이 도는 보조 스케줄러 6종**과 **태스크 등록 게이트**를 다룹니다.
 > 이식 출처는 `lowyworkenv/scripts/gissue/`(csn 47 운영 인스턴스)이며, 이식 이슈는 giip #2645 입니다.
 > 이 문서는 **특정 PC·특정 CSN·특정 절대경로에 의존하지 않습니다** — clone 한 경로에서 그대로 읽습니다.
 
@@ -16,7 +16,7 @@
 powershell -NoProfile -ExecutionPolicy Bypass -File "<스크립트 경로>"
 ```
 
-## 1) 보조 스케줄러 5종
+## 1) 보조 스케줄러 6종
 
 메인 태스크 외에, 각각 **별도 러너 + 별도 Task Scheduler 항목**으로 분리 등록됩니다.
 분리한 이유는 메인 러너(수천 줄 단일 파일)에 기능을 끼워넣지 않기 위해서입니다.
@@ -28,6 +28,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "<스크립트 경로>"
 | `GIIP_AuditReviewPrs_Hourly` | 매시 :07 | `scripts/gissue/run-audit-review-prs.ps1` | `register-audit-review-prs-task.ps1` | giip #2395/#2431 |
 | `GIIP_GateEscalation_Hourly` | 매시 :07 | `scripts/gissue/run-gate-escalation-recheck.ps1` | `register-gate-escalation-task.ps1` | giip #2428 |
 | `GIIP_SlackbotRestart_Hourly` | 매시 :37 | `scripts/gissue/run-slackbot-restart-check.ps1` | `register-slackbot-restart-task.ps1` | giip #2148 |
+| `GIIP_GissueLiveness_Hourly` | 매시 :37 | `scripts/gissue/check-gissue-liveness.ps1` | `register-gissue-liveness-task.ps1` | giip #4411, 조회 누락 수정 #5053 |
 
 태스크 이름은 **배포마다 고유해야 합니다**. 한 PC 가 여러 배포를 호스팅하면 등록기의 `-TaskName`
 으로 덮어씁니다(예: `-TaskName GIIP_StalePending_Hourly_csn70424`).
@@ -177,7 +178,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\register-<...
 
 ### 4-4) 상태 확인
 ```powershell
-# 메인 + 보조 5종의 State / Repetition / LastRunTime / NextRunTime 한눈에
+# 메인 + 보조 6종의 State / Repetition / LastRunTime / NextRunTime 한눈에
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gissue\manage-gissue-scheduler.ps1 -Action Status
 ```
 `manage-gissue-scheduler.ps1` 의 다른 액션(`Request` / `DryRun` / `RunOnce`)은 **메인 태스크 전용**입니다.
