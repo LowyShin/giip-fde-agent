@@ -29,7 +29,7 @@ function getTimestampId() {
   return `${now.getFullYear()}${p(now.getMonth()+1)}${p(now.getDate())}${p(now.getHours())}${p(now.getMinutes())}${p(now.getSeconds())}`;
 }
 
-// baseDir 配下の .agent/roles/ を読む。なければ Lowyworkenv の roles にフォールバック
+// baseDir 配下の .agent/roles/ を読む。なければ BASE_DIR（既定の作業フォルダ）の roles にフォールバック
 // filesRead に読んだファイルの絶対パスを push する
 function readRolesContext(baseDir = BASE_DIR, filesRead = []) {
   const dirs = [
@@ -118,7 +118,7 @@ function buildContextCatalog(baseDir = BASE_DIR) {
       out.push({ type, path: rel, desc: firstDesc(fs.readFileSync(absPath, 'utf8')) });
     } catch {}
   };
-  // roles/rules: project baseDir 우선, 없으면 Lowyworkenv(.agent) 로 폴백
+  // roles/rules: project baseDir 우선, 없으면 BASE_DIR/.agent(기본 작업 폴더) 로 폴백
   for (const [type, sub] of [['role', 'roles'], ['rule', 'rules']]) {
     let dir = path.join(baseDir, '.agent', sub);
     try { if (!fs.readdirSync(dir).some(f => f.endsWith('.md'))) dir = path.join(BASE_DIR, '.agent', sub); }
@@ -367,7 +367,7 @@ function startExecution(taskId, taskFilePath, { onComplete, onError, isn = null 
   pwsh -File "${addCommentScript}" -isn ${isn} -content "<본문>" -issuetype note -author "slack-bot"
   (중간 진행은 issuetype=note. 상태 전이/최종 코멘트는 봇이 별도 처리하므로 여기서 상태는 바꾸지 말 것.)
 ` : '';
-  const executionPrompt = `You are a senior software engineer working in the Lowyworkenv workspace. Always respond in Korean.
+  const executionPrompt = `You are a senior software engineer working in the workspace. Always respond in Korean.
 Working directory: ${baseDir}
 Current branch: ${currentBranch} (task 전용 브랜치, base=${baseBranch} 최신 기준)
 
@@ -940,8 +940,8 @@ function candidateRepoRoots(effWorkDir, opts = {}) {
   scanNested(effWorkDir);
 
   // ── 追加: effWorkDir の「兄弟」リポも候補に含める(root cause 修正) ──
-  // 背景: プレフィックス無しのタスク(例:「azure-rg …修正」)は effWorkDir=BASE_DIR(lowyworkenv)
-  //   になるが、サブエージェントは projects/giipprj/giipv3 のような lowyworkenv の兄弟パスを編集する。
+  // 背景: プレフィックス無しのタスク(例:「azure-rg …修正」)は effWorkDir=BASE_DIR（既定の作業フォルダ）
+  //   になるが、サブエージェントは projects/giipprj/giipv3 のような BASE_DIR の兄弟パスを編集する。
   //   effWorkDir 配下しか見ない従来スキャンでは、その変更は発見されず auto-PR から丸ごと漏れ、
   //   コードは commit も PR もされないまま「完了」報告される(= giipv3 を直したのに PR が無い、の根因)。
   //   → PROJECTS_ROOT を常に 1〜2 階層スキャンして兄弟 repo(giipprj/giipv3, giipprj/giipdb 等)も候補化。
@@ -957,7 +957,7 @@ function candidateRepoRoots(effWorkDir, opts = {}) {
 
 // ── 作業「前」: 候補 nested repo の base ブランチを origin 最新へ ff 同期する ──
 // 根本原因(ユーザ指摘「giipv3 は毎回 conflict」): prepareTaskBranch/restoreTaskBranch の
-//   ff-pull は BASE_DIR(lowyworkenv) だけを同期し、nested repo(giipprj/giipv3 等)の
+//   ff-pull は BASE_DIR（既定の作業フォルダ）だけを同期し、nested repo(giipprj/giipv3 等)の
 //   ローカル base は誰も更新しなかった。その結果サブエージェントは「数コミット遅れた
 //   stale な base」上でファイルを編集し、後段 auto-PR が最新 origin/base から切った
 //   ブランチへ replay する時に、既に origin へ merge 済みの変更と衝突していた
@@ -995,7 +995,7 @@ function syncCandidateReposBase(effWorkDir) {
 
 // ── 作業「前」: 候補 nested repo を「このタスク専用ブランチ」へ切り替える(スト孤児化の根本予防) ──
 //
-// 근본원인: prepareTaskBranch/restoreTaskBranch 는 BASE_DIR(lowyworkenv)만 bot/task-<id> 로
+// 근본원인: prepareTaskBranch/restoreTaskBranch 는 BASE_DIR(기본 작업 폴더)만 bot/task-<id> 로
 //   전환·복원했고, nested repo(giipprj/giipv3, giipprj/giipdb)는 직전 태스크가 남긴 브랜치
 //   (예: bot/task-giip-705)에 파킹된 채 방치됐다. 그래서 서브에이전트의 nested 편집은
 //   '남의 브랜치'에 쌓였고, 후단 commitAndPRChangedRepos 는 originalBranch≠bot/task-<id> 를

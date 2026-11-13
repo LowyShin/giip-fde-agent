@@ -344,7 +344,7 @@ async function startTaskExecution(pendingKey, pendingTask, channelId, replyTs, t
   // 旧: 現在ブランチを git pull --rebase（stale base だと conflict 誘発）→ 廃止。
   // 新: `git fetch origin <base>` 直後に origin/<base> を起点にブランチを作る。
   //     常に最新 base 基準なので「ブランチを作るたび merge conflict」を根本回避する。
-  // 注意: 結果レポート/タスクファイルは常に BASE_DIR(lowyworkenv) 配下に生成されるため、
+  // 注意: 結果レポート/タスクファイルは常に BASE_DIR（既定の作業フォルダ）配下に生成されるため、
   //     この既存経路は BASE_DIR を対象にする。effWorkDir 本体や nested repo の
   //     コード変更は onComplete の commitAndPRChangedRepos が別途担当する。
   const branchCtx = tm.prepareTaskBranch(pendingTask.taskId, BASE_DIR);

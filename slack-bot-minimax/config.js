@@ -10,9 +10,12 @@ const BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
 const CHANNEL_IDS = (process.env.SLACK_CHANNEL_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
 const SLACK_APP_TOKEN = process.env.SLACK_APP_TOKEN;
 
-const PROJECTS_ROOT   = 'C:\\Users\\lowys\\Downloads\\projects';
-const BASE_DIR        = path.join(PROJECTS_ROOT, 'lowyworkenv'); // 기본 작업 폴더
-const AGENT_DIR       = path.join(BASE_DIR, '.agent');            // 기본 .agent (lowyworkenv/.agent)
+// 경로는 하드코딩하지 않고 봇이 기동된 위치(이 파일의 위치)를 기준으로 결정한다(giip 5174, slack-bot/config.js 와 동일).
+// WORKSPACE_DIR: 기본 작업 폴더(.agent 위치 / git push 대상). 미설정 시 slack-bot-minimax 상위 폴더.
+const BASE_DIR        = process.env.WORKSPACE_DIR ? path.resolve(process.env.WORKSPACE_DIR) : path.join(__dirname, '..');
+// PROJECTS_ROOT: 여러 프로젝트의 상위 폴더(프로젝트 프리픽스 전환용). 미설정 시 BASE_DIR 의 상위 폴더.
+const PROJECTS_ROOT   = process.env.PROJECTS_ROOT || path.dirname(BASE_DIR);
+const AGENT_DIR       = path.join(BASE_DIR, '.agent');            // 기본 .agent (BASE_DIR/.agent)
 const HISTORY_FILE    = path.join(__dirname, '.conversations.json');
 const TASK_STATE_FILE = path.join(__dirname, '.task-state.json');
 const BOT_THREADS_FILE = path.join(__dirname, '.bot-threads.json');
@@ -31,7 +34,7 @@ function getSelfBotId() { return selfBotId; }
 function setSelfBotId(id) { selfBotId = id; }
 
 // ── プロジェクトの .agent ディレクトリを解決 ─────────────────────────────────
-// workDir 内に .agent があればそれを使い、なければ lowyworkenv/.agent にフォールバック
+// workDir 内に .agent があればそれを使い、なければ BASE_DIR/.agent（既定の作業フォルダ）にフォールバック
 function getAgentDir(workDir) {
   const d = path.join(workDir, '.agent');
   return fs.existsSync(d) ? d : AGENT_DIR;
@@ -192,7 +195,7 @@ function projectWorkDir(name) {
 // チャンネル固定マッピングを parseProjectPrefix の結果に適用する。
 //   優先順位（設計判断・task giip-724）: 明示的プロジェクト接頭辞 > チャンネル固定。
 //   メッセージ先頭に実フォルダ / project-csn.json 登録名の接頭辞があれば（parsed.projectName != null）
-//   それを尊重する（Rule 32 の絶対規則を維持）。接頭辞が無いときだけ、本来 BASE_DIR(lowyworkenv) に
+//   それを尊重する（Rule 32 の絶対規則を維持）。接頭辞が無いときだけ、本来 BASE_DIR（既定の作業フォルダ）に
 //   潰れていた workDir/projectName をチャンネルの既定プロジェクトで埋める。cleanText は変更しない。
 function applyChannelPin(channelId, parsed) {
   const p = parsed || { workDir: BASE_DIR, cleanText: '', projectName: null };
