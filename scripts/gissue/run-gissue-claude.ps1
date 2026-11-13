@@ -1474,7 +1474,7 @@ function Get-RepoBaseBranch($repoPath) {
     }
     return 'main'
 }
-function Get-GissueGitRepoPaths($workdir) {
+function Get-GissueGitRepoPaths($workdir, [scriptblock]$Log) {
     $paths = @()
     if (Test-Path (Join-Path $workdir '.git')) { $paths += $workdir }
     if (-not (Test-Path $workdir)) { return $paths }
@@ -1489,12 +1489,32 @@ function Get-GissueGitRepoPaths($workdir) {
                 if ($t -and (Test-Path $t)) { $target = $t }
             } catch {}
         }
-        if ($target -and (Test-Path (Join-Path $target '.git'))) { $paths += $target }
+        if (-not ($target -and (Test-Path (Join-Path $target '.git')))) { continue }
+        # [giip #5102] 커밋 0건(HEAD 없음) 디렉터리는 저장소가 아니다 — 후보에서 제외한다.
+        # `git init` 만 된 잔여 스캐폴드가 후보에 들어가면 busy-wait/auto-unblock 이 예외로 죽거나
+        # 후속 스윕이 "No such remote 'origin'" 로 전멸한다. 이 판정은 **루프 안에서만** 적용하므로
+        # 루프 바깥에서 먼저 추가된 자기 저장소($workdir) 는 영향받지 않는다(절대 빠지면 안 됨 — 빠지면
+        # 러너 전체가 무력화된다). PS 5.1 + EAP=Stop 에서 네이티브 stderr 가 throw 되는 함정을 피해
+        # Continue + 종료코드로 판정한다. origin 부재는 제외 근거로 쓰지 않는다 — 로컬 전용 저장소나
+        # remote 이름이 다른 저장소를 잘못 버리기 때문이다.
+        $hasHead = $false
+        $prevEap = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = 'Continue'
+            $null = git -C $target rev-parse --verify HEAD 2>&1
+            if ($LASTEXITCODE -eq 0) { $hasHead = $true }
+        } finally { $ErrorActionPreference = $prevEap }
+        if (-not $hasHead) {
+            # 로그 콜백의 출력이 이 함수의 반환값(경로 목록)을 오염시키면 안 된다 → $null 로 폐기.
+            if ($Log) { $null = & $Log "[WARN][EMPTY-REPO-SKIP] $target — 커밋 0건(HEAD 없음), 저장소 후보에서 제외" }
+            continue
+        }
+        $paths += $target
     }
     return $paths
 }
-function Get-GissueBusyRepo($workdir, $restBranch = '') {
-    foreach ($repo in (Get-GissueGitRepoPaths $workdir)) {
+function Get-GissueBusyRepo($workdir, $restBranch = '', [scriptblock]$Log) {
+    foreach ($repo in (Get-GissueGitRepoPaths $workdir $Log)) {
         $branch = (git -C $repo rev-parse --abbrev-ref HEAD 2>$null)
         if (-not $branch) { continue }
         if ($restBranch -and $branch -eq $restBranch) { continue }
@@ -1504,7 +1524,7 @@ function Get-GissueBusyRepo($workdir, $restBranch = '') {
     return $null
 }
 # csn-projects.json 에 등록된 모든 workdir + 그 직계 nested git 레포(하루 1회 worktree 전체 스윕 대상).
-function Get-GissueAllProjectRepoPaths($mapObj) {
+function Get-GissueAllProjectRepoPaths($mapObj, [scriptblock]$Log) {
     $all = @()
     foreach ($c in $mapObj.PSObject.Properties.Name) {
         # 유효성 판정과 경로 존재 확인은 전부 공용 헬퍼로 — 채우지 않은 placeholder 가 Test-Path 예외를
@@ -1512,7 +1532,7 @@ function Get-GissueAllProjectRepoPaths($mapObj) {
         if (-not (Test-GissueCsnEntryValid $c $mapObj.$c)) { continue }
         $wd = $mapObj.$c.workdir
         if (-not (Test-GissuePathSafe $wd)) { continue }
-        $all += @(Get-GissueGitRepoPaths $wd)
+        $all += @(Get-GissueGitRepoPaths $wd $Log)
     }
     return @($all | Select-Object -Unique)
 }
@@ -1598,7 +1618,7 @@ function Get-GissueIsnStatusMap($csn, $sk, $isnList) {
 # 어떤 예외가 나도 삼켜서 경고 로그만 남기고 호출부(CSN 처리 루프)를 절대 막지 않는다.
 function Remove-GissueOrphanWorktrees($csn, $workdir) {
     try {
-        $repoPaths = @(@($workdir) + (Get-GissueGitRepoPaths $workdir) | Select-Object -Unique)
+        $repoPaths = @(@($workdir) + (Get-GissueGitRepoPaths $workdir -Log { param($m) Write-Log $csn $m }) | Select-Object -Unique)
         $wtreeRoots = @()
         foreach ($rp in $repoPaths) {
             $cand = Join-Path $rp '.worktrees'
@@ -2002,7 +2022,7 @@ function Invoke-GissueWorktreeCleanup($csn, $workdir, [switch]$DryRunSwitch, [in
     if (-not $script:WorktreeEngineLoaded) { return }
     try {
         if (-not (Test-Path $workdir)) { return }
-        $repoPaths = @(@($workdir) + (Get-GissueGitRepoPaths $workdir) | Select-Object -Unique)
+        $repoPaths = @(@($workdir) + (Get-GissueGitRepoPaths $workdir -Log { param($m) Write-Log $csn $m }) | Select-Object -Unique)
         $repoPaths = @($repoPaths | Where-Object { Test-Path -LiteralPath (Join-Path $_ '.git') })
         $logger = { param($m) Write-Log $csn "[WORKTREE-CLEANUP] $m" }
         # MinIdleMinutes 는 -1(기본)이면 **아예 넘기지 않아** 엔진의 단일 기본값이 그대로 쓰인다.
@@ -2046,7 +2066,7 @@ function Invoke-GissueWorktreeDailySweep($csn, [switch]$DryRunSwitch, [int]$MinI
         }
         # 먼저 스탬프를 찍는다 — 스윕이 중간에 실패해도 같은 날 반복 재시도로 시간을 태우지 않게.
         Set-Content -LiteralPath $stamp -Value $today -Encoding UTF8
-        $repos = @(Get-GissueAllProjectRepoPaths $map)
+        $repos = @(Get-GissueAllProjectRepoPaths $map -Log { param($m) Write-Log $csn $m })
         Write-Log $csn "[WORKTREE-SWEEP] 하루 1회 전체 스윕 시작 — 대상 $($repos.Count)개 레포"
         $logger = { param($m) Write-Log $csn "[WORKTREE-SWEEP] $m" }
         $idleArgs = @{}
@@ -2536,7 +2556,7 @@ foreach ($csn in $map.PSObject.Properties.Name) {
 
     # 다른 프로세스(slack-bot 등)가 이 workdir/nested repo 를 지금 쓰는 중인지(base 브랜치 아님) 확인 — 정보성.
     # 실제 대기(폴링)는 잡 내부에서 수행한다.
-    $busy = Get-GissueBusyRepo $workdir $restBranch
+    $busy = Get-GissueBusyRepo $workdir $restBranch -Log { param($m) Write-Log $csn $m }
     if ($busy) { Write-Log $csn "BUSY: $($busy.Repo) 가 base '$($busy.Base)' 아닌 '$($busy.Branch)' — 잡 내부에서 대기 후 자동 재개" }
 
     # age-based lock (stale 자동 제거) + PID 생존 확인(giip #1583). 기존엔 시간 기준(2h)만 봤는데,
@@ -2841,7 +2861,7 @@ foreach ($csn in $map.PSObject.Properties.Name) {
             }
             return 'main'
         }
-        function Get-GissueGitRepoPaths($wd) {
+        function Get-GissueGitRepoPaths($wd, [scriptblock]$Log) {
             $paths = @()
             if (Test-Path (Join-Path $wd '.git')) { $paths += $wd }
             if (-not (Test-Path $wd)) { return $paths }
@@ -2855,12 +2875,28 @@ foreach ($csn in $map.PSObject.Properties.Name) {
                         if ($t -and (Test-Path $t)) { $target = $t }
                     } catch {}
                 }
-                if ($target -and (Test-Path (Join-Path $target '.git'))) { $paths += $target }
+                if (-not ($target -and (Test-Path (Join-Path $target '.git')))) { continue }
+                # [giip #5102] 커밋 0건(HEAD 없음) 디렉터리는 저장소가 아니다 — 후보에서 제외한다.
+                # 잡 스코프라 메인 스코프와 같은 로직을 그대로 둔다(여기도 별도 프로세스라 함수 재정의 필요).
+                # 자기 저장소($wd) 는 루프 바깥 선추가라 이 판정 대상이 아니다.
+                $hasHead = $false
+                $prevEap = $ErrorActionPreference
+                try {
+                    $ErrorActionPreference = 'Continue'
+                    $null = git -C $target rev-parse --verify HEAD 2>&1
+                    if ($LASTEXITCODE -eq 0) { $hasHead = $true }
+                } finally { $ErrorActionPreference = $prevEap }
+                if (-not $hasHead) {
+                    # 로그 콜백의 출력이 반환값(경로 목록)을 오염시키면 안 된다 → $null 로 폐기.
+                    if ($Log) { $null = & $Log "[WARN][EMPTY-REPO-SKIP] $target — 커밋 0건(HEAD 없음), 저장소 후보에서 제외" }
+                    continue
+                }
+                $paths += $target
             }
             return $paths
         }
-        function Get-GissueBusyRepo($wd, $restBranch = '') {
-            foreach ($repo in (Get-GissueGitRepoPaths $wd)) {
+        function Get-GissueBusyRepo($wd, $restBranch = '', [scriptblock]$Log) {
+            foreach ($repo in (Get-GissueGitRepoPaths $wd $Log)) {
                 $branch = (git -C $repo rev-parse --abbrev-ref HEAD 2>$null)
                 if (-not $branch) { continue }
                 if ($restBranch -and $branch -eq $restBranch) { continue }
@@ -3078,13 +3114,21 @@ foreach ($csn in $map.PSObject.Properties.Name) {
         }
 
         # ── 다른 프로세스가 workdir 를 점유 중이면 해제될 때까지 폴링 대기(대기 예산 내에서만) ──
+        # [giip #5102] 저장소 후보 수집 로그(커밋 0건 제외)는 잡 스코프의 CSN 로그 파일에 직접 기록한다 —
+        # 잡은 별도 프로세스라 메인 스코프의 Write-Log 를 쓸 수 없고, Write-Output 으로 남기면
+        # 경로 목록(반환값)을 오염시킬 수 있다.
+        $repoPathLog = { param($m)
+            try {
+                Add-Content -LiteralPath (Join-Path $logDir "gissue_csn$csn.log") -Value "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $m" -Encoding UTF8
+            } catch {}
+        }
         while ((Get-Date) -lt $waitDeadline) {
-            $busy = Get-GissueBusyRepo $workdir $restBranch
+            $busy = Get-GissueBusyRepo $workdir $restBranch -Log $repoPathLog
             if (-not $busy) { break }
             Write-Output "[WAIT] $($busy.Repo) 가 base '$($busy.Base)' 아닌 '$($busy.Branch)' — ${pollSec}초 후 재확인"
             Start-Sleep -Seconds $pollSec
         }
-        $stillBusy = Get-GissueBusyRepo $workdir $restBranch
+        $stillBusy = Get-GissueBusyRepo $workdir $restBranch -Log $repoPathLog
         if ($stillBusy) {
             # 자동 안전 해제(giip-791/giip-800 인시던트 이후): 막힌 브랜치의 tip 이 이미 base 에 병합된
             # 상태(ancestor)라면, 이건 "다른 프로세스가 지금 쓰는 중"이 아니라 죽은 세션이 커밋 못 하고

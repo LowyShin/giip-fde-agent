@@ -125,13 +125,39 @@ function Get-GissueGitRepoPaths($workdir) {
                 if ($t -and (Test-Path $t)) { $target = $t }
             } catch {}
         }
-        if ($target -and (Test-Path (Join-Path $target '.git'))) { $paths += $target }
+        if (-not ($target -and (Test-Path (Join-Path $target '.git')))) { continue }
+        # [giip #5102] 커밋 0건(HEAD 없음) 디렉터리는 저장소가 아니다 — 후보에서 제외한다.
+        # 이 파일도 EAP=Stop(위 $ErrorActionPreference='Stop')이라 네이티브 git stderr 가 throw 되는
+        # 함정을 공유한다. 루프 안에서만 판정하므로 루프 바깥에서 먼저 추가된 자기 저장소($workdir)는
+        # 영향받지 않는다. origin 부재는 제외 근거로 쓰지 않는다(로컬 전용 저장소 보호).
+        $hasHead = $false
+        $prevEap = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = 'Continue'
+            $null = git -C $target rev-parse --verify HEAD 2>&1
+            if ($LASTEXITCODE -eq 0) { $hasHead = $true }
+        } finally { $ErrorActionPreference = $prevEap }
+        if (-not $hasHead) {
+            # Write-RestartLog 는 Write-Output 도 하므로, 여기서 그대로 부르면 반환값(경로 목록)이
+            # 로그 문자열로 오염된다(KNOW-044 계열). $null 로 폐기한다 — 파일 기록은 그대로 남는다.
+            $null = Write-RestartLog "[WARN][EMPTY-REPO-SKIP] $target — 커밋 0건(HEAD 없음), 저장소 후보에서 제외"
+            continue
+        }
+        $paths += $target
     }
     return $paths
 }
 function Get-GissueBusyRepo($workdir) {
     foreach ($repo in (Get-GissueGitRepoPaths $workdir)) {
-        $branch = (git -C $repo rev-parse --abbrev-ref HEAD 2>$null)
+        # [giip #5102] PS 5.1 + EAP=Stop 에서 `2>$null` 이어도 네이티브 git stderr 가 NativeCommandError 로
+        # throw 된다. Continue 로 임시 전환 + 종료코드로 판정해 실패한 repo 만 건너뛴다.
+        $branch = $null
+        $prevEap = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = 'Continue'
+            $revOut = @(git -C $repo rev-parse --abbrev-ref HEAD 2>&1)
+            if ($LASTEXITCODE -eq 0) { $branch = ($revOut | Where-Object { $_ -is [string] } | Select-Object -First 1) }
+        } finally { $ErrorActionPreference = $prevEap }
         if (-not $branch) { continue }
         $base = Get-RepoBaseBranch $repo
         if ($branch -ne $base) { return [pscustomobject]@{ Repo = $repo; Branch = $branch; Base = $base } }

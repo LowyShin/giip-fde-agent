@@ -38,8 +38,20 @@ function Get-NestedRepoPaths($wd) {
     $seenOrigin = @{}
     $paths = @()
     foreach ($repo in $candidates) {
-        $origin = (git -C $repo remote get-url origin 2>$null)
-        if ($LASTEXITCODE -ne 0 -or -not $origin) { continue }   # origin 없는 디렉터리는 PR 조회 불가 → 제외
+        # [giip #5102] PS 5.1 + $ErrorActionPreference='Stop' (스윕 3종: pr-gate-sweep/review-done-audit/
+        # pr-attribution-sweep 가 모두 EAP=Stop) 에서는 `2>$null` 이어도 네이티브 git stderr 가
+        # NativeCommandError 로 throw 된다. 그러면 아래 "origin 없는 디렉터리 제외" continue 가 한 번도
+        # 실행되지 않고 스윕 전체가 **저장소 수집 단계**에서 전멸한다(관측: "No such remote 'origin'").
+        # → Continue 로 임시 전환 + 종료코드로 판정해 예외 없이 돌린다. 그래야 의도된 제외 로직이
+        #   실제로 작동한다. 출력은 문자열만 추출한다(stderr 는 ErrorRecord 로 섞여 들어온다).
+        $origin = $null
+        $prevEap = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = 'Continue'
+            $originOut = @(git -C $repo remote get-url origin 2>&1)
+            if ($LASTEXITCODE -eq 0) { $origin = ($originOut | Where-Object { $_ -is [string] } | Select-Object -First 1) }
+        } finally { $ErrorActionPreference = $prevEap }
+        if (-not $origin) { continue }   # origin 없는 디렉터리는 PR 조회 불가 → 제외
         $origin = $origin.Trim().ToLower() -replace '\.git$', ''
         if ($seenOrigin.ContainsKey($origin)) { continue }
         $seenOrigin[$origin] = $true
