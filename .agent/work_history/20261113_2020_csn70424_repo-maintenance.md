@@ -153,7 +153,32 @@
 | `verify-4139-c7` | detached HEAD | clean — 자동 회수 경로 없음(KNOW-045) |
 | `verify-5054-main` | detached HEAD | clean — 이슈 5054 검증 워크트리 잔재, 자동 회수 경로 없음(KNOW-045) |
 
-- 본 세션 워크트리 `maint-114-2020` 는 **PR 머지 후** 정본 도구로 회수한다(실측 결과는 PR 코멘트에 인계).
+- 본 세션 워크트리 `maint-114-2020` 는 **PR #421 머지 후** 정본 도구로 회수했다 — 실측은 아래
+  「회수 후 재측정」 절(2026-11-13 20:38 KST)에 기록.
+
+## 회수 후 재측정 (2026-11-13 20:38 KST) — PR #421 머지 후 본 세션 워크트리 회수
+
+- **PR #421** = `docs(work_history): CSN 70424 저장소·PR 레벨 정비 114차 기록 (2026-11-13 20:20 KST)`
+  — MERGED(2026-11-13T11:36:30Z · squash 머지 커밋 `447c1508`) · CI 3건 **전건 success**
+  (`PS1 gates` · `MJS gates` · `GitGuardian Security Checks`, 20:35:57 KST 기준).
+- **회수 전 안전 확인** — 워크트리 `git status --porcelain -uall` **빈 것** · `git stash list` **빈 것** ·
+  재parse point(심볼릭 링크/정션) **0건** · 브랜치 `chore/csn70424-maint114-20261113-2020` 가
+  **머지된 PR head 이름과 일치**(머지 게이트 통과 조건 · KNOW-023) · `origin/main` = `447c150` 로 갱신(fetch 완료).
+- **정본 도구 실행** (`scripts/gissue/cleanup-worktrees.ps1 -RepoPath "C:\Users\lowys\Downloads\projects\giip-fde-agent"
+  -OnlyPath "D:\temp\worktrees\giip-fde-agent\maint-114-2020" -MinIdleMinutes 0`, **공유 체크아웃 cwd** 에서 실행):
+  - DryRun → `삭제 1건 / locked 제외 0건 / 수동확인 필요 0건`
+    (로그: "삭제 예정(머지 확인, idle 가드 비활성(MinIdleMinutes=0), 링크 없음 확인됨)")
+  - 실행 → `삭제됨(머지 확인, idle 가드 비활성, 인접 레포 무결성 재검증 통과)` +
+    `원격 브랜치 삭제: chore/csn70424-maint114-20261113-2020` ⇒ **요약: 삭제 1건 / 수동확인 필요 0건**
+- **회수 후 실측** — `git worktree list` **7행**(공유 체크아웃 `main` + 워크트리 6건) ·
+  대상 디렉터리 소멸 ✓ · 로컬 브랜치 소멸 ✓(`git branch --list` 0건) ·
+  원격 ref 소멸 ✓(`git ls-remote --heads` 0건) · 공유 체크아웃 `git status` **변화 없음**(untracked 3건 그대로) ·
+  `git fsck` **오류 0건**(dangling 객체만).
+- **잔여 워크트리 6건 — 전부 미접촉** — `giip-5054-refine`(이슈 5054) · `giip-5142-svcguard`(활성 이슈 5142) ·
+  `maint-62-2331`(기존 보류) · `verify-4139-c7`·`verify-5054-main`(detached HEAD · KNOW-045) +
+  **`isn5180-busy-repo-eap-probe`** — 세션 시작 이후 **다른 세션이 신규 생성한 워크트리**(이슈 5180 진행분)여서 미접촉.
+- **공유 체크아웃** `main` = `e2068d2`(origin/main `447c150` 보다 1커밋 뒤처짐) — 본 세션은 공유 체크아웃을
+  **읽기 전용**으로만 썼으므로 ff-sync 는 다음 회차가 한다.
 
 ## k-layer / tKB
 
@@ -181,14 +206,18 @@
   [F] 오판 stash 0건 ·
   [H] 2시간 창 6건 / 24시간 창 49건 — **정정 0건 · 상태 전이 0건 · 이슈 쓰기 0건**.
 - 별도 act **0건** · **코드 변경 0건**(문서 2건만: 본 기록 + What's New 항목).
-- 워크트리 회수 **1건**(`giip-5141-idle-inbound` · PR #420 머지분 · idle 게이트 SKIP 을 4종 증빙으로 해제) ·
-  MANUAL-REVIEW 5건 미접촉 · 고아 0건.
+- 워크트리 회수 **2건**(`giip-5141-idle-inbound` · PR #420 머지분 · idle 게이트 SKIP 을 4종 증빙으로 해제 +
+  본 세션 워크트리 `maint-114-2020` · PR #421 머지 후) ·
+  잔여 워크트리 6건 전부 미접촉(타 세션 소유분) · 고아 0건.
 - 성역(giipApi/giipApiSk2) 미접촉 · main 직접 push 없음 · PR 경유 · 명시적 경로 스테이징만.
 
 ## 남은 사항 (다음 회차가 이어받을 것)
 
 - MANUAL-REVIEW 5건(`giip-5054-refine` · `giip-5142-svcguard` · `maint-62-2331` · `verify-4139-c7` · `verify-5054-main`)은
   사람이 판단해야 회수된다 — detached HEAD 2건은 **자동 회수 경로가 없다**(KNOW-045).
+- **`isn5180-busy-repo-eap-probe`** — 본 세션 시작 이후 **다른 세션이 신규 생성한 워크트리**(이슈 5180 진행분) ·
+  미접촉 유지(타 세션 산출물).
+- 공유 체크아웃 `main` 은 `e2068d2`(origin/main `447c150` 보다 1커밋 뒤처짐) — **다음 회차가 ff-sync** 한다.
 - `giip-5142-svcguard` 의 미커밋 5건은 **활성 이슈 5142** 의 진행 중 산출물 — 해당 이슈 세션이 이어서 PR 로 올려야 한다
   (미커밋 상태로 두면 유실 위험 — KNOW-030).
 - `giip-5054-refine`·`verify-5054-main` 은 이슈 5054(DONE) 세션 소유분 — 미접촉 유지.
