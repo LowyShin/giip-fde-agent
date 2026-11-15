@@ -62,3 +62,12 @@
 - 커밋 전 `git diff`로 추가 줄의 타 CSN 번호·고객 식별 문자열을 확인한다(기대 출현: 자 CSN
   70424와 기존 코드가 인용하는 giip 이슈 번호뿐).
 - 이 작업의 worktree(`wt-kvsreport`)는 PR 머지 후 rule 57에 따라 정리한다.
+
+## CI 검증 결과 (2026-11-15)
+
+- PR #443 1차 CI: PS1 게이트에서 `test-kvs-report.ps1` 1건 실패 — 원인은 lib의 래퍼 함수가
+  `Write-Output`으로 로그를 써서 반환 스트림이 오염되고, 전송 실패($false)가 배열 truthy로
+  판정된 것. 실제 러너에서도 `Send-GissueRunHistory`의 OK/FAIL 로그가 잘못 찍힐 수 있는
+  실결함이라, 함수 내 로그를 전부 `Write-Host`로 바꾸고 빈 SK/LSSN 가드가 바인딩 단계에서
+  막히지 않게 Mandatory를 풀어 수정 커밋을 추가했다(lib 헤더에 재발 방지 주석 명시).
+- 2차 CI: PS1 게이트 · MJS 게이트 · GitGuardian 전부 pass.
