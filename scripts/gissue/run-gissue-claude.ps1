@@ -445,52 +445,22 @@ function Send-GissueLssnHeartbeat($hbCfg) {
 }
 
 # [giip #2384] "이번 :07 실행에서 CSN별로 몇 건을 처리/실패했는지"를 tKVS 실행 이력 레코드로 남긴다.
-# heartbeat(liveness ping)와는 별개다. curl.exe + 무BOM 임시파일 인코딩(giip #2316: PowerShell 5.1 의
-# Set-Content -Encoding UTF8 은 BOM 을 붙여 curl --data-urlencode jsondata@file 로 읽을 때 JSON 파싱이
-# 깨진다 — .NET File.WriteAllText + UTF8Encoding($false) 로 회피).
+# heartbeat(liveness ping)와는 별개다. 전송 본체(curl.exe + 무BOM 임시파일, giip #2316 회피 포함)는
+# giip #5345 부터 lib/kvs-report.ps1 의 Send-GissueKvsPut 이 정본이다.
 function Send-GissueRunHistory {
     param(
         [Parameter(Mandatory)][string]$Lssn,
         [Parameter(Mandatory)]$Value,
         [Parameter(Mandatory)][string]$Sk
     )
-    try {
-        $jsondataObj = @{ kType = 'lssn'; kKey = $Lssn; kFactor = 'scheduler_run_history'; kValue = $Value }
-        $jsondata = $jsondataObj | ConvertTo-Json -Depth 12 -Compress
-        $tmpFile = [System.IO.Path]::GetTempFileName()
-        try {
-            $utf8NoBom = New-Object System.Text.UTF8Encoding $false
-            [System.IO.File]::WriteAllText($tmpFile, $jsondata, $utf8NoBom)
-            # giipApiSk2 는 이 호출을 400 "Malformed JSON in query parameter" 로 거부한다(2026-09-25 실측:
-            # usertoken 의 sk 값을 JSON 숫자로 파싱). giipAgentLinux kvsput 과 같은 giipApiSk4 + token 만 쓴다.
-            $curlArgs = @(
-                '-s', '-X', 'POST', ($ApiSk2Url -replace 'giipApiSk2$', 'giipApiSk4'),
-                '-H', 'Content-Type: application/x-www-form-urlencoded',
-                '--data-urlencode', 'text=KVSPut kType kKey kFactor',
-                '--data-urlencode', "token=$Sk",
-                '--data-urlencode', "jsondata@$tmpFile",
-                '--max-time', '20'
-            )
-            $respRaw = (& $script:GissueCurlExe @curlArgs) -join "`n"
-            # 전체 JSON 파싱이 깨지더라도 RstVal 만 정규식으로 뽑아 판정한다.
-            $rstVal = $null
-            try {
-                $resp = $respRaw | ConvertFrom-Json
-                $rstVal = $resp.data[0].RstVal
-            } catch {
-                $m = [regex]::Match($respRaw, '"RstVal"\s*:\s*(\d+)')
-                if ($m.Success) { $rstVal = [int]$m.Groups[1].Value }
-            }
-            if ($rstVal -ne 200) {
-                Write-Output "[WARN][RUN-HISTORY] KVSPut 실패(lssn=$Lssn): $respRaw"
-            } else {
-                Write-Output "[RUN-HISTORY] OK(lssn=$Lssn)"
-            }
-        } finally {
-            Remove-Item -Path $tmpFile -Force -ErrorAction SilentlyContinue
-        }
-    } catch {
-        Write-Output "[WARN][RUN-HISTORY] 실패(스케줄러 본연 동작에는 영향 없음): $($_.Exception.Message)"
+    # [giip #5345] 전송 본체는 lib/kvs-report.ps1 의 Send-GissueKvsPut 으로 일원화했다(와이어 형식 동일 —
+    # giipApiSk4 + token, KVSPut, 무BOM 임시파일). 이 함수는 기존 호출부와 로그 표기([RUN-HISTORY])를
+    # 유지하는 얇은 래퍼다. Send-GissueKvsPut 은 실패해도 throw 하지 않으므로 fail-open 이 그대로 유지된다.
+    $ok = Send-GissueKvsPut -Lssn $Lssn -Factor 'scheduler_run_history' -Value $Value -Sk $Sk
+    if ($ok) {
+        Write-Output "[RUN-HISTORY] OK(lssn=$Lssn)"
+    } else {
+        Write-Output "[WARN][RUN-HISTORY] KVSPut 실패(lssn=$Lssn)"
     }
 }
 
@@ -1335,6 +1305,11 @@ if ($mapRoot.forcedUnblockExcludeRepoNames) {
 }
 $HeartbeatCfg = Get-GissueHeartbeatConfig $mapRoot
 
+# [giip #5345] tKVS 시작/알람/리포트 공용 모듈 — 판정·전송의 정본은 lib/kvs-report.ps1 한 곳이다.
+# 이 경로는 AI(엔진)를 거치지 않는다: 시작 기록은 어떤 엔진 호출보다 먼저 남기고, 알람은 limit 으로
+# 엔진이 죽은 바로 그 상황에서도 스케줄러 본체가 직접 보낼 수 있어야 하기 때문이다(가이드 §17).
+. (Join-Path $Root 'lib/kvs-report.ps1')
+
 # [giip 3615] 소프트 예산: "새 이슈를 시작해도 되는 시간"(하드 타임아웃 $RunTimeoutMin 과 별개). 기본 비활성 = 기존 동작.
 # csn-projects.json 최상위 softBudgetMin 이 환경변수 GISSUE_SOFT_BUDGET_MIN 보다 우선한다(정본·사유: lib/soft-budget.ps1).
 . (Join-Path $Root 'lib/soft-budget.ps1')
@@ -2026,6 +2001,29 @@ if ($FunctionsOnly) {
 
 # 에이전트 레포의 NOT-ON-MAIN 상태 체크 (이 함수 호출은 Phase 1 사전점검 보다 먼저 수행)
 Invoke-GissueSelfPullNotOnMainCheck -RepoRoot $AgentRepo -Log { param($m) Write-Output $m }
+
+# ── [giip #5345] tKVS 시작 기록 — 자기 갱신(self-pull)까지 끝난 이 지점에서, 어떤 엔진(AI) 호출보다
+# 먼저 스케줄러 본체가 직접 남긴다. limit 으로 실행 도중 AI 가 죽어도 "언제 · 어느 머신(hostname/IP) ·
+# 어느 코드(agentCommit)로 시작했는가"는 GIIP 에 남는다. 실패는 WARN 만 남기고 계속한다(fail-open).
+$script:GissueSchedulerRunId = 'run-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + $PID
+try {
+    if ($HeartbeatCfg -and $HeartbeatCfg.Lssn) {
+        $startSk = $null
+        foreach ($csnKey in @($map.PSObject.Properties.Name)) {
+            $candSk = Get-GissueCsnSk $csnKey
+            if ($candSk) { $startSk = $candSk; break }
+        }
+        if ($startSk) {
+            $agentCommit = ''
+            try { $agentCommit = (& git -C $AgentRepo rev-parse --short HEAD 2>$null) } catch { $agentCommit = '' }
+            $null = Send-GissueSchedulerStartRecord -Lssn $HeartbeatCfg.Lssn -Sk $startSk -RunId $script:GissueSchedulerRunId -CsnList @($map.PSObject.Properties.Name) -Commit "$agentCommit"
+        } else {
+            Write-Output "[WARN][KVS-START] SKIP: 어떤 CSN 의 SK 도 없어 시작 기록을 남기지 못함"
+        }
+    }
+} catch {
+    Write-Output "[WARN][KVS-START] 시작 기록 실패(무시하고 계속): $($_.Exception.Message)"
+}
 
 function Invoke-GissueWorktreeCleanup($csn, $workdir, [switch]$DryRunSwitch, [int]$MinIdleMinutes = -1) {
     if (-not $script:WorktreeEngineLoaded) { return }
@@ -3860,6 +3858,20 @@ function Complete-Run($r, $status) {
             Write-Log $r.Csn "[SchedulerState-runEnd] 실패: $($_.Exception.Message)"
         }
     }
+    # [giip #5345] tKVS CSN별 종료 리포트 + 비정상 알람 — 스케줄러 본체가 직접 기록한다(AI 경유 금지).
+    # limit 으로 엔진이 죽은 경우에도 이 경로는 순수 코드라 전송할 수 있다. 실패해도 종료 처리는 계속한다.
+    try {
+        if ($r.Sk -and $HeartbeatCfg -and $HeartbeatCfg.Lssn) {
+            $jobText = if ($jobOut) { ($jobOut | Out-String) } else { '' }
+            $null = Send-GissueSchedulerRunReport -Lssn $HeartbeatCfg.Lssn -Sk $r.Sk -Csn "$($r.Csn)" -Status $status -Processed $r.ProcessedCount -Skipped $r.SkippedCount -Failed $r.FailedCount -RunId "$($r.RunIdKey)"
+            $alarmKind = Get-GissueAlarmKind $status $jobText
+            if ($alarmKind) {
+                $null = Send-GissueSchedulerAlarmRecord -Lssn $HeartbeatCfg.Lssn -Sk $r.Sk -Kind $alarmKind -Csn "$($r.Csn)" -RunId "$($r.RunIdKey)" -Status $status -Detail $jobText
+            }
+        }
+    } catch {
+        Write-Log $r.Csn "[KVS-REPORT][WARN] tKVS 리포트/알람 실패(무시하고 계속): $($_.Exception.Message)"
+    }
     Remove-Job $r.Job -Force -ErrorAction SilentlyContinue
     Remove-Item $r.Lock -Force -ErrorAction SilentlyContinue
     # [giip 4431 항목 1] 여기까지(선점 해제 + 종료 기록)는 즉시 수행하고 Done 으로 표시한다. 세션 종료
@@ -4076,11 +4088,15 @@ Invoke-GissuePostProcessPump -Drain
             $totalProcessed = ($runs | Measure-Object -Property ProcessedCount -Sum).Sum
             $totalFailed    = ($runs | Measure-Object -Property FailedCount -Sum).Sum
             $csnList        = ($runs | ForEach-Object { $_.Csn }) -join ', '
+            # [giip #5345] 같은 CSN 을 두 머신에서 돌리는 경우를 구분할 수 있게 IP 와 CSN별 내역을 함께 남긴다.
+            $hostId = Get-GissueHostIdentity
             $historyValue = @{
-                taskName = 'GIIP_Gissue_Claude'
-                ranAt    = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
-                hostname = "$env:COMPUTERNAME"
-                summary  = "CSN [$csnList] 처리 $totalProcessed / 실패 $totalFailed"
+                taskName   = 'GIIP_Gissue_Claude'
+                ranAt      = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+                hostname   = $hostId.hostname
+                ips        = @($hostId.ips)
+                csnResults = @($runs | ForEach-Object { @{ csn = "$($_.Csn)"; processed = $_.ProcessedCount; failed = $_.FailedCount } })
+                summary    = "CSN [$csnList] 처리 $totalProcessed / 실패 $totalFailed"
             }
             $anySk = @($runs | Where-Object { $_.Sk } | Select-Object -First 1).Sk
             if ($anySk) { Send-GissueRunHistory -Lssn $HeartbeatCfg.Lssn -Value $historyValue -Sk $anySk }

@@ -6,9 +6,12 @@
 >
 > *(EN/JP 독자는 각 항목을 AI 에이전트에 번역 요청하세요. / Ask your AI assistant to translate entries.)*
 
-**기준일 (as of): 2026-11-14**
+**기준일 (as of): 2026-11-15**
 
 ---
+
+## 2026-11-15
+- **스케줄러가 시작 · 알람 · CSN별 리포트를 GIIP tKVS 에 직접 남기게 됨 — 본체 비AI 원칙 (giip 5345, CSN 70424)** — 사용자 지시(2026-11-15): limit 등으로 에러가 나면 tKVS 에 알람이 가고, 실행 리포트에 실행 PC 의 hostname 과 IP 가 함께 기록될 것(같은 CSN 을 두 머신에서 실행하는 구성 때문). 기존 tKVS 기록은 종료 집계 1건(건수+hostname)뿐이라 시작 기록 · IP · limit 알람이 없었다. **신설** — 공용 모듈 `scripts/gissue/lib/kvs-report.ps1`(호스트 식별 hostname+IP, limit 서명 · 알람 종류 판정의 정본, KVSPut 전송 본체 — 기존 `Send-GissueRunHistory` 도 이 경유로 일원화). **배선** — ① 시작 기록 `scheduler_run_start`: 자기 갱신(self-pull) 직후 · 어떤 엔진(AI) 호출보다 먼저, agentCommit 포함(어느 머신이 어느 코드로 시작했는지 대조 가능) ② CSN별 종료 리포트 `scheduler_run_report`(Complete-Run) ③ 알람 `scheduler_alarm`: 잡 출력의 limit 서명을 본체가 검출하면 DONE 종료여도 `kind=LIMIT`, TIMEOUT/ZOMBIE/OVERTIME/기타 비정상도 각각 기록 ④ 기존 종료 집계에 ips + CSN별 내역 추가. 전부 **AI 를 거치지 않는 순수 코드 경로**라 limit 으로 AI 가 죽은 순간에도 전송되고, 실패해도 본 실행은 계속된다(fail-open). 가이드: 스케줄러 사양 §17(본체 비AI 원칙 · 기록 4종 · 머신 식별 · 자기 갱신과의 관계). 회귀 테스트 신규(`scripts/gissue/tests/test-kvs-report.ps1` — 네트워크 없이 판정 · 페이로드 검증, 게이트 기대 건수 41→42). → [사양 §17](60-operations/hourly-issue-scheduler.md)
 
 ## 2026-11-14
 - **svchost 호스팅 서비스의 상주 메모리 측정 + 임계 초과 시 조건부 자동 재기동 도구 신설 — `scripts/svcguard/` (giip 5142)** — 작업 PC 에서 `PcaSvc`(프로그램 호환성 도우미) 호스팅 svchost 가 PrivateBytes 1.9GB 로 상주하고 주기적으로 2배 급증하는 실측을 계기로, **특정 PC·서비스에 묶이지 않는 범용·파라미터화** 도구를 만들었다. 핵심은 "재기동"이 아니라 **측정** — 어떤 서비스가 *실행된 프로그램 수에 비례해* 메모리를 누적하는지(원인 가설)를 로그로 검증할 수 있게, 매 샘플에 `privateBytesMB`·`systemProcessCount`·직전 대비 `growthMBPerHour`·`growthMBPerNewProcess` 를 JSONL 로 남긴다. 재기동은 안전장치로, **기준선(최근 N개 샘플의 최솟값) ≥ 임계값**일 때만 트리거해 1~3초짜리 순간 급증에 과민반응하지 않고, 최소 간격 가드로 과빈 재기동을 막는다. 관리자 권한이 없어 `Restart-Service` 가 실패해도 측정 로그는 남기고 정상 종료(예약 태스크가 죽지 않게). 등록은 **사람이 관리자 권한으로 1회** `register-svcguard-scheduler.ps1 -Action Register`(SYSTEM 계정 예약 태스크)로 수행하며, 임시 worktree 경로 등록은 공용 게이트(`task-target-guard.ps1`/`task-cadence-guard.ps1`)가 거부한다. 회귀 테스트 신규(`scripts/gissue/tests/test-svcguard-restart-on-memory.ps1` — 임계 초과/미만·최소 간격·사유 우선순위·로그 스키마·등록 미리보기·게이트를 **양방향**으로 고정, 모든 실행은 `-WhatIf`). 로그 해석법(프로세스 수 구간별 평균 증가 속도 등)은 `scripts/svcguard/README.md`. → [README](../scripts/svcguard/README.md), [러너](../scripts/svcguard/restart-service-on-memory.ps1), [등록기](../scripts/svcguard/register-svcguard-scheduler.ps1), [회귀 테스트](../scripts/gissue/tests/test-svcguard-restart-on-memory.ps1), [이슈 5142](https://giip.littleworld.net/ko/admin/giip-issues/5142)
