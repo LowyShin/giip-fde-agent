@@ -28,6 +28,10 @@
 #   scheduler_run_report  CSN별 종료 1건 (event=report, csn, status, processed, skipped, failed, runId)
 #   scheduler_run_history 기존 종료 집계 (giip #2384 — Send-GissueRunHistory 가 이 모듈 경유로 전송)
 #
+# ── 구현 주의 ──
+#   값을 돌려주는 함수 안의 로그는 Write-Host 로 쓴다. Write-Output 은 함수 반환 스트림에 섞여
+#   $ok 가 배열이 되고, 실패($false)가 truthy 로 판정되는 실결함이 된다(CI test-kvs-report 가 검출).
+#
 # ── 테스트 ──
 #   전송은 $script:GissueKvsTransport 포트(스크립트블록: param($JsonData, $Sk) -> bool)로 교체할 수 있다.
 #   테스트는 포트를 가짜로 바꿔 네트워크 없이 페이로드를 검증한다 (tests/test-kvs-report.ps1).
@@ -79,13 +83,13 @@ function Get-GissueHostIdentity {
 # tKVS 전송 본체. 성공 $true / 실패·스킵 $false. 절대 throw 하지 않는다.
 function Send-GissueKvsPut {
     param(
-        [Parameter(Mandatory)][string]$Lssn,
+        [string]$Lssn,
         [Parameter(Mandatory)][string]$Factor,
         [Parameter(Mandatory)]$Value,
-        [Parameter(Mandatory)][string]$Sk
+        [string]$Sk
     )
     if (-not $Lssn -or -not $Sk) {
-        Write-Output "[WARN][KVS] SKIP factor=$Factor (lssn/sk 없음)"
+        Write-Host "[WARN][KVS] SKIP factor=$Factor (lssn/sk 없음)"
         return $false
     }
     try {
@@ -118,7 +122,7 @@ function Send-GissueKvsPut {
                 if ($m.Success) { $rstVal = [int]$m.Groups[1].Value }
             }
             if ($rstVal -ne 200) {
-                Write-Output "[WARN][KVS] KVSPut 실패(factor=$Factor): $respRaw"
+                Write-Host "[WARN][KVS] KVSPut 실패(factor=$Factor): $respRaw"
                 return $false
             }
             return $true
@@ -126,7 +130,7 @@ function Send-GissueKvsPut {
             Remove-Item -Path $tmpFile -Force -ErrorAction SilentlyContinue
         }
     } catch {
-        Write-Output "[WARN][KVS] 전송 실패(factor=$Factor, 스케줄러 본연 동작에는 영향 없음): $($_.Exception.Message)"
+        Write-Host "[WARN][KVS] 전송 실패(factor=$Factor, 스케줄러 본연 동작에는 영향 없음): $($_.Exception.Message)"
         return $false
     }
 }
@@ -152,7 +156,7 @@ function Send-GissueSchedulerStartRecord {
         pid         = $PID
     }
     $ok = Send-GissueKvsPut -Lssn $Lssn -Factor 'scheduler_run_start' -Value $value -Sk $Sk
-    Write-Output "[KVS-START] $(if ($ok) { 'OK' } else { 'FAIL' }) runId=$RunId host=$($hostId.hostname) ips=$(@($hostId.ips) -join ',')"
+    Write-Host "[KVS-START] $(if ($ok) { 'OK' } else { 'FAIL' }) runId=$RunId host=$($hostId.hostname) ips=$(@($hostId.ips) -join ',')"
     return $ok
 }
 
@@ -181,7 +185,7 @@ function Send-GissueSchedulerAlarmRecord {
         detail   = $detailTrim
     }
     $ok = Send-GissueKvsPut -Lssn $Lssn -Factor 'scheduler_alarm' -Value $value -Sk $Sk
-    Write-Output "[KVS-ALARM] $(if ($ok) { 'OK' } else { 'FAIL' }) kind=$Kind csn=$Csn status=$Status"
+    Write-Host "[KVS-ALARM] $(if ($ok) { 'OK' } else { 'FAIL' }) kind=$Kind csn=$Csn status=$Status"
     return $ok
 }
 
@@ -211,6 +215,6 @@ function Send-GissueSchedulerRunReport {
         failed    = $Failed
     }
     $ok = Send-GissueKvsPut -Lssn $Lssn -Factor 'scheduler_run_report' -Value $value -Sk $Sk
-    Write-Output "[KVS-REPORT] $(if ($ok) { 'OK' } else { 'FAIL' }) csn=$Csn status=$Status processed=$Processed failed=$Failed"
+    Write-Host "[KVS-REPORT] $(if ($ok) { 'OK' } else { 'FAIL' }) csn=$Csn status=$Status processed=$Processed failed=$Failed"
     return $ok
 }
