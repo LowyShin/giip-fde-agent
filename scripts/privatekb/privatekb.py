@@ -203,11 +203,30 @@ def cmd_list(a, sk):
     print("-- %d건 표시 (전체 %d건)" % (min(len(rows), a.limit), len(rows)))
 
 
+_NOTE_NAME_RE = re.compile(r"^([^/\s]+/KNOW-\d+)_(.+)$")
+
+
+def derive_kb_title(filename):
+    """노트 파일명 '<레포>/KNOW-NNN_<설명>.md' -> KB 제목 '<설명> — <레포>/KNOW-NNN' (giip 5347).
+
+    설명의 '_' 는 공백으로 바꾼다. 형식이 맞지 않으면 파일명을 그대로 돌려준다(폴백).
+    순수 함수 — API 호출 없음.
+    """
+    base = filename[:-3] if filename.endswith(".md") else filename
+    m = _NOTE_NAME_RE.match(base)
+    if not m:
+        return filename
+    desc = m.group(2).replace("_", " ").strip()
+    if not desc:
+        return filename
+    return "%s — %s" % (desc, m.group(1))
+
+
 def cmd_sync_klayer(a, sk):
     """k_layer 노트 폴더를 tPrivateKB 에 title 기준으로 올린다.
 
-    노트들이 존재한다고 적어두었던 바로 그 동작이다. title = 파일명(확장자 포함)으로
-    두어, 파일을 고쳐 다시 돌리면 새 행이 쌓이지 않고 같은 행이 갱신된다.
+    노트들이 존재한다고 적어두었던 바로 그 동작이다. title = 파일명에서 derive_kb_title 로
+    파생한 값(형식 불일치 시 파일명 그대로)으로 두어, 파일을 고쳐 다시 돌리면 새 행이 쌓이지 않고 같은 행이 갱신된다.
     """
     if not os.path.isdir(a.dir):
         die("폴더가 없습니다: %s" % a.dir, 2)
@@ -220,16 +239,17 @@ def cmd_sync_klayer(a, sk):
         path = os.path.join(a.dir, n)
         with open(path, "r", encoding="utf-8") as f:
             content = f.read()
+        title = derive_kb_title(n)
         if a.dry_run:
-            print("[dry-run] %s (%d자)" % (n, len(content)))
+            print("[dry-run] %s -> %s (%d자)" % (n, title, len(content)))
             continue
-        existing = find_by_title(a.csn, n, sk)
+        existing = find_by_title(a.csn, title, sk)
         if existing:
-            call("KbUpdate", {"kbSn": existing, "title": n,
+            call("KbUpdate", {"kbSn": existing, "title": title,
                               "content": content, "tags": a.tags}, sk)
             print("updated %-60s kbSn=%s" % (n, existing))
         else:
-            rows = call("KbCreate", {"csn": a.csn, "refType": a.ref_type, "title": n,
+            rows = call("KbCreate", {"csn": a.csn, "refType": a.ref_type, "title": title,
                                      "content": content, "tags": a.tags}, sk)
             kbsn = next((r.get("kbSn") for r in rows if isinstance(r, dict) and r.get("kbSn")), None)
             print("created %-60s kbSn=%s" % (n, kbsn))
