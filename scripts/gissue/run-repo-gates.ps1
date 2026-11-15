@@ -75,7 +75,7 @@ try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } 
 # 2026-11-14: svcguard 측정/조건부 재기동 회귀 테스트 1건(test-svcguard-restart-on-memory.ps1, giip 5142) 추가 → 39 → 40.
 #   + 실측 결과 main 에 이미 test-worktree-claude-session-guard.ps1(giip 5175, PR #428)이 기대값 상향 없이
 #     들어와 실제 40건이었음(기대 39 과 1건 슬랙) → svcguard 1건까지 반영해 실측 41건에 정확히 고정 → 41.
-$ExpectedPs1TestCount = 41
+$ExpectedPs1TestCount = 42
 $ExpectedMjsTestCount = 8
 
 function Write-Gate([string]$Message) {

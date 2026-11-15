@@ -1254,3 +1254,41 @@ Test-Path scripts\gissue\lib\liveness-ops-issue.js
 - 저장: 코멘트는 `giipIssueComments`(tGiipIssueComment) 에 저장된다. 소비처: `gissue-audit-lib.ps1` `Test-HasNoPrReasonMarker` ->
   보고형 완료 판정(`Invoke-ReportCompletionJudge`, giip 3801)이 의뢰와 결과를 대조해 FULFILLED 면 DONE, 아니면 되돌린다.
 - 범위 밖: `onError`(에러 종료)는 완료 주장이 아니므로 마커를 남기지 않는다. 테스트: `slack-bot/tests/no-pr-report.test.js`.
+
+## 17) 스케줄러 본체 비AI 원칙 + tKVS 시작/알람/리포트 (giip 5345)
+
+### 17-1) 원칙 — 본체는 처음부터 AI 를 쓰지 않는다
+
+- 스케줄러 본체(`run-gissue-claude.ps1`)는 기동 · 자기 갱신 · 큐 조회 · 잠금 · 감시 · 기록까지 전부 결정적 코드로 수행하고, AI(엔진 claude/MiniMax)는 **이슈 처리 단계에서만** 호출한다.
+- 이유: 보고 · 알람 경로가 AI 를 거치면, 정작 알려야 할 순간 — limit 도달로 AI 가 죽은 순간 — 에 전송 자체가 불가능해진다. "AI 가 죽었다"는 사실은 AI 가 아닌 본체가 알려야 한다.
+- 따라서 시작 로깅 · 알람 · 리포트는 전부 본체의 순수 코드 경로(`scripts/gissue/lib/kvs-report.ps1`)로 GIIP tKVS 에 직접 기록한다. 이 경로의 실패는 본 실행을 멈추지 않는다(fail-open — WARN 로그만 남긴다).
+
+### 17-2) 기록 3종 + 기존 1종
+
+전부 키 공간은 기존 실행 이력과 동일하게 `kType='lssn'`, `kKey=<LSSN>` 이고, 전송은 giipApiSk4 + `KVSPut` 이다(전송 본체의 정본은 `Send-GissueKvsPut` — 기존 `Send-GissueRunHistory` 도 이 경유로 전송한다).
+
+| 시점 | kFactor | 내용 |
+| :--- | :--- | :--- |
+| 자기 갱신(self-pull) 직후 · 엔진 호출 전 | `scheduler_run_start` | runId, at, hostname, ips, csns, agentCommit, pid |
+| CSN 잡 종료(Complete-Run) | `scheduler_run_report` | csn, status, processed/skipped/failed, runId, hostname, ips |
+| 비정상 판정 시(Complete-Run) | `scheduler_alarm` | kind(`LIMIT`/`TIMEOUT`/`ZOMBIE`/`OVERTIME`/`RUN_FAIL`), csn, status, detail(500자 절단) |
+| 실행 종료 집계(finally) | `scheduler_run_history` (기존, giip #2384) | 건수 + hostname + **ips + CSN별 내역** (5345 에서 확장) |
+
+### 17-3) 머신 식별 — hostname + IP 를 항상 함께
+
+같은 CSN 을 두 머신에서 실행하는 구성이 있으므로 모든 기록에 hostname 과 IP 목록을 함께 남긴다. 시작 기록의 `agentCommit` 으로는 "그 머신이 어느 코드로 돌았는가"까지 대조할 수 있다 — GitHub 에 올린 수정이 실제 머신에 닿았는지는, 시작 기록의 agentCommit 이 최신 main 과 같은지로 확인한다.
+
+### 17-4) limit 알람 판정
+
+- 판정의 정본은 `lib/kvs-report.ps1` 의 `Test-GissueLimitSignature` / `Get-GissueAlarmKind` 한 곳뿐이다(rule 48 — 판정을 복붙하지 않는다).
+- Complete-Run 이 잡 출력에서 limit 서명(`429` · `rate limit` · `quota` · `usage limit` · `Token Plan` · `token revoked` · `사용량 한도` 등)을 검출하면, 종료 상태가 DONE 이어도 `kind=LIMIT` 알람을 남긴다. TIMEOUT/ZOMBIE/OVERTIME/그 외 비정상 종료도 각각 알람이 된다.
+- 엔진 시도 내부의 폴백 판정(MiniMax → Claude)과는 목적이 다르다: 폴백은 "계속 일할 수 있는가"의 판정이고, 이쪽은 "GIIP 에 알릴 것인가"의 판정이다.
+
+### 17-5) 최신 코드 수신(자기 갱신)과의 관계
+
+- 러너는 시작 시 self-pull 로 에이전트 레포를 최신화하고(giip #2386), NOT-ON-MAIN 상태면 조건 충족 시 main 복귀를 시도한다. 실행 도중의 코드 변경은 code-freshness 가드(giip #2471)가 파괴적 작업을 다음 실행으로 미루는 방식으로 방어한다.
+- 즉 GitHub main 에 머지된 수정은 다음 :07 실행부터 각 머신의 정본 체크아웃에 전파되고, 전파 여부는 §17-3 의 agentCommit 대조로 확인한다. 단 §11 의 함정(PR 머지 ≠ 즉시 반영)과 §13-2 의 복사본 배포 격차는 그대로 유효하다 — self-pull 대상은 정본 체크아웃에서 도는 러너뿐이다.
+
+### 17-6) 테스트
+
+- `scripts/gissue/tests/test-kvs-report.ps1` — 판정(limit 서명 · 알람 종류)과 페이로드(kType/kKey/kFactor/kValue, hostname/IP 포함)를 네트워크 없이 검증한다(전송 포트를 가짜로 교체). 게이트 기대 건수에 포함된다.
