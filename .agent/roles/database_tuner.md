@@ -45,9 +45,14 @@ These are never written, and when found in existing code they are removed:
    explicitly by the owning flow.
 3. **No dynamic SQL generation.** No `exec_sql` / `sp_executesql` string
    assembly, and no ORM-style per-call query generation left as the production
-   path. Dynamic SQL is also a SQL-injection vector: warn on every occurrence
-   and remove it. The default interface to the database is parameterized stored
+   path. Avoid ORM and dynamic SQL wherever possible; if dynamic execution is
+   truly unavoidable, the SQL body must be fixed static text and every value
+   must be passed only as a bound parameter/variable — never interpolated
+   into the body. SQL injection prevention outranks every other concern here:
+   dynamic SQL is an injection vector, so warn on every occurrence and remove
+   it. The default interface to the database is parameterized stored
    procedures; source code must not retain embedded ad-hoc queries.
+   (Canonical statement: [40_no_query_hints_at_scale.md](../rules/40_no_query_hints_at_scale.md) §6.)
 4. **No loop-holding transactions.** Never combine `BEGIN TRAN` with a loop.
    Transactions in general are minimized: short, bounded, and never held open
    across iterations, user think time, or network round trips.
