@@ -41,6 +41,15 @@
 ### [garrytan/gstack](https://github.com/garrytan/gstack) ([분석 리포트](./docs/50-technical/gstack-analysis.md))
 - **설명**: Garry Tan의 23가지 전문 에이전트 도구 모음(CEO, Designer, CSO 등)으로 에이전트의 생산성을 극대화합니다.
 
+### [garrytan/gbrain](https://github.com/garrytan/gbrain)
+- **설명**: 개인 노트와 회사 문서를 facts 페이지·결정 로그·콜 트랜스크립트로 모은 "에이전트 공용 브레인". Claude Code·Codex·ChatGPT 등 연결된 모든 에이전트가 답변 전에 이 브레인을 먼저 참조하므로, 에이전트마다 처음부터 다시 설명할 필요가 없어진다. MIT 라이선스, 셀프호스팅 가능, MCP로 연결한다. K-Layer(지식 축적 위키) 패턴의 제품형 구현 사례.
+
+### [akitaonrails/ai-memory](https://github.com/akitaonrails/ai-memory)
+- **설명**: 에이전트 코딩 CLI용 장기 메모리 + 벤더 간 핸드오프 솔루션. Claude Code에서 중단한 작업을 Codex에서 그대로 이어받는 식으로, 20종 이상의 하네스가 하나의 공유 메모리를 사용한다. 정본은 git 기반 마크다운 위키이며(파생 인덱스는 언제든 재구축 가능), 핸드오프는 소유자가 있고 정확히 한 번만 수령되는 타입드 프로토콜로 이뤄진다.
+
+### [huytieu/COG-second-brain](https://github.com/huytieu/COG-second-brain)
+- **설명**: DB 없이 마크다운만으로 동작하는 자기진화형 세컨드 브레인. 스킬 43종 + 에이전트 10종(워커 6 + 읽기 전용 검증자 4)의 폐쇄 루프 하네스로 "작업자가 자기 숙제를 채점하지 않는다"는 검증 분리 원칙을 구현한다. people CRM을 포함하고 Claude Code·Antigravity·Codex 등 다중 하네스 표면을 동시에 제공해, 본 레포 `.agent` 구조와 가장 가까운 공개 사례다.
+
 ### [LilMGenius/paperthin](https://github.com/LilMGenius/paperthin)
 - **설명**: 아티팩트를 "깨끗하고 참되게(clean & true)" 유지하는 에이전트-불문 저수준 마크다운 스킬 모음(re0/shower/factchk/ssotchk/hate 등). DRY·에고리스 프로그래밍·fail-fast 같은 엔지니어링 지혜를 에이전트가 스스로 꺼내 쓰는 반사동작으로 만듭니다.
 - **적용 상태**: 원본 Skill 14종 이식(`.agent/skills/`), 핵심 agentic design pattern은 GIIP Role/Rule 체계에 통합 — 신규 Skill 0개 (출처·매핑: [`.agent/skills/PAPERTHIN_NOTICE.md`](.agent/skills/PAPERTHIN_NOTICE.md))
