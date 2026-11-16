@@ -136,13 +136,21 @@ foreach ($tc in $testCases) {
     [System.IO.File]::WriteAllText($scriptFile, $body + "`n", (New-Object System.Text.UTF8Encoding $tc.ScriptBom))
     $procArgs = @($tc.PreArgs) + @($scriptFile)
 
+    # 리다이렉트 파일은 **실행(run)마다 고유한 이름**을 쓴다.
+    # 고정 이름으로 두면, 이 호스트에서 동시에 실행되는 다른 게이트/테스트 프로세스와 같은
+    # 파일을 공유해 상대 프로세스 출력이 지워지고 "한글보존=False / 출력=(빈값)" 로
+    # **거짓 FAIL** 이 난다(2026-11-16 실측: 같은 테스트 동시 실행 2건 중 1건 FAIL).
+    $runId = [guid]::NewGuid().ToString('N')
+    $outFile = Join-Path $env:TEMP ("gissue_korean_test_out_{0}.txt" -f $runId)
+    $errFile = Join-Path $env:TEMP ("gissue_korean_test_err_{0}.txt" -f $runId)
+
     $r = Start-Process -FilePath $exe -ArgumentList $procArgs `
-        -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$env:TEMP\gissue_korean_test_out.txt" `
-        -RedirectStandardError "$env:TEMP\gissue_korean_test_err.txt"
+        -NoNewWindow -Wait -PassThru -RedirectStandardOutput $outFile `
+        -RedirectStandardError $errFile
 
     $stdout = ''
-    if (Test-Path "$env:TEMP\gissue_korean_test_out.txt") {
-        $stdout = Get-Content "$env:TEMP\gissue_korean_test_out.txt" -Raw -Encoding UTF8
+    if (Test-Path -LiteralPath $outFile) {
+        $stdout = Get-Content -LiteralPath $outFile -Raw -Encoding UTF8
     }
 
     $qCount = ([regex]::Matches($stdout, '\?') | Measure-Object).Count
@@ -153,8 +161,8 @@ foreach ($tc in $testCases) {
 
     Assert-True $passed "$($tc.Label): qCount=$qCount (기대값=$($tc.ExpectQ)), 한글보존=$hasKorean, 출력=$(($stdout -replace '[\r\n]+', ' ') | Select-Object -First 60)" ''
 
-    Remove-Item "$env:TEMP\gissue_korean_test_out.txt" -ErrorAction SilentlyContinue
-    Remove-Item "$env:TEMP\gissue_korean_test_err.txt" -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $outFile -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $errFile -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $scriptFile -Force -ErrorAction SilentlyContinue
 }
 
