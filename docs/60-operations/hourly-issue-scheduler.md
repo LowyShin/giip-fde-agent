@@ -1272,7 +1272,7 @@ Test-Path scripts\gissue\lib\liveness-ops-issue.js
 | 자기 갱신(self-pull) 직후 · 엔진 호출 전 | `scheduler_run_start` | runId, at, hostname, ips, csns, agentCommit, pid |
 | CSN 잡 종료(Complete-Run) | `scheduler_run_report` | csn, status, processed/skipped/failed, runId, hostname, ips |
 | 비정상 판정 시(Complete-Run) | `scheduler_alarm` | kind(`LIMIT`/`TIMEOUT`/`ZOMBIE`/`OVERTIME`/`RUN_FAIL`), csn, status, detail(500자 절단) |
-| CSN 잡 종료(Complete-Run) | `scheduler_token_usage` (giip 5398) | csn, runId, hostname, ips, engines(모델별 calls/freshIn/cacheCreate/cacheRead/out) — 토큰 4분류 원형, 합산은 `lib/token-usage.ps1`, 설계는 [token-usage-metering.md](token-usage-metering.md) §3 |
+| CSN 잡 종료(Complete-Run) | `scheduler_token_usage` (giip 5398) | csn, runId, hostname, ips, engines(모델별 calls/freshIn/cacheCreate/cacheRead/out) — 토큰 4분류 원형, 합산은 `lib/token-usage.ps1`, 설계는 [token-usage-metering.md](token-usage-metering.md) §3. `calls` 는 "4분류 중 하나라도 계수된 엔진 호출 수"(4분류 합계 0 인 로컬 생성 레코드 `<synthetic>` 제외 — §3.2), 합산 구간은 선택적 `-UntilUtc` 로 닫힌 구간 `[SinceUtc, UntilUtc)` 지정 |
 | 실행 종료 집계(finally) | `scheduler_run_history` (기존, giip #2384) | 건수 + hostname + **ips + CSN별 내역** (5345 에서 확장) |
 
 ### 17-3) 머신 식별 — hostname + IP 를 항상 함께

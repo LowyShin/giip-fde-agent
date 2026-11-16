@@ -18,6 +18,16 @@
 #   4) **중복 계수 방지.** 같은 message id 가 여러 파일에 다시 나타나면(세션 재개 사본)
 #      한 번만 센다. 파일 선별은 갱신 시각으로 거칠게 거르고, 최종 판정은 레코드의
 #      timestamp(UTC)로 한다.
+#   5) **0-토큰 레코드는 계측된 호출이 아니다.** 4분류 합계가 0 인 레코드는 engines[] 에
+#      넣지 않고 calls 도 증가시키지 않는다. 엔진 CLI 가 로컬에서 만든 알림 레코드
+#      (model=`<synthetic>` — 사용 한도 도달/429 문구 등)는 4분류가 전부 0 이며 엔진 호출이
+#      아니다. 세면 호출 수가 부풀고 '호출당 평균 토큰'이 왜곡되며, `<synthetic>` 이라는
+#      가짜 모델 행이 생겨 모델×분류 롤업 차원에 잡힌다. 한도/429 발생 사실은
+#      scheduler_alarm(kind=LIMIT) 이 별도로 담당한다.
+#      — 0-토큰 판정은 **id 소비보다 먼저** 한다. 같은 message id 로 0-토큰 레코드가 먼저
+#      나오고 실제 토큰 레코드가 뒤따르면, id 를 먼저 소비해 버리면 그 호출이 통째로
+#      사라진다(실측에서 `<synthetic>` id 와 실제 모델 id 의 겹침은 0 건이지만 규약은
+#      순서 의존을 없애야 한다).
 #
 # ── 구현 주의 ──
 #   값을 돌려주는 함수 안의 로그는 Write-Host 로 쓴다. Write-Output 은 반환 스트림에 섞인다
@@ -52,16 +62,28 @@ function ConvertTo-GissueUtcDateTime([datetime]$Value) {
 #             DateTime 리터럴·UTC/Local 어느 Kind 로 넘겨도 같은 instant 로 해석된다
 #             (ConvertTo-GissueUtcDateTime 이 정규화한다 — 정규화 없이는 시간창이
 #             UTC 오프셋만큼 밀려 최근 구간이 0건으로 조용히 사라진다).
+#   UntilUtc : (선택) 이 시각(UTC) **미만**의 레코드만 합산한다. 구간은 반열린
+#             [SinceUtc, UntilUtc) 이며, 생략하면 상한 없는 기존 동작(하한만 적용)이다.
+#             하한과 같은 Kind 규약으로 정규화한다.
 # 반환: @([ordered]@{ model; calls; freshIn; cacheCreate; cacheRead; out }) — 없으면 빈 배열.
+#       calls 는 4분류 중 하나라도 토큰이 계수된 엔진 호출 수다(0-토큰 레코드 제외 — 위 원칙 5).
 function Get-GissueTranscriptTokenUsage {
     param(
         [Parameter(Mandatory)][string[]]$Roots,
         [Parameter(Mandatory)][string]$Workdir,
-        [Parameter(Mandatory)][datetime]$SinceUtc
+        [Parameter(Mandatory)][datetime]$SinceUtc,
+        [datetime]$UntilUtc = [datetime]::MaxValue
     )
     # SinceUtc 는 UTC 기준이어야 한다. Kind 가 다르면 비교가 원시 tick 으로 이뤄져
     # 시간창이 UTC 오프셋만큼 밀린다(최근 구간이 0건으로 조용히 사라짐) -> 정규화.
     $sinceUtc = ConvertTo-GissueUtcDateTime $SinceUtc
+    # 상한도 같은 규약. MaxValue 는 ToUniversalTime() 를 걸면 오버플로가 나므로
+    # 틱 비교로 먼저 걸러낸다.
+    $untilUtc = if ($UntilUtc.Ticks -ge [datetime]::MaxValue.Ticks) {
+        [datetime]::SpecifyKind([datetime]::MaxValue, [System.DateTimeKind]::Utc)
+    } else {
+        ConvertTo-GissueUtcDateTime $UntilUtc
+    }
     $byModel = @{}
     $seen = @{}
     $encoded = Get-GissueEncodedProjectDirName $Workdir
@@ -84,6 +106,14 @@ function Get-GissueTranscriptTokenUsage {
                     $tsUtc = $null
                     try { $tsUtc = [datetime]::Parse("$($rec.timestamp)", [System.Globalization.CultureInfo]::InvariantCulture, $styles) } catch { continue }
                     if ($tsUtc -lt $sinceUtc) { continue }
+                    # 반열린 구간 [SinceUtc, UntilUtc) — 상한 시각 자체는 제외한다.
+                    if ($tsUtc -ge $untilUtc) { continue }
+                    # 4분류를 먼저 읽는다(0-토큰 판정 후 id 를 소비해야 한다 — 원칙 5).
+                    $fFresh   = [long]($msg.usage.input_tokens)
+                    $fCreate  = [long]($msg.usage.cache_creation_input_tokens)
+                    $fRead    = [long]($msg.usage.cache_read_input_tokens)
+                    $fOut     = [long]($msg.usage.output_tokens)
+                    if (($fFresh + $fCreate + $fRead + $fOut) -eq 0) { continue }
                     $mid = "$($msg.id)"
                     if ($mid) {
                         if ($seen.ContainsKey($mid)) { continue }
@@ -96,10 +126,10 @@ function Get-GissueTranscriptTokenUsage {
                     }
                     $row = $byModel[$model]
                     $row.calls       = [int]$row.calls + 1
-                    $row.freshIn     = [long]$row.freshIn + [long]($msg.usage.input_tokens)
-                    $row.cacheCreate = [long]$row.cacheCreate + [long]($msg.usage.cache_creation_input_tokens)
-                    $row.cacheRead   = [long]$row.cacheRead + [long]($msg.usage.cache_read_input_tokens)
-                    $row.out         = [long]$row.out + [long]($msg.usage.output_tokens)
+                    $row.freshIn     = [long]$row.freshIn + $fFresh
+                    $row.cacheCreate = [long]$row.cacheCreate + $fCreate
+                    $row.cacheRead   = [long]$row.cacheRead + $fRead
+                    $row.out         = [long]$row.out + $fOut
                 }
             } catch {
                 Write-Host "[TOKEN-USAGE][WARN] 세션 기록 합산 일부 실패(계속): $($file.FullName) — $($_.Exception.Message)"

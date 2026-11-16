@@ -67,4 +67,68 @@ try {
     Remove-Item -LiteralPath $tmpRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+# ── [계측 정확도] 0-토큰 로컬 레코드 제외 + 시간창 상한(UntilUtc) ──
+# 근거: 엔진 세션 기록(JSONL) 실측 — model=`<synthetic>` 742건은 4분류 토큰이 전부 0이고
+# 본문은 "You've hit your weekly limit" / "API Error (429)" 등 CLI 로컬 생성 메시지다.
+# message id 가 실제 모델 레코드와 겹치는 건 0/742 → 엔진 호출이 아니라 로컬 알림이다.
+# 이런 레코드를 calls 에 세면 호출 수가 부풀고 '호출당 평균 토큰'이 왜곡되며, engines[] 에
+# '<synthetic>' 이라는 가짜 모델 행이 생겨 설계 3.3 의 롤업 차원(CSN x 일자 x 모델)에 잡힌다.
+# limit/429 발생 사실은 scheduler_alarm(kind=LIMIT) 이 이미 별도로 담당한다.
+$tmpRoot2 = Join-Path ([System.IO.Path]::GetTempPath()) ('tokuse2-' + [guid]::NewGuid().ToString('N'))
+try {
+    $workdir2 = 'D:\work\csn-repo2'
+    $projDir2 = Join-Path (Join-Path $tmpRoot2 'projects') (Get-GissueEncodedProjectDirName $workdir2)
+    New-Item -ItemType Directory -Path $projDir2 -Force | Out-Null
+    $since2 = [datetime]::Parse('2026-11-16T06:00:00Z', [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal)
+    $lines2 = @(
+        # CLI 로컬 생성 알림 — 4분류 모두 0 이므로 제외되어야 한다
+        '{"type":"assistant","timestamp":"2026-11-16T06:40:00.000Z","message":{"id":"s1","model":"<synthetic>","usage":{"input_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":0}}}',
+        # 같은 message id 로 실제 토큰이 뒤따르는 경우 — 0-토큰 레코드가 먼저 나와도
+        # id 를 미리 소비해 버리면 그 호출이 통째로 사라진다. 살아남아야 한다.
+        '{"type":"assistant","timestamp":"2026-11-16T06:41:00.000Z","message":{"id":"s1","model":"MiniMax-M3","usage":{"input_tokens":10,"cache_creation_input_tokens":0,"cache_read_input_tokens":20,"output_tokens":2}}}',
+        '{"type":"assistant","timestamp":"2026-11-16T07:00:00.000Z","message":{"id":"s2","model":"MiniMax-M3","usage":{"input_tokens":1000,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":1000}}}',
+        '{"type":"assistant","timestamp":"2026-11-16T07:30:00.000Z","message":{"id":"s3","model":"MiniMax-M3","usage":{"input_tokens":2000,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":2000}}}'
+    )
+    $fixture2 = Join-Path $projDir2 's1.jsonl'
+    [System.IO.File]::WriteAllLines($fixture2, $lines2)
+    (Get-Item $fixture2).LastWriteTimeUtc = $since2.AddMinutes(30)
+
+    # (1) 상한 없음 — 0-토큰 레코드는 행도 calls 도 만들지 않고, 뒤따르는 동일 id 의
+    #     실제 토큰 레코드는 살아남는다.
+    $rows2 = @(Get-GissueTranscriptTokenUsage -Roots @($tmpRoot2) -Workdir $workdir2 -SinceUtc $since2)
+    Assert-Eq $rows2.Count 1 '0-토큰 레코드 제외 후 모델 1종'
+    Assert-Eq $null ($rows2 | Where-Object { $_.model -eq '<synthetic>' }) '<synthetic> 행 없음'
+    $r2 = $rows2 | Where-Object { $_.model -eq 'MiniMax-M3' }
+    Assert-Eq $r2.calls 3 'calls = 계측된 호출 3건(0-토큰 1건 제외)'
+    Assert-Eq $r2.freshIn 3010 'freshIn'
+    Assert-Eq $r2.cacheCreate 0 'cacheCreate'
+    Assert-Eq $r2.cacheRead 20 'cacheRead'
+    Assert-Eq $r2.out 3002 'out'
+
+    # (2) 시간창 상한 — 반열린 구간 [SinceUtc, UntilUtc). 07:30 레코드는 제외되어야 한다.
+    $until2 = [datetime]::Parse('2026-11-16T07:15:00Z', [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal)
+    $rows3 = @(Get-GissueTranscriptTokenUsage -Roots @($tmpRoot2) -Workdir $workdir2 -SinceUtc $since2 -UntilUtc $until2)
+    $r3 = $rows3 | Where-Object { $_.model -eq 'MiniMax-M3' }
+    Assert-Eq $r3.calls 2 'UntilUtc 이후 레코드 제외'
+    Assert-Eq $r3.freshIn 1010 'UntilUtc 이후 freshIn 제외'
+    Assert-Eq $r3.out 1002 'UntilUtc 이후 out 제외'
+
+    # (3) 경계값 자체는 제외(반열린 구간) — 07:00 레코드가 빠진다.
+    $until3 = [datetime]::Parse('2026-11-16T07:00:00Z', [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal)
+    $rows4 = @(Get-GissueTranscriptTokenUsage -Roots @($tmpRoot2) -Workdir $workdir2 -SinceUtc $since2 -UntilUtc $until3)
+    $r4 = $rows4 | Where-Object { $_.model -eq 'MiniMax-M3' }
+    Assert-Eq $r4.calls 1 '경계 시각은 제외(반열린 구간)'
+    Assert-Eq $r4.freshIn 10 '경계 제외 후 freshIn'
+    Assert-Eq $r4.out 2 '경계 제외 후 out'
+
+    # (4) Kind 정규화 — 상한도 하한과 같은 규약(UTC/Local 어느 Kind 로 넘겨도 같은 instant)
+    $rows4Local = @(Get-GissueTranscriptTokenUsage -Roots @($tmpRoot2) -Workdir $workdir2 -SinceUtc $since2 -UntilUtc $until3.ToLocalTime())
+    Assert-Eq $rows4Local.Count $rows4.Count 'Local Kind UntilUtc = 동일 행 수'
+    $r4Local = $rows4Local | Where-Object { $_.model -eq 'MiniMax-M3' }
+    Assert-Eq $r4Local.calls $r4.calls 'Local Kind UntilUtc = 동일 호출 수'
+    Assert-Eq $r4Local.cacheRead $r4.cacheRead 'Local Kind UntilUtc = 동일 cacheRead'
+} finally {
+    Remove-Item -LiteralPath $tmpRoot2 -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 Write-Host 'PASS test-token-usage'
