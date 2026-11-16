@@ -1,7 +1,7 @@
 # 토큰 사용량 계측·과금 구조와 스크립트 우선 스케줄러 설계
 
 > 상태: 설계 (2026-11-16). 구현은 §5의 순서로 나눠 진행한다. 1단계(기록 선행)는 giip 5398로 구현한다.
-> 관련: 스케줄러 본체 비AI 리포트 원칙은 [hourly-issue-scheduler.md](hourly-issue-scheduler.md) §17이 정본이며, 이 문서는 그 원칙을 토큰 사용량 기록으로 확장한다.
+> 관련: 스케줄러 본체 비AI 리포트 원칙은 [hourly-issue-scheduler.md](hourly-issue-scheduler.md) §17이 정본이며, 이 문서는 그 원칙을 토큰 사용량 기록으로 확장한다. 이 설계의 실측 근거(토크나이저 비교 · 동일 작업 재현 · 운영 트래픽 구성)는 [token-usage-measurements.md](token-usage-measurements.md)에 있다.
 
 ## 1. 배경 (실측)
 
