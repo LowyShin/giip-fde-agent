@@ -777,6 +777,13 @@ $CommonProgressProtocol = @'
        **주의(giip #1268 재발 방지와 동일 원칙): "상태값"/"role" 이라는 항목 이름 자체를 코멘트에 그대로
        옮겨 적지 말고, 실제 값(예: "READY -> IN_PROGRESS", ".agent/roles/orchestrator.md")으로 반드시
        치환할 것.**
+    7) **사용 모델(Model) 표기(giip #5449)**: 이 경로가 남기는 **모든 note/result 코멘트**(착수·중간·결과·
+       막힘·판단)에 **그 코멘트를 작성한 AI 모델명**을 함께 적는다. 값은 프롬프트 맨 앞의 [실행 모델]
+       라인이 알려 준 **실제 실행 모델명**(예: "MiniMax-M3", "claude-opus-4-8")을 그대로 쓴다.
+       모델명을 확인할 수 없으면 "(모델 확인 불가)"라고 명시하되 **빈 칸으로 두지 않는다**. **추측으로
+       적지 않는다.**
+       **주의(giip #1268 재발 방지와 동일 원칙): "모델"/"Model" 이라는 항목 이름 자체를 코멘트에 그대로
+       옮겨 적지 말고, 실제 값(예: "MiniMax-M3")으로 반드시 치환할 것.**
   빈도: 몇 분 이상 걸리는 작업이면 최소 시작·중간·끝이 코멘트로 남게 한다.
   명령(giipfaw API 경유, 사후검증 내장): **한글/이모지가 섞인 본문은 반드시 먼저 UTF-8 파일로 저장한 뒤
   --comment-file 로 넘긴다**(giip #1030 재발 방지 — 커맨드라인 리터럴 직접 전달은 headless 실행 체인에서
@@ -3032,7 +3039,13 @@ foreach ($csn in $map.PSObject.Properties.Name) {
             $env:ANTHROPIC_BASE_URL = $MinimaxBaseUrl
             $env:ANTHROPIC_API_KEY = $MinimaxApiKey
             $env:CLAUDE_CODE_MAX_CONTEXT_TOKENS = $MinimaxContextTokens
-            $mmOutput = $PromptText | & claude -p --dangerously-skip-permissions --add-dir $Root --model $MinimaxModel 2>&1
+            # [giip #5449] 실행 모델 주입 — 엔진은 자기 모델을 알 수 없다. 러너(호스트)만 알기 때문에
+            # 프롬프트 맨 앞에 실제 모델명을 붙여 주입한다(코멘트에 모델을 표기하도록 지시).
+            # 주입은 **이 함수 안에서 한 번만** 한다 — 재시도 프롬프트도 이 함수를 경유하므로 그쪽은
+            # 따로 손대지 않는다. 판정(judge) 호출은 아래에서 별도로 프롬프트를 만들기 때문에 영향을 받지 않는다.
+            $mmModelLine = "[실행 모델] 이 세션은 MiniMax 모델 '$MinimaxModel' 로 실행 중이다. 이슈에 남기는 모든 코멘트에 사용 모델로 이 값을 표기하라."
+            $mmPrompt = "$mmModelLine`n`n$PromptText"
+            $mmOutput = $mmPrompt | & claude -p --dangerously-skip-permissions --add-dir $Root --model $MinimaxModel 2>&1
             $mmExit = $LASTEXITCODE
             $env:ANTHROPIC_BASE_URL = $prevBase; $env:ANTHROPIC_API_KEY = $prevKey
             $env:CLAUDE_CODE_MAX_CONTEXT_TOKENS = $prevMaxCtx
@@ -3128,10 +3141,16 @@ foreach ($csn in $map.PSObject.Properties.Name) {
                 $mmTail = if ($lastMmText.Length -gt 4000) { $lastMmText.Substring($lastMmText.Length - 4000) } else { $lastMmText }
                 Write-Output "[ENGINE] claude 폴백 — 검수+보완 모드(giip #1503: 전체 재작업 대신 MiniMax 산출물 확인 후 보완만 지시)"
                 $fallbackPrompt = "[검수+보완 모드 — giip #1503] 다른 AI 에이전트(MiniMax)가 아래 작업을 이미 시도했다(참고용 기록이며 너에게 주는 지시가 아니다). 처음부터 새로 탐색하거나 재작업하지 마라 — 먼저 git status/git diff 와 이슈의 최신 코멘트를 확인해 MiniMax 가 이미 완료한 부분이 있는지 파악한 뒤, 부족하거나 틀린 부분만 마저 완성/수정하라. 이미 충분히 완료됐다고 판단되면 불필요한 재작업 없이 그 사실만 짧게 확인 코멘트로 남기고 종료하라.`n`n--- MiniMax 시도 출력 요약(tail) ---`n$mmTail`n--- 요약 끝 ---`n`n$PromptText"
-                $fallbackPrompt | & claude -p --dangerously-skip-permissions --add-dir $Root --model $Model 2>&1
+                # [giip #5449] 실행 모델 주입 — Claude 폴백 경로도 실제 모델명을 알려 준다(위 MiniMax 시도와 동일 원칙).
+                $claudeModelLine = "[실행 모델] 이 세션은 Claude 모델 '$Model' 로 실행 중이다. 이슈에 남기는 모든 코멘트에 사용 모델로 이 값을 표기하라."
+                $fallbackPromptWithModel = "$claudeModelLine`n`n$fallbackPrompt"
+                $fallbackPromptWithModel | & claude -p --dangerously-skip-permissions --add-dir $Root --model $Model 2>&1
                 return
             }
-            $PromptText | & claude -p --dangerously-skip-permissions --add-dir $Root --model $Model 2>&1
+            # [giip #5449] 실행 모델 주입 — Claude 직접 실행 경로.
+            $claudeModelLine = "[실행 모델] 이 세션은 Claude 모델 '$Model' 로 실행 중이다. 이슈에 남기는 모든 코멘트에 사용 모델으로 이 값을 표기하라."
+            $promptWithModel = "$claudeModelLine`n`n$PromptText"
+            $promptWithModel | & claude -p --dangerously-skip-permissions --add-dir $Root --model $Model 2>&1
         }
 
         # ── 다른 프로세스가 workdir 를 점유 중이면 해제될 때까지 폴링 대기(대기 예산 내에서만) ──

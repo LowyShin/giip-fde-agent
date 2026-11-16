@@ -467,7 +467,7 @@ function Get-GatedRevertDecision($isn, $Assessment, $Tally = $null, $MaxAttempts
         'HOLD' {
             $res.Action = 'hold'
             $res.Reason = "미충족 없으나 판정불가 항목 있음($($Assessment.Reason)) - 근거 부족으로 보류"
-            $res.Comment = Format-ChecklistComment $isn 'HOLD' $Assessment.Items $Assessment.Reason 0 $MaxAttempts '아래 "필요한 증거" 를 이슈 코멘트로 남기거나 사람이 확인해 주십시오.'
+            $res.Comment = Format-ChecklistComment $isn 'HOLD' $Assessment.Items $Assessment.Reason 0 $MaxAttempts '아래 "필요한 증거" 를 이슈 코멘트로 남기거나 사람이 확인해 주십시오.' $Assessment.Model
             $res.Marker = $script:ChecklistMarkerHold
             return $res
         }
@@ -479,14 +479,14 @@ function Get-GatedRevertDecision($isn, $Assessment, $Tally = $null, $MaxAttempts
                 $res.Action = 'escalate'
                 $res.Status = 'NEEDS_DECISION'
                 $res.Reason = "미충족 항목은 있으나 되돌림을 멈춤: $why"
-                $res.Comment = (Format-ChecklistComment $isn 'HOLD' $Assessment.Items $Assessment.Reason 0 $MaxAttempts "더 이상 자동으로 되돌리지 않습니다: $why. NEEDS_DECISION 으로 전환합니다 - 사람이 확인해 주십시오. (무한루프 방지)") -replace ([regex]::Escape($script:ChecklistMarkerHold)), '[REVIEW-AUDIT:WARN]'
+                $res.Comment = (Format-ChecklistComment $isn 'HOLD' $Assessment.Items $Assessment.Reason 0 $MaxAttempts "더 이상 자동으로 되돌리지 않습니다: $why. NEEDS_DECISION 으로 전환합니다 - 사람이 확인해 주십시오. (무한루프 방지)" $Assessment.Model) -replace ([regex]::Escape($script:ChecklistMarkerHold)), '[REVIEW-AUDIT:WARN]'
                 $res.Marker = '[REVIEW-AUDIT:WARN]'
                 return $res
             }
             $res.Action = 'revert'
             $res.Status = 'READY'
             $res.Reason = "미충족 항목 있음(UNFULFILLED): $($Assessment.Reason)"
-            $res.Comment = Format-ChecklistComment $isn 'REVERT' $Assessment.Items $Assessment.Reason ($total + 1) $MaxAttempts
+            $res.Comment = Format-ChecklistComment $isn 'REVERT' $Assessment.Items $Assessment.Reason ($total + 1) $MaxAttempts '' $Assessment.Model
             $res.Marker = $script:ChecklistMarkerRevert
             return $res
         }
@@ -1129,8 +1129,10 @@ function Get-ChecklistDecision($Items, $Pr = $null) {
 
 # 감사 코멘트 본문. 모든 상태 전이는 이 본문(체크리스트 전체)과 함께여야 한다.
 # $Attempt: REVERT 일 때 이번이 몇 번째 되돌림인지(0 이면 생략). $ExtraNote: 선택 부가 문단.
+# $Model: 판정에 실제로 쓴 AI 모델명(giip #5449). 비어 있으면 본문에 판정 모델 줄을 넣지 않는다
+#         (기존 본문/파서/테스트와 완전히 동일하게 유지 — 기존 호출부는 위치 인자를 그대로 쓴다).
 # 주의(카운팅 오염 방지, gissue-gate-tally-lib.ps1 규약): 다른 게이트의 되돌림 마커 원문을 넣지 않는다.
-function Format-ChecklistComment($Isn, $Decision, $Items, $Reason, $Attempt = 0, $MaxAttempts = 3, $ExtraNote = '') {
+function Format-ChecklistComment($Isn, $Decision, $Items, $Reason, $Attempt = 0, $MaxAttempts = 3, $ExtraNote = '', $Model = '') {
     $marker = switch ($Decision) { 'REVERT' { $script:ChecklistMarkerRevert } 'HOLD' { $script:ChecklistMarkerHold } default { $script:ChecklistMarkerKeep } }
     $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
     $sb = New-Object System.Text.StringBuilder
@@ -1142,6 +1144,11 @@ function Format-ChecklistComment($Isn, $Decision, $Items, $Reason, $Attempt = 0,
         default  { '의뢰 체크리스트 전 항목이 충족되어 현재 상태를 유지/확정합니다.' }
     }
     [void]$sb.AppendLine($head)
+    # [giip #5449] 판정 모델 표기 — 본문에 어떤 모델이 이 판정을 냈는지 남긴다.
+    # 위치: 마커 줄 바로 다음(판정 요약 줄 앞). 호출부(review-done-audit.ps1)가 본문 2번째 줄
+    # (`-split "`n" | Select-Object -Skip 1 | Select-Object -First 1`)을 사유 문구로 인용하므로
+    # 그 1·2번째 줄은 건드리지 않고 **판정 요약 줄 앞**에 넣는다(기존 인용이 깨지지 않게).
+    if ($Model) { [void]$sb.AppendLine("판정 모델: $Model") }
     [void]$sb.AppendLine("판정 요약: $Reason (giip #4334: PR 유무가 아니라 의뢰 항목 이행 여부로 판정)")
     [void]$sb.AppendLine('')
     [void]$sb.AppendLine('## 의뢰 체크리스트 판정')
@@ -1218,11 +1225,20 @@ function Get-ChecklistPrEvidence($isn, $repos, $LinkTexts = @()) {
     return $ev
 }
 
+# 판정 모델 해석의 **단일 출처**(giip #5449): 명시값 → 환경변수 GISSUE_CHECKLIST_MODEL → 기본값.
+# Invoke-ChecklistJudge / Get-ChecklistInputHash / Invoke-ChecklistAssessment 가 **같은 값**을 쓰게 한다 —
+# 폴백 로직을 각 함수에 복제하면 "코멘트에 적힌 판정 모델"과 "실제로 판정한 모델"이 조용히 어긋난다.
+function Resolve-ChecklistJudgeModel($model = $null) {
+    if ($model) { return "$model" }
+    if ($env:GISSUE_CHECKLIST_MODEL) { return "$($env:GISSUE_CHECKLIST_MODEL)" }
+    return 'claude-haiku-4-5'
+}
+
 # 체크리스트 분해 + 항목 판정 LLM 호출(기존 Invoke-GissueJudge 패턴 재사용: 도구 없음/설정 상속 차단/
 # 분류기 시스템 프롬프트/프롬프트 인젝션 방어). scope-gate/comment-gate/VERIFY-GATE/보고형 대조가 보던 것들은
 # 별도 게이트가 아니라 "항목 판정의 증거"로 프롬프트에 흡수했다.
 function Invoke-ChecklistJudge($isn, $issueContent, $commentsText, $prEvidenceText, $model = $null) {
-    if (-not $model) { $model = if ($env:GISSUE_CHECKLIST_MODEL) { $env:GISSUE_CHECKLIST_MODEL } else { 'claude-haiku-4-5' } }
+    $model = Resolve-ChecklistJudgeModel $model
     # 프롬프트 크기 상한: 코멘트는 최신쪽을 남긴다.
     $maxC = 60000
     if ($commentsText -and $commentsText.Length -gt $maxC) { $commentsText = '...(앞부분 생략)...' + $commentsText.Substring($commentsText.Length - $maxC) }
@@ -1260,20 +1276,22 @@ ITEM|code|UNMET|스크립트 오류를 수정한다|머지된 PR 이 없고 코�
 
 # 한 이슈의 체크리스트 판정 전체(조회된 입력 -> 최종 판정). 부작용 없음(코멘트/상태 쓰기 없음).
 # $Comments: 판정에 쓸 코멘트(비교 모드에서는 "되돌림 직전까지"로 잘라 넘긴다).
-# 반환: @{ Ok; Decision; Items; Reason; Raw }  - LLM 호출 실패는 Ok=$false, Decision=HOLD.
+# 반환: @{ Ok; Decision; Items; Reason; Raw; Model }  - LLM 호출 실패는 Ok=$false, Decision=HOLD.
+#   Model: 이 판정에 실제로 쓴 AI 모델명(giip #5449) — 호출부가 코멘트 본문에 표기할 때 쓴다.
 function Invoke-ChecklistAssessment($isn, $issueContent, $Comments, $Pr, $model = $null) {
     $commentsText = ConvertTo-CommentsText $Comments
     $prText = if ($Pr -and $Pr.Text) { $Pr.Text } else { '(PR 증거 없음)' }
-    $j = Invoke-ChecklistJudge $isn $issueContent $commentsText $prText $model
+    $usedModel = Resolve-ChecklistJudgeModel $model
+    $j = Invoke-ChecklistJudge $isn $issueContent $commentsText $prText $usedModel
     if (-not $j.ok) {
-        return @{ Ok = $false; Decision = 'HOLD'; Items = @(); Reason = "체크리스트 판정 호출 실패/차단(exit=$($j.exit)) - 근거 없이 되돌리지 않고 보류"; Raw = "$($j.text)" }
+        return @{ Ok = $false; Decision = 'HOLD'; Items = @(); Reason = "체크리스트 판정 호출 실패/차단(exit=$($j.exit)) - 근거 없이 되돌리지 않고 보류"; Raw = "$($j.text)"; Model = $usedModel }
     }
     $items = ConvertFrom-ChecklistJudgeOutput $j.text
     if (@($items).Count -eq 0) {
-        return @{ Ok = $false; Decision = 'HOLD'; Items = @(); Reason = '체크리스트 항목을 파싱하지 못했다(분해 실패/형식 불일치) - 근거 없이 되돌리지 않고 보류'; Raw = "$($j.text)" }
+        return @{ Ok = $false; Decision = 'HOLD'; Items = @(); Reason = '체크리스트 항목을 파싱하지 못했다(분해 실패/형식 불일치) - 근거 없이 되돌리지 않고 보류'; Raw = "$($j.text)"; Model = $usedModel }
     }
     $d = Get-ChecklistDecision $items $Pr
-    return @{ Ok = $true; Decision = $d.Decision; Items = $d.Items; Reason = $d.Reason; Raw = "$($j.text)" }
+    return @{ Ok = $true; Decision = $d.Decision; Items = $d.Items; Reason = $d.Reason; Raw = "$($j.text)"; Model = $usedModel }
 }
 
 # Shadow 모드 기록: 구룰 결론 vs 신룰 결론을 jsonl 한 줄로 남긴다(코멘트/상태 쓰기 없음).
@@ -1361,7 +1379,7 @@ function Get-TextSha256($text) {
 # 판정기 입력의 해시 묶음. inputHash 가 캐시 키다(= 판정기가 보는 입력 전부 + 모델 + 프롬프트 버전).
 # 나머지는 사람이 "무엇이 바뀌어 재호출됐는가"를 보기 위한 부분 해시다.
 function Get-ChecklistInputHash($issueContent, $comments, $prText, $model = $null) {
-    if (-not $model) { $model = if ($env:GISSUE_CHECKLIST_MODEL) { $env:GISSUE_CHECKLIST_MODEL } else { 'claude-haiku-4-5' } }
+    $model = Resolve-ChecklistJudgeModel $model
     $sorted = @($comments | Where-Object { $_ } | Sort-Object { $_.regdate })
     $fmt = { param($c) "[$($c.regdate)] ($($c.author)/$($c.issuetype), cSn=$($c.cSn)): $($c.content)" }
     $scope = @($sorted | Where-Object { "$($_.content)" -match '\[SCOPE-RECONCILED\]' } | ForEach-Object { & $fmt $_ }) -join "`n---`n"
