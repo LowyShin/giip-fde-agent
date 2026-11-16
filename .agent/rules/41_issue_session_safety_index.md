@@ -1,7 +1,7 @@
 # 41. 이슈 처리 세션 안전 규칙 — 색인 및 주입 계약 (Injection Contract)
 
 > **HARD RULE** — 무인(스케줄러) 세션과 대화형 세션 모두에 적용된다.
-> 이 파일 하나가 42~51 규칙의 **단일 진입점**이다. 프롬프트/위임문에서는 이 파일만 가리키면 된다.
+> 이 파일 하나가 42~51·53·57·58 규칙의 **단일 진입점**이다. 프롬프트/위임문에서는 이 파일만 가리키면 된다.
 
 ## 이 규칙군이 존재하는 이유
 
@@ -16,7 +16,7 @@
 ## 주입 계약 (Injection Contract)
 
 1. 이슈를 자동 처리하는 세션(매시 스케줄러의 `[A]`~`[H]` 전 단계)은 **처리 착수 전에 이 파일을
-   읽고, 이 파일이 가리키는 42~51 중 해당 상황의 규칙을 읽는다.**
+   읽고, 이 파일이 가리키는 42~51·53·57·58 중 해당 상황의 규칙을 읽는다.**
 2. 프롬프트 템플릿에는 **이 블록을 단 한 번만** 둔다. 단계별([C] READY 처리 / [D] stale
    IN_PROGRESS 회수 등)로 같은 문단을 복붙하지 않는다 — 복붙하면 나중에 한쪽만 고쳐지는 사고가
    난다(giip #2425 실측, 상세는 `48_single_source_safety_predicate.md`).
@@ -40,6 +40,7 @@
 | [50_bot_pr_scope_discipline.md](50_bot_pr_scope_discipline.md) | 봇 PR 은 이슈 범위 밖 파일을 쓸어담지 않는다 | #2424 #2459 |
 | [51_giip_product_changes_csn47_only.md](51_giip_product_changes_csn47_only.md) | giip 제품 레포(`giipv3`/`giipdb`/`giipfaw` 등) 변경은 **어느 CSN 에서든 가능, PR 경유**. 이 레포 자신은 대상 아님 | giip 2679 (2026-09-18) → 개정 2026-10-15 (사용자 직접 지시) |
 | [53_pre_push_pure_source_guard.md](53_pre_push_pure_source_guard.md) | 고객 웹 레포 push 직전에 순수 소스 가드 테스트 실행, FAIL 이면 push 금지 | giip 3773 (=#3748 재발 4회차) |
+| [58_engine_call_minimization.md](58_engine_call_minimization.md) | 엔진 호출 절감 — 총 토큰은 호출 횟수가 결정(스크립트 우선·델타 패키지·effort medium 고정·usage 기록 의무·실측 없는 라우팅 변경 금지) | #5438 |
 
 코멘트 작성 시각을 추정하지 않는 규칙은 신설하지 않고 기존
 [`PROTOCOL_PROGRESS_COMMENT.md`](PROTOCOL_PROGRESS_COMMENT.md) 의 "시각(When)" 절을 확장했다
@@ -57,3 +58,7 @@
   42 는 구현 **후** 완료 판정을 다룬다.
 - [`00_project_repository_scope.md`](00_project_repository_scope.md): 레포 스코프. 46 은 같은 취지의
   **CSN(고객사/프로젝트 식별자) 스코프**를 다룬다.
+- [`58_engine_call_minimization.md`](58_engine_call_minimization.md): 엔진 호출 절감 · 모델 라우팅.
+  이 규칙군(42~51 등)과 **겹치지 않는 별개 축**이다(토큰 절감·라우팅은 세션 안전 축이 아니다).
+  29(정보 신뢰성 일반론)·42(완료 판정)와는 "규칙/문서 완료 근거"에서만 접점이 있다 —
+  그 접점만 말하고 규칙 본문을 중복 서술하지 않는다.

@@ -6,9 +6,12 @@
 >
 > *(EN/JP 독자는 각 항목을 AI 에이전트에 번역 요청하세요. / Ask your AI assistant to translate entries.)*
 
-**기준일 (as of): 2026-11-16**
+**기준일 (as of): 2026-11-17**
 
 ---
+
+## 2026-11-17
+- **엔진 호출 절감 룰 58 색인 등록 — 규칙 로드 경로 4곳에 58 을 연결 (giip 5438)** — 룰 58 본문은 이전 PR 에서 이미 머지돼 있으나 **규칙을 읽는 세션이 58 을 발견할 경로가 없던 상태**였다(규칙 41 색인 · GEMINI 목록 · AI_MUST_READ 체크리스트 · HISTORY 어디에도 58 참조 0건 — 규칙 본문이 아무리 정확해도 전달 경로가 없으면 효과가 없다는 규칙 41 의 주입 계약). **색인 등록만** 했다 — ① `.agent/rules/41_issue_session_safety_index.md` 규칙 목록에 58 행 추가 + 수록 범위 헤더·주입 계약 문구를 실제 범위(`42~51·53·57·58`)로 정정 + "기존 규칙과의 경계" 절에 58 축(토큰 절감·라우팅은 별개 축) 1줄 추가 ② `GEMINI.md` Additional Operational Rules 에 영문 한 줄 요약 항목 추가 ③ `AI_MUST_READ.md` 작업 전 체크리스트에 "스크립트 우선·델타 패키지·effort medium 고정·usage 기록" 항목 추가(6개 → 7개) ④ `docs/HISTORY.md` 에 규칙 58 신설·이관 기록 1건 추가. **룰 58 본문과 실측 문서는 수정하지 않았다**(실측 근거 없는 내용 변경 금지). → [규칙 58](../.agent/rules/58_engine_call_minimization.md), [규칙 41 색인](../.agent/rules/41_issue_session_safety_index.md), [실측 원본](60-operations/token-usage-measurements.md), [이슈 5438](https://giip.littleworld.net/ko/admin/giip-issues/5438)
 
 ## 2026-11-16
 - **토큰 계측 정확도 보정 — 시간창 상한(`-UntilUtc`)과 `calls` 의미 확정 (giip 5398)** — 1단계(`scheduler_token_usage` 기록)의 후속으로, 호스트 로컬 합산기 `scripts/gissue/lib/token-usage.ps1` 의 두 가지 근본 문제를 바로잡았다. **① 시간창이 열려 있었다** — `-SinceUtc`(하한)만 있어 "그 실행 구간의 사용량"을 재현할 수 없고 값이 계속 증가했다 → 선택적 `-UntilUtc` 추가(구간은 반열린 `[SinceUtc, UntilUtc)`, 상한 시각 자체는 제외, 하한과 같은 `DateTime.Kind` 정규화 규약, 생략 시 기존 동작 그대로라 기존 호출부 하위 호환). 3자 대조(호스트 로컬 합산 ↔ 플랫폼 tKVS ↔ 외부 콘솔 총량)의 기준 구간이 이 없이는 매번 달라져 비교 자체가 불가능했다. **② `calls` 가 로컬 생성 레코드를 세고 있었다** — 엔진 세션 기록 실측에서 `model=`<synthetic>` 742건은 4분류 토큰이 전부 0이고 본문은 "You've hit your weekly limit" / "API Error (429)" 등 CLI 로컬 생성 메시지였으며, 실제 모델 레코드와 message id 겹침은 0/742 였다. 이를 `calls` 에 세면 (a) 호출 수가 부풀어 '호출당 평균 토큰'이 왜곡되고 (b) `<synthetic>` 이라는 가짜 모델 행이 생겨 모델×분류 롤업 차원(CSN×일자×모델)에 잡힌다. 한도·429 발생 사실은 `scheduler_alarm`(kind=LIMIT) 이 별도 담당하므로 중복 계수하지 않는다 → 4분류 합계 0 인 레코드는 `engines[]`·`calls` 에 넣지 않는다. 판정은 **id 중복 제거보다 먼저** 한다(같은 id로 0-토큰 레코드가 먼저 나오면 id 를 먼저 소비해 실제 호출이 통째로 사라지기 때문). **TDD** — 실패 테스트 우선 추가 후 RED(`FAIL 0-토큰 레코드 제외 후 모델 1종 : expected [1] got [2]`, exit 1) 확인 → 최소 구현 → GREEN(`PASS test-token-usage`, exit 0). 저장소 게이트 exit 0(ps1 44건 / mjs 8건 / 링크스캔 1 / 실패 0건). 설계 문서 §3.2·§5 와 사양 §17-2 기록 표를 동기화했다. → [설계 문서](60-operations/token-usage-metering.md), [합산 모듈](../scripts/gissue/lib/token-usage.ps1), [회귀 테스트](../scripts/gissue/tests/test-token-usage.ps1), [이슈 5398](https://giip.littleworld.net/ko/admin/giip-issues/5398)
