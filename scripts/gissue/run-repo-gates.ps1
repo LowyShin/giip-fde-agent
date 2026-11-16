@@ -76,7 +76,8 @@ try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } 
 #   + 실측 결과 main 에 이미 test-worktree-claude-session-guard.ps1(giip 5175, PR #428)이 기대값 상향 없이
 #     들어와 실제 40건이었음(기대 39 과 1건 슬랙) → svcguard 1건까지 반영해 실측 41건에 정확히 고정 → 41.
 # 2026-11-16: 고정 임시 파일명 충돌(거짓 FAIL) 회귀 테스트 1건(test-temp-filename-collision.ps1) 추가 → 42 → 43.
-$ExpectedPs1TestCount = 43
+# 2026-11-16: 토큰 사용량 합산 회귀 테스트 1건(test-token-usage.ps1, giip 5398) 추가 → 43 → 44.
+$ExpectedPs1TestCount = 44
 $ExpectedMjsTestCount = 8
 
 function Write-Gate([string]$Message) {

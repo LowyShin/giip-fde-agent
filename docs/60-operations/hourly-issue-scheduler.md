@@ -1263,7 +1263,7 @@ Test-Path scripts\gissue\lib\liveness-ops-issue.js
 - 이유: 보고 · 알람 경로가 AI 를 거치면, 정작 알려야 할 순간 — limit 도달로 AI 가 죽은 순간 — 에 전송 자체가 불가능해진다. "AI 가 죽었다"는 사실은 AI 가 아닌 본체가 알려야 한다.
 - 따라서 시작 로깅 · 알람 · 리포트는 전부 본체의 순수 코드 경로(`scripts/gissue/lib/kvs-report.ps1`)로 GIIP tKVS 에 직접 기록한다. 이 경로의 실패는 본 실행을 멈추지 않는다(fail-open — WARN 로그만 남긴다).
 
-### 17-2) 기록 3종 + 기존 1종
+### 17-2) 기록 4종 + 기존 1종
 
 전부 키 공간은 기존 실행 이력과 동일하게 `kType='lssn'`, `kKey=<LSSN>` 이고, 전송은 giipApiSk4 + `KVSPut` 이다(전송 본체의 정본은 `Send-GissueKvsPut` — 기존 `Send-GissueRunHistory` 도 이 경유로 전송한다).
 
@@ -1272,6 +1272,7 @@ Test-Path scripts\gissue\lib\liveness-ops-issue.js
 | 자기 갱신(self-pull) 직후 · 엔진 호출 전 | `scheduler_run_start` | runId, at, hostname, ips, csns, agentCommit, pid |
 | CSN 잡 종료(Complete-Run) | `scheduler_run_report` | csn, status, processed/skipped/failed, runId, hostname, ips |
 | 비정상 판정 시(Complete-Run) | `scheduler_alarm` | kind(`LIMIT`/`TIMEOUT`/`ZOMBIE`/`OVERTIME`/`RUN_FAIL`), csn, status, detail(500자 절단) |
+| CSN 잡 종료(Complete-Run) | `scheduler_token_usage` (giip 5398) | csn, runId, hostname, ips, engines(모델별 calls/freshIn/cacheCreate/cacheRead/out) — 토큰 4분류 원형, 합산은 `lib/token-usage.ps1`, 설계는 [token-usage-metering.md](token-usage-metering.md) §3 |
 | 실행 종료 집계(finally) | `scheduler_run_history` (기존, giip #2384) | 건수 + hostname + **ips + CSN별 내역** (5345 에서 확장) |
 
 ### 17-3) 머신 식별 — hostname + IP 를 항상 함께

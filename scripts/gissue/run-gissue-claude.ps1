@@ -1310,6 +1310,11 @@ $HeartbeatCfg = Get-GissueHeartbeatConfig $mapRoot
 # 엔진이 죽은 바로 그 상황에서도 스케줄러 본체가 직접 보낼 수 있어야 하기 때문이다(가이드 §17).
 . (Join-Path $Root 'lib/kvs-report.ps1')
 
+# [giip #5398] 토큰 사용량 합산 — 엔진 세션 기록(JSONL)의 usage 를 호스트 로컬에서 모델별로 합산한다.
+# 원본 기록은 호스트 밖으로 내보내지 않고, 합산 결과만 Send-GissueTokenUsageRecord 로 보낸다.
+# 설계 정본: docs/60-operations/token-usage-metering.md §3.
+. (Join-Path $Root 'lib/token-usage.ps1')
+
 # [giip 3615] 소프트 예산: "새 이슈를 시작해도 되는 시간"(하드 타임아웃 $RunTimeoutMin 과 별개). 기본 비활성 = 기존 동작.
 # csn-projects.json 최상위 softBudgetMin 이 환경변수 GISSUE_SOFT_BUDGET_MIN 보다 우선한다(정본·사유: lib/soft-budget.ps1).
 . (Join-Path $Root 'lib/soft-budget.ps1')
@@ -3867,6 +3872,20 @@ function Complete-Run($r, $status) {
             $alarmKind = Get-GissueAlarmKind $status $jobText
             if ($alarmKind) {
                 $null = Send-GissueSchedulerAlarmRecord -Lssn $HeartbeatCfg.Lssn -Sk $r.Sk -Kind $alarmKind -Csn "$($r.Csn)" -RunId "$($r.RunIdKey)" -Status $status -Detail $jobText
+            }
+            # [giip #5398] 토큰 사용량 기록 — 이 실행의 엔진 세션 기록을 호스트 로컬에서 합산해 CSN 에 귀속한다.
+            # 합산·전송은 전부 순수 코드 경로이며, 실패해도 종료 처리는 계속한다(위 리포트와 같은 규약).
+            try {
+                $usageRoots = @()
+                if ($env:CLAUDE_CONFIG_DIR) { $usageRoots += $env:CLAUDE_CONFIG_DIR }
+                $usageRoots += (Join-Path $HOME '.claude')
+                $sinceUtc = if ($script:RunnerStartedAtUtc) { $script:RunnerStartedAtUtc } else { [datetime]::UtcNow.AddHours(-3) }
+                $engines = @(Get-GissueTranscriptTokenUsage -Roots @($usageRoots | Select-Object -Unique) -Workdir "$($r.Workdir)" -SinceUtc $sinceUtc)
+                if ($engines.Count -gt 0) {
+                    $null = Send-GissueTokenUsageRecord -Lssn $HeartbeatCfg.Lssn -Sk $r.Sk -Csn "$($r.Csn)" -Engines $engines -RunId "$($r.RunIdKey)"
+                }
+            } catch {
+                Write-Log $r.Csn "[KVS-TOKEN-USAGE][WARN] 토큰 사용량 기록 실패(무시하고 계속): $($_.Exception.Message)"
             }
         }
     } catch {

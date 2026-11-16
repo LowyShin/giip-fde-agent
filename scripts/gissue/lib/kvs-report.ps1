@@ -26,6 +26,7 @@
 #   scheduler_run_start   실행 시작 1건 (event=start, runId, hostname, ips, csns, agentCommit, pid)
 #   scheduler_alarm       비정상 1건 (event=alarm, kind=LIMIT|TIMEOUT|ZOMBIE|OVERTIME|RUN_FAIL, csn, status, detail)
 #   scheduler_run_report  CSN별 종료 1건 (event=report, csn, status, processed, skipped, failed, runId)
+#   scheduler_token_usage 토큰 사용량 1건 (event=token_usage, csn, runId, hostname, ips, engines[모델별 calls/freshIn/cacheCreate/cacheRead/out])
 #   scheduler_run_history 기존 종료 집계 (giip #2384 — Send-GissueRunHistory 가 이 모듈 경유로 전송)
 #
 # ── 구현 주의 ──
@@ -216,5 +217,34 @@ function Send-GissueSchedulerRunReport {
     }
     $ok = Send-GissueKvsPut -Lssn $Lssn -Factor 'scheduler_run_report' -Value $value -Sk $Sk
     Write-Host "[KVS-REPORT] $(if ($ok) { 'OK' } else { 'FAIL' }) csn=$Csn status=$Status processed=$Processed failed=$Failed"
+    return $ok
+}
+
+# CSN별 토큰 사용량 기록 — 설계 정본: docs/60-operations/token-usage-metering.md §3 (giip #5398).
+# 토큰은 4분류(freshIn/cacheCreate/cacheRead/out) 원형으로 남긴다. 과금 가중·단가는 여기서 적용하지
+# 않고 플랫폼 집계 단계의 요율표가 적용한다(원형 저장 원칙). 합산은 lib/token-usage.ps1 이 담당하고
+# 이 함수는 전송만 한다. 기록 실패가 본 실행을 멈추지 않는다(fail-open, 기존 규약과 동일).
+function Send-GissueTokenUsageRecord {
+    param(
+        [Parameter(Mandatory)][string]$Lssn,
+        [Parameter(Mandatory)][string]$Sk,
+        [Parameter(Mandatory)][string]$Csn,
+        [Parameter(Mandatory)]$Engines,
+        [string]$RunId = ''
+    )
+    $hostId = Get-GissueHostIdentity
+    $value = [ordered]@{
+        event    = 'token_usage'
+        csn      = $Csn
+        runId    = $RunId
+        at       = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+        hostname = $hostId.hostname
+        ips      = @($hostId.ips)
+        engines  = @($Engines)
+    }
+    $ok = Send-GissueKvsPut -Lssn $Lssn -Factor 'scheduler_token_usage' -Value $value -Sk $Sk
+    $totalCalls = 0
+    foreach ($e in @($Engines)) { try { $totalCalls += [int]$e['calls'] } catch { } }
+    Write-Host "[KVS-TOKEN-USAGE] $(if ($ok) { 'OK' } else { 'FAIL' }) csn=$Csn engines=$(@($Engines).Count) calls=$totalCalls"
     return $ok
 }
