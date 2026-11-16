@@ -834,11 +834,11 @@ function Invoke-AuditIssue($iss, $repos) {
                     return
                 }
                 # DONE 승격: 체크리스트를 승격 코멘트에 싣는다(코멘트 없는 전이 금지).
-                $decisionBody = Format-ChecklistComment $isn 'KEEP' $assess.Items $assess.Reason 0 $MaxChecklistReverts "$decisionNewStatus 로 전이합니다. (구룰 PASS 조건: $($decisionBody -split "`n" | Select-Object -Skip 1 | Select-Object -First 1))"
+                $decisionBody = Format-ChecklistComment $isn 'KEEP' $assess.Items $assess.Reason 0 $MaxChecklistReverts "$decisionNewStatus 로 전이합니다. (구룰 PASS 조건: $($decisionBody -split "`n" | Select-Object -Skip 1 | Select-Object -First 1))" '' $assess.Model
                 $decisionMarker = 'CHECKLIST-KEEP'
             }
             elseif ($assess.Decision -eq 'HOLD') {
-                $decisionBody = Format-ChecklistComment $isn 'HOLD' $assess.Items $assess.Reason 0 $MaxChecklistReverts '위 항목의 증거를 이슈 코멘트로 남기고 사람이 DONE/READY 로 직접 전이해 주십시오.'
+                $decisionBody = Format-ChecklistComment $isn 'HOLD' $assess.Items $assess.Reason 0 $MaxChecklistReverts '위 항목의 증거를 이슈 코멘트로 남기고 사람이 DONE/READY 로 직접 전이해 주십시오.' '' $assess.Model
                 $decisionMarker = 'CHECKLIST-HOLD'; $decisionNewStatus = 'NEEDS_DECISION'
             }
             else {
@@ -847,13 +847,13 @@ function Invoke-AuditIssue($iss, $repos) {
                 $repeat = Test-ChecklistUnmetRepeat $comments $assess.Items
                 if ($repeat -or ($tally.Total + 1) -gt $MaxChecklistReverts) {
                     $why = if ($repeat) { '직전 체크리스트 되돌림과 미충족 항목 집합이 동일(작업자가 같은 지점에서 반복 실패)' } else { "전 게이트 합산 되돌림 $($tally.Total)회로 캡($MaxChecklistReverts) 도달" }
-                    $warnBody = (Format-ChecklistComment $isn 'HOLD' $assess.Items $assess.Reason 0 $MaxChecklistReverts "더 이상 자동으로 되돌리지 않습니다: $why. 상태를 WARN 으로 전환하고 이 이슈에 대한 자동 조치를 중단합니다 - 사람이 확인해 주십시오. (giip #4334 무한루프 방지)") -replace '\[REVIEW-AUDIT:CHECKLIST-HOLD\]', '[REVIEW-AUDIT:WARN]'
+                    $warnBody = (Format-ChecklistComment $isn 'HOLD' $assess.Items $assess.Reason 0 $MaxChecklistReverts "더 이상 자동으로 되돌리지 않습니다: $why. 상태를 WARN 으로 전환하고 이 이슈에 대한 자동 조치를 중단합니다 - 사람이 확인해 주십시오. (giip #4334 무한루프 방지)" '' $assess.Model) -replace '\[REVIEW-AUDIT:CHECKLIST-HOLD\]', '[REVIEW-AUDIT:WARN]'
                     Write-AuditComment $isn $warnBody 'WARN'
                     Set-IssueStatusAudit $isn 'WARN' "체크리스트 되돌림 루프브레이커: $why (giip #4334)"
                     Write-AuditLog "isn=${isn}: [CHECKLIST] 루프브레이커 발동 - $why -> WARN."
                     return
                 }
-                $decisionBody = Format-ChecklistComment $isn 'REVERT' $assess.Items $assess.Reason ($tally.Total + 1) $MaxChecklistReverts
+                $decisionBody = Format-ChecklistComment $isn 'REVERT' $assess.Items $assess.Reason ($tally.Total + 1) $MaxChecklistReverts '' $assess.Model
                 $decisionMarker = 'CHECKLIST-REVERT'; $decisionNewStatus = 'READY'
             }
         }
@@ -921,7 +921,7 @@ function Invoke-AuditIssue($iss, $repos) {
                     $vItems = @($assess.Items) + @([pscustomobject]@{ N = (@($assess.Items).Count + 1); Kind = 'other'; Verdict = 'UNMET'
                         Text = '이슈 verify 블록(기계 실행 가능한 완료조건)이 실제 실행에서 PASS 한다'
                         Evidence = 'verify-runner 실행 결과 FAIL(exit=1) - 직전 [VERIFY-RUN] 코멘트의 명령별 출력 참조' })
-                    $decisionBody = Format-ChecklistComment $isn 'REVERT' $vItems "verify 실행 FAIL 포함 - 미충족 $(@($vItems | Where-Object { $_.Verdict -eq 'UNMET' }).Count)건" 0 $MaxChecklistReverts
+                    $decisionBody = Format-ChecklistComment $isn 'REVERT' $vItems "verify 실행 FAIL 포함 - 미충족 $(@($vItems | Where-Object { $_.Verdict -eq 'UNMET' }).Count)건" 0 $MaxChecklistReverts '' $assess.Model
                     $decisionMarker = 'CHECKLIST-REVERT'
                 }
             } elseif ($verifyExit -eq 2) {

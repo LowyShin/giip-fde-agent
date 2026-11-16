@@ -114,6 +114,27 @@ $tally = Get-GateRevertTally @([pscustomobject]@{ regdate = '2026-10-31T01:00:00
 Assert ($tally.Total -eq 1 -and $tally.Counts['checklist'] -eq 1) 'CHECKLIST-REVERT 는 되돌림 횟수에 정확히 1회 집계(다른 게이트와 중복 없음)'
 Assert (-not $rev.Contains('[PR-GATE-' + 'REVERT]') -and -not $rev.Contains('[SCOPE-GATE-' + 'REVERT]')) '다른 게이트 마커 원문을 넣지 않는다(카운팅 오염 방지)'
 
+Write-Host '== 판정 모델 표기 (giip #5449) =='
+$itemsM = @((New-Item4 1 'other' 'MET' '문서 등록' '링크'))
+$bodyNoModel = Format-ChecklistComment 1 'KEEP' $itemsM '전 항목 충족 1건'
+Assert (-not $bodyNoModel.Contains('판정 모델:')) '모델 미지정 -> 판정 모델 줄이 없다(기존 본문과 동일)'
+$bodyWithModel = Format-ChecklistComment 1 'KEEP' $itemsM '전 항목 충족 1건' 0 3 '' 'claude-haiku-4-5'
+Assert ($bodyWithModel.Contains('판정 모델: claude-haiku-4-5')) '모델 지정 -> 본문에 "판정 모델:" 줄이 있다'
+Assert ($bodyWithModel.Contains('## 의뢰 체크리스트 판정') -and $bodyWithModel.Contains('판정 요약:')) '모델 줄이 추가돼도 본문 구조(체크리스트/판정 요약)는 유지된다'
+$linesM = $bodyWithModel -split "`r?`n"
+Assert ($linesM[0].Contains('[REVIEW-AUDIT:CHECKLIST-KEEP]')) '1번째 줄은 마커 줄'
+Assert ($linesM[1].Contains('의뢰 체크리스트 전 항목이 충족되어')) '2번째 줄은 판정 요약 헤드(호출부가 사유 문구로 인용하는 자리 — 바뀌면 안 된다)'
+Assert ($linesM[2].Contains('판정 모델:')) '3번째 줄에 판정 모델 줄이 있다(마커 다음·판정 요약 앞)'
+$bodyRevModel = Format-ChecklistComment 1 'REVERT' $itemsM '미충족 1건' 2 3 '' 'claude-haiku-4-5'
+Assert ($bodyRevModel.Contains('판정 모델: claude-haiku-4-5')) 'REVERT 도 판정 모델 줄이 있다'
+$linesRevM = $bodyRevModel -split "`r?`n"
+Assert ($linesRevM[1].Contains('이번이 2번째 되돌림입니다')) 'REVERT 도 2번째 줄은 회차 표기(기존 호출부 인용 자리 유지)'
+# 평가 객체(Invoke-ChecklistAssessment 결과)의 모델이 게이트 경로까지 실리는지
+$dModel = Get-GatedRevertDecision 1 (@{ Ok = $true; Decision = 'HOLD'; Items = @((New-Item4 1 'other' 'UNDETERMINED' '외부 확인' 'x')); Reason = '판정불가 1건'; Model = 'claude-haiku-4-5' }) $null 3 @()
+Assert ($dModel.Comment.Contains('판정 모델: claude-haiku-4-5')) 'Get-GatedRevertDecision 가 평가 객체의 모델을 코멘트에 실는다'
+$dNoModel = Get-GatedRevertDecision 1 (@{ Ok = $true; Decision = 'HOLD'; Items = @((New-Item4 1 'other' 'UNDETERMINED' '외부 확인' 'x')); Reason = '판정불가 1건' }) $null 3 @()
+Assert (-not $dNoModel.Comment.Contains('판정 모델:')) '모델이 없으면 판정 모델 줄 없이 기존 본문 그대로'
+
 Write-Host '== 반복 감지 =='
 $same = @((New-Item4 1 'other' 'UNMET' '운영  서버 설정 변경' 'a'), (New-Item4 2 'other' 'MET' '문서' 'b'))
 $prevBody = Format-ChecklistComment 5 'REVERT' @((New-Item4 1 'other' 'UNMET' '운영 서버 설정 변경' 'a')) 'r' 1 3
@@ -148,6 +169,19 @@ $a = Invoke-ChecklistAssessment 1 'content' @() $prOpen
 Assert ($a.Ok -and $a.Decision -eq 'REVERT') '코드 항목 충족 주장 + 미머지 PR -> 보정되어 REVERT'
 $a = Invoke-ChecklistAssessment 1 'content' @() $prMerged
 Assert ($a.Ok -and $a.Decision -eq 'KEEP') '코드 항목 + 머지된 PR -> KEEP'
+
+Write-Host '== 평가 객체의 판정 모델 (giip #5449) =='
+$savedJudgeModel = $env:GISSUE_CHECKLIST_MODEL
+try {
+    $env:GISSUE_CHECKLIST_MODEL = ''
+    $a = Invoke-ChecklistAssessment 1 'content' @() $prNone
+    Assert ($a.Model -eq 'claude-haiku-4-5') '평가 객체에 판정 모델이 실린다(환경변수 미지정 -> 기본값)'
+    $env:GISSUE_CHECKLIST_MODEL = 'test-judge-model'
+    $a2 = Invoke-ChecklistAssessment 1 'content' @() $prNone
+    Assert ($a2.Model -eq 'test-judge-model') '평가 객체의 판정 모델은 환경변수 값을 그대로 쓴다'
+    $bodyFromAssess = Format-ChecklistComment 1 $a.Decision $a.Items $a.Reason 0 3 '' $a.Model
+    Assert ($bodyFromAssess.Contains("판정 모델: $($a.Model)")) '평가 객체의 모델을 코멘트 본문에 실을 수 있다'
+} finally { $env:GISSUE_CHECKLIST_MODEL = $savedJudgeModel }
 
 if ($fail -gt 0) { Write-Host "`n$fail 건 실패" -ForegroundColor Red; exit 1 }
 Write-Host "`n전체 통과"

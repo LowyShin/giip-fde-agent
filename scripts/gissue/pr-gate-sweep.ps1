@@ -574,7 +574,7 @@ function Invoke-ChecklistLiveGate($isn, $comments, $tally, $allowPromote) {
     switch ($a.Decision) {
         'KEEP' {
             if ($allowPromote) {
-                $note = Format-ChecklistComment $isn 'KEEP' $a.Items $a.Reason 0 $MaxGateRevertAttempts 'PR 이 성립하지 않는 보고/조사형([NO-PR-REASON])이며 전 항목이 충족되어 REVIEW → DONE 으로 전이합니다.'
+                $note = Format-ChecklistComment $isn 'KEEP' $a.Items $a.Reason 0 $MaxGateRevertAttempts 'PR 이 성립하지 않는 보고/조사형([NO-PR-REASON])이며 전 항목이 충족되어 REVIEW → DONE 으로 전이합니다.' '' $a.Model
                 if (Invoke-ChecklistTransition $isn $note 'DONE' 'checklist KEEP+보고형') { $script:checklistKept++ }
             } else {
                 $script:checklistKept++
@@ -582,17 +582,17 @@ function Invoke-ChecklistLiveGate($isn, $comments, $tally, $allowPromote) {
             }
         }
         'HOLD' {
-            $note = Format-ChecklistComment $isn 'HOLD' $a.Items $a.Reason 0 $MaxGateRevertAttempts '위 항목의 증거를 이슈 코멘트로 남기고 사람이 DONE/READY 로 직접 전이해 주십시오.'
+            $note = Format-ChecklistComment $isn 'HOLD' $a.Items $a.Reason 0 $MaxGateRevertAttempts '위 항목의 증거를 이슈 코멘트로 남기고 사람이 DONE/READY 로 직접 전이해 주십시오.' '' $a.Model
             if (Invoke-ChecklistTransition $isn $note 'NEEDS_DECISION' 'checklist HOLD') { $script:checklistHeld++ }
         }
         default {
             $repeat = Test-ChecklistUnmetRepeat $comments $a.Items
             if ($repeat -or ($tally.Total + 1) -gt $MaxGateRevertAttempts) {
                 $why = if ($repeat) { '직전 체크리스트 되돌림과 미충족 항목 집합이 동일(같은 지점에서 반복 실패)' } else { "전 게이트 합산 되돌림 $($tally.Total)회로 캡($MaxGateRevertAttempts) 도달" }
-                $note = Format-ChecklistComment $isn 'HOLD' $a.Items $a.Reason 0 $MaxGateRevertAttempts "더 이상 자동으로 되돌리지 않습니다: $why. NEEDS_DECISION 으로 전환합니다 - 사람이 확인해 주십시오. (giip #4334 무한루프 방지)"
+                $note = Format-ChecklistComment $isn 'HOLD' $a.Items $a.Reason 0 $MaxGateRevertAttempts "더 이상 자동으로 되돌리지 않습니다: $why. NEEDS_DECISION 으로 전환합니다 - 사람이 확인해 주십시오. (giip #4334 무한루프 방지)" '' $a.Model
                 if (Invoke-ChecklistTransition $isn $note 'NEEDS_DECISION' "checklist 에스컬레이션: $why") { $script:checklistEscalated++ }
             } else {
-                $note = Format-ChecklistComment $isn 'REVERT' $a.Items $a.Reason ($tally.Total + 1) $MaxGateRevertAttempts
+                $note = Format-ChecklistComment $isn 'REVERT' $a.Items $a.Reason ($tally.Total + 1) $MaxGateRevertAttempts '' $a.Model
                 if (Invoke-ChecklistTransition $isn $note 'READY' 'checklist REVERT') { $script:checklistReverted++ }
             }
         }
