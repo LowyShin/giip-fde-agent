@@ -40,6 +40,26 @@ try {
     Assert-Eq $b.calls 1 '모델 B 호출 수'
     Assert-Eq $b.cacheRead 900 '모델 B cacheRead'
 
+    # [회귀] SinceUtc 의 DateTime.Kind 정규화 (2026-11-16 실측 — UTC+9 호스트에서
+    # ISO8601 'Z' 문자열이나 네이티브 리터럴을 그대로 넘기면 Kind=Local 로 캐스팅되어
+    # 시간창이 UTC 오프셋만큼 밀리고 recent 구간이 0건으로 조용히 사라진다. 오류가
+    # 아니라 '측정값 0' 으로 오독되므로 같은 instant 를 어느 Kind 로 넘겨도 같아야 한다).
+    #  (a) 같은 instant 를 Local Kind 로 넘겨도 UTC Kind 와 동일한 집계가 나와야 한다.
+    $rowsLocal = @(Get-GissueTranscriptTokenUsage -Roots @($tmpRoot) -Workdir $workdir -SinceUtc $since.ToLocalTime())
+    Assert-Eq $rowsLocal.Count $rows.Count 'Local Kind SinceUtc = 동일 행 수'
+    $aLocal = $rowsLocal | Where-Object { $_.model -eq 'MiniMax-M3' }
+    Assert-Eq $aLocal.calls $a.calls 'Local Kind SinceUtc = 동일 호출 수'
+    Assert-Eq $aLocal.cacheRead $a.cacheRead 'Local Kind SinceUtc = 동일 cacheRead'
+    #  (b) Kind 정규화 헬퍼 계약
+    $unspec = [datetime]::SpecifyKind([datetime]'2026-11-16T06:00:00', [System.DateTimeKind]::Unspecified)
+    $convUnspec = ConvertTo-GissueUtcDateTime $unspec
+    Assert-True ($convUnspec.Kind -eq [System.DateTimeKind]::Utc) 'Unspecified Kind -> Utc'
+    Assert-Eq $convUnspec.ToString('yyyy-MM-ddTHH:mm:ss') '2026-11-16T06:00:00' 'Unspecified 는 UTC 로 간주(벽시계 유지)'
+    $convUtc = ConvertTo-GissueUtcDateTime $since
+    Assert-Eq $convUtc.ToString('o') $since.ToString('o') 'Utc Kind 는 그대로'
+    $localVal = [datetime]::SpecifyKind([datetime]'2026-11-16T06:00:00', [System.DateTimeKind]::Local)
+    Assert-Eq (ConvertTo-GissueUtcDateTime $localVal).ToString('o') $localVal.ToUniversalTime().ToString('o') 'Local Kind 는 같은 instant 로 변환'
+
     # 없는 루트는 빈 결과(throw 하지 않음)
     $none = @(Get-GissueTranscriptTokenUsage -Roots @((Join-Path $tmpRoot 'nope')) -Workdir $workdir -SinceUtc $since)
     Assert-Eq $none.Count 0 '없는 루트 = 빈 결과'
