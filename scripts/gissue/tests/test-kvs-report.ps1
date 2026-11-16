@@ -64,4 +64,24 @@ Assert-False (Send-GissueSchedulerRunReport -Lssn '99999' -Sk 'SKTEST' -Csn '47'
 $script:GissueKvsTransport = $null
 Assert-False (Send-GissueKvsPut -Lssn '99999' -Factor 'scheduler_alarm' -Value @{ a = 1 } -Sk '') 'SK 없음 = $false'
 
+
+# 토큰 사용량 기록 — 페이로드 구조(4분류 원형) 검증
+$script:GissueKvsTransport = { param($JsonData, $Sk) $script:captured = $JsonData; return $true }
+$script:captured = $null
+$enginesFixture = @(
+    [ordered]@{ model = 'MiniMax-M3.1-Flash'; calls = 2; freshIn = 100; cacheCreate = 10; cacheRead = 5000; out = 40 },
+    [ordered]@{ model = 'claude-opus-4-8'; calls = 1; freshIn = 7; cacheCreate = 3; cacheRead = 900; out = 11 }
+)
+$ok = Send-GissueTokenUsageRecord -Lssn '99999' -Sk 'SKTEST' -Csn '47' -Engines $enginesFixture -RunId 'run-3'
+Assert-True $ok '토큰 사용량 전송 성공(포트)'
+Assert-True ($script:captured -match '"kFactor":"scheduler_token_usage"') 'kFactor=scheduler_token_usage'
+Assert-True ($script:captured -match '"event":"token_usage"') 'event=token_usage'
+Assert-True ($script:captured -match '"model":"MiniMax-M3.1-Flash"') 'engines 모델 포함'
+Assert-True ($script:captured -match '"freshIn":100') 'freshIn 원형 포함'
+Assert-True ($script:captured -match '"cacheRead":5000') 'cacheRead 원형 포함'
+
+# 포트가 실패를 돌려주면 래퍼도 $false (throw 하지 않음)
+$script:GissueKvsTransport = { param($JsonData, $Sk) return $false }
+Assert-False (Send-GissueTokenUsageRecord -Lssn '99999' -Sk 'SKTEST' -Csn '47' -Engines $enginesFixture) '토큰 사용량 포트 실패 = $false'
+
 Write-Host 'PASS test-kvs-report'
