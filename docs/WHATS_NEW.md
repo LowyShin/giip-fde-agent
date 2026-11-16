@@ -6,9 +6,12 @@
 >
 > *(EN/JP 독자는 각 항목을 AI 에이전트에 번역 요청하세요. / Ask your AI assistant to translate entries.)*
 
-**기준일 (as of): 2026-11-15**
+**기준일 (as of): 2026-11-16**
 
 ---
+
+## 2026-11-16
+- **토큰 사용량 계측·과금 구조와 스크립트 우선 스케줄러 설계 문서 신설** — 실측에서 엔진 호출 1회당 평균 약 16만 토큰이 계수되고 그중 약 98%가 캐시 읽기이며, 사용량이 호스트 로컬 기록에만 남아 플랫폼에서 보이지도 CSN별로 귀속되지도 않는 상태가 확인됐다. **설계** — ① 사용량 기록: 엔진 호출 래퍼에서 usage를 캡처해 기존 kvs-report 와이어(KVSPut)로 tKVS factor `scheduler_token_usage`에 CSN·실행 단위로 기록한다. 토큰은 4분류(fresh input / cache creation / cache read / output) 원형으로 저장하고, 과금 가중·단가는 집계 단계의 요율표(플랫폼 설정)로만 적용해 정책 변경 시 과거 기록으로 재계산할 수 있게 한다. 기록 경로는 §17 본체 비AI 원칙을 그대로 따르고 fail-open이다. ② 스크립트 우선 스케줄러: 현재의 "CSN 세션 전체를 엔진이 처리"를 스크립트 단계(규칙 판정·전이·정형 처리) → 판단 게이트(판단 필요 항목만 `claude -p --output-format json` 1회성 호출, 입력은 델타 패키지 상한, 출력은 구조화 JSON) → 실행 단계(스크립트)로 나눈다. 엔진(MiniMax/Claude) 선택은 게이트 안에서만 일어나고 모든 판단 호출이 사용량 기록 래퍼를 통과한다. 도입은 기록 선행 → 집계·과금 → CSN 1곳 시범 → 확산 순서이며, 요율 초기값·과금 개시 시점·귀속 불가 호출의 배분 규칙은 정책 결정 사항으로 분리했다. → [설계 문서](60-operations/token-usage-metering.md)
 
 ## 2026-11-15
 - **에이전트 공용 메모리·세컨드 브레인 외부 리소스 3건 링크 추가** — 사용자가 공유한 LinkedIn 글의 GitHub 링크 4건을 실측 검증한 결과, 신규 3건(garrytan/gbrain — 에이전트 공용 브레인, akitaonrails/ai-memory — 벤더 간 핸드오프 메모리, huytieu/COG-second-brain — 검증 분리형 세컨드 브레인 하네스)을 [links.md](../links.md)에 등록했다. Karpathy LLM Wiki Gist는 이미 links.md에 K-Layer 원형으로 등록돼 있어 제외. → [links.md](../links.md)
