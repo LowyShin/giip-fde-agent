@@ -29,10 +29,29 @@ function Get-GissueEncodedProjectDirName([string]$Path) {
     return ($Path -replace '[^A-Za-z0-9]', '-')
 }
 
+# UTC 기준 시각을 DateTime.Kind 에 안전하게 정규화한다.
+#   - Kind=Utc        : 그대로 사용.
+#   - Kind=Local      : 같은 instant 를 UTC 로 변환(.ToUniversalTime)한다.
+#   - Kind=Unspecified: 'SinceUtc' 계약에 따라 UTC 로 간주한다(SpecifyKind).
+#
+# 왜 필요한가: 호출부가 ISO8601 'Z' 문자열이나 네이티브 DateTime 리터럴을 그대로
+# 넘기면 PowerShell 의 [datetime] 캐스트는 Kind=Local(UTC+9 등) 값으로 변환한다.
+# DateTime 비교 연산자는 Kind 를 무시하고 원시 tick 만 비교하므로 정규화 없이 두면
+# 시간창이 UTC 오프셋만큼 밀려 **최근 구간이 0건으로 조용히 사라진다**(오류 아님).
+# 측정 모듈에서 조용한 0건은 '측정값 0' 으로 오독되므로 여기서 반드시 정규화한다.
+function ConvertTo-GissueUtcDateTime([datetime]$Value) {
+    if ($Value.Kind -eq [System.DateTimeKind]::Local) { return $Value.ToUniversalTime() }
+    if ($Value.Kind -eq [System.DateTimeKind]::Unspecified) { return [datetime]::SpecifyKind($Value, [System.DateTimeKind]::Utc) }
+    return $Value
+}
+
 # 실행 시간 범위 안의 엔진 사용량을 모델별로 합산한다.
 #   Roots    : 엔진 설정 폴더 후보들(예: $env:CLAUDE_CONFIG_DIR, ~/.claude). projects 하위를 본다.
 #   Workdir  : CSN 잡의 작업 폴더(절대경로). 세션 기록 폴더명과 대조한다.
-#   SinceUtc : 이 시각(UTC) 이후의 레코드만 합산한다.
+#   SinceUtc : 이 시각(UTC) 이후의 레코드만 합산한다. ISO8601 문자열('...Z')·네이티브
+#             DateTime 리터럴·UTC/Local 어느 Kind 로 넘겨도 같은 instant 로 해석된다
+#             (ConvertTo-GissueUtcDateTime 이 정규화한다 — 정규화 없이는 시간창이
+#             UTC 오프셋만큼 밀려 최근 구간이 0건으로 조용히 사라진다).
 # 반환: @([ordered]@{ model; calls; freshIn; cacheCreate; cacheRead; out }) — 없으면 빈 배열.
 function Get-GissueTranscriptTokenUsage {
     param(
@@ -40,6 +59,9 @@ function Get-GissueTranscriptTokenUsage {
         [Parameter(Mandatory)][string]$Workdir,
         [Parameter(Mandatory)][datetime]$SinceUtc
     )
+    # SinceUtc 는 UTC 기준이어야 한다. Kind 가 다르면 비교가 원시 tick 으로 이뤄져
+    # 시간창이 UTC 오프셋만큼 밀린다(최근 구간이 0건으로 조용히 사라짐) -> 정규화.
+    $sinceUtc = ConvertTo-GissueUtcDateTime $SinceUtc
     $byModel = @{}
     $seen = @{}
     $encoded = Get-GissueEncodedProjectDirName $Workdir
@@ -49,7 +71,7 @@ function Get-GissueTranscriptTokenUsage {
         $projDir = Join-Path (Join-Path $root 'projects') $encoded
         if (-not (Test-Path -LiteralPath $projDir)) { continue }
         $files = @(Get-ChildItem -LiteralPath $projDir -Filter '*.jsonl' -File -Recurse -ErrorAction SilentlyContinue |
-            Where-Object { $_.LastWriteTimeUtc -ge $SinceUtc })
+            Where-Object { $_.LastWriteTimeUtc -ge $sinceUtc })
         foreach ($file in $files) {
             try {
                 foreach ($line in [System.IO.File]::ReadLines($file.FullName)) {
@@ -61,7 +83,7 @@ function Get-GissueTranscriptTokenUsage {
                     if (-not $msg -or -not $msg.usage) { continue }
                     $tsUtc = $null
                     try { $tsUtc = [datetime]::Parse("$($rec.timestamp)", [System.Globalization.CultureInfo]::InvariantCulture, $styles) } catch { continue }
-                    if ($tsUtc -lt $SinceUtc) { continue }
+                    if ($tsUtc -lt $sinceUtc) { continue }
                     $mid = "$($msg.id)"
                     if ($mid) {
                         if ($seen.ContainsKey($mid)) { continue }

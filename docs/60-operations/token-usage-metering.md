@@ -84,6 +84,8 @@
 3. **판단 게이트 시범.** §4의 단계 분리를 CSN 1곳에 적용해 처리 품질(전이 오류, SKIP 사유 패턴)과 사용량을 전후 대조한다.
 4. **확산.** 시범 검증이 끝난 뒤 전 CSN으로 넓힌다. 기존 세션형 경로는 시범이 끝날 때까지 유지해 롤백 경로를 남긴다.
 
+**호스트 로컬 합산 호출 규칙.** `scripts/gissue/lib/token-usage.ps1` 의 `Get-GissueTranscriptTokenUsage` 는 `-SinceUtc` 를 **UTC 기준**으로 해석한다. ISO8601 문자열(`...Z`)·네이티브 DateTime 리터럴·UTC/Local 어느 `DateTime.Kind` 로 넘겨도 **같은 instant** 로 정규화되어(`ConvertTo-GissueUtcDateTime`) 동일한 집계가 나온다. 정규화 없이 `Kind` 가 섞이면 `DateTime` 비교가 원시 tick 으로 이뤄져 시간창이 UTC 오프셋만큼 밀리고, **최근 구간이 0건으로 조용히 사라진다**(오류 아님 → "측정값 0" 으로 오독된다). 회귀 테스트 `scripts/gissue/tests/test-token-usage.ps1` 가 이 동치를 고정한다.
+
 ## 6. 정책 결정 사항 (구현과 분리)
 
 - 분류별 과금 단가와 캐시 읽기 가중 (요율표 초기값).
