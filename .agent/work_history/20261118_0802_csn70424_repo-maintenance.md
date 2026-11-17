@@ -21,7 +21,7 @@
 - 저장소 내 nested git 레포는 없다(서브모듈 `.gemini/extensions/bkit` 1건은 이 축의 대상 아님).
 - `git fetch origin --prune` 후 base = `origin/main` = `745569e`(166차 PR #497 머지 커밋) 재확인.
 - **원격 잔여 ref 6건**(`bot/task-giip-4804`·`bot/task-giip-4805`·`bot/task-giip-4806`·`docs/giip-5438-rule58-index`·
-  `feat/runner-onlyisn`·`fix/onlyisn-param-order`)은 163~166차와 **동일 세트**이며, 각 브랜치의 PR 상태를 REST 로 재확인했다:
+  `feat/runner-onlyisn`·`fix/onlyisn-param-order`)은 **직전 회차(166차) 기록과 동일 세트**이며, 각 브랜치의 PR 상태를 REST 로 재확인했다:
   `docs/giip-5438-rule58-index`→PR #480 MERGED · `feat/runner-onlyisn`→PR #487 MERGED · `fix/onlyisn-param-order`→PR #488 MERGED ·
   `bot/task-giip-4804/4805/4806`→ **PR 0건(stranded)**.
 - **★ 이번 회차의 새 사실 — stranded 3건의 소속 CSN 을 실측했다**: `bot/task-giip-4804/4805/4806` 이 가리키는
@@ -31,7 +31,8 @@
   정비 세션이 임의로 PR 을 만들거나 이슈를 건드리지 않는다. **미접촉·미삭제**로 남긴다.
   참고로 세 브랜치의 `origin/main` 대비 실제 산출물은 4파일/884줄 · 10파일/2,208줄 · 14파일/3,244줄로substantial 하다 —
   그러나 소유 CSN 세션이 이어갈 작업이므로 손대지 않는 것이 맞다.
-- 동일 ref 세트가 163차부터 6회 연속 관측되나 이번에도 **미접촉·미삭제**로 남긴다(삭제 판단은 사람 몫).
+- 동일 ref 세트는 **100차(2026-11-12) 이후 40개 회차 기록에서 반복 관측**된다(165차 기록만 이 3건을 언급하지 않았고 다른 ref 만 적었다).
+  이번 회차도 동일하게 **미접촉·미삭제**로 남긴다(삭제 판단은 사람 몫).
 
 ## [E] CI/검증 실패 — 대상 0건
 
@@ -163,7 +164,7 @@
 
 ## 관찰 (조치 아님) — 다음 회차가 확인할 항목
 
-1. **원격 stranded ref 3건**(`bot/task-giip-4804/4805/4806`)이 6회 연속 관측된다. **이번 회차에 소속 CSN 을 실측**해
+1. **원격 stranded ref 3건**(`bot/task-giip-4804/4805/4806`)이 **100차 이후 40개 회차 기록에서 반복 관측**된다. **이번 회차에 소속 CSN 을 실측**해
    "죽은 잔재" 가 아니라 **타 CSN 의 살아있는 READY 이슈 체인 작업 브랜치**임을 확인했다(산출물substantial).
    타 CSN 쓰기 금지에 따라 정비 세션이 손대지 않으며, PR 생성·삭제 판단은 사람 몫이다.
 2. **`maint-165-0312` 빈 고아 워크트리**가 계속 남는다(clean·0커밋·PR 0건). 정본 도구가 **MANUAL-REVIEW(머지 PR 없음)** 로 판정하므로
