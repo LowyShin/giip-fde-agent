@@ -45,6 +45,12 @@ powershell.exe -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass `
 - `<REPO_ROOT>`: 이 스케줄러 스크립트 세트를 배치한 오케스트레이션 레포의 루트(원본 배포에서는
   lowyworkenv).
 - 단일 CSN만 즉시 실행/드라이런하려면 `-OnlyCsn <csn>` 인자를 추가합니다(`-DryRun`과 조합 가능).
+- **이슈 번호 지정 실행 `-OnlyIsn <isn>`** (giip 5544): 외부 감지기(예: 5분 간격 폴링)가 "지금 이 이슈"를 지정해 즉시 처리시키는 용도입니다. 지정된 이슈가 보이는 CSN의 잡만 기동되고, 그 잡의 큐는 지정 1건으로 교체됩니다.
+  - **우회하는 것**: 큐 우선순위 정렬과 READY 경과 조건(기본 60분 — 방금 READY가 된 이슈도 즉시 처리).
+  - **우회하지 않는 것(안전 게이트)**: CSN 소속 검증(응답 cSn 불일치 시 미실행, giip #1053), NEEDS_DECISION 제외, 신선한 IN_PROGRESS 중복 실행 금지(60분 이상 정체한 IN_PROGRESS는 기존 회수 경로 STALE_IN_PROGRESS로 처리), [OPS] 자동 감지 이슈 제외, REVIEW/TESTED 재검증 쿨다운·회차 상한(잡 루프의 기존 게이트가 그대로 판정).
+  - **대상이 아니면 조용히 끝나지 않습니다**: 실행 로그에 `[ONLYISN-SKIP] isn=<n> reason=<코드>`를 남기고, 이슈가 대상 CSN에서 확인된 경우 그 이슈에 사유 운영 코멘트(`[ONLYISN-SKIP] …`)도 남깁니다. 사유 코드: `CSN_MISMATCH` / `AUTO_OPS` / `NEEDS_DECISION` / `IN_PROGRESS_ACTIVE` / `REVIEW_NO_NEW_SIGNAL` / `STATUS_NOT_PROCESSABLE` / `NOT_FOUND` / `LOOKUP_ERROR`.
+  - **실행 이력**: 종료 시 tKVS `scheduler_run_history` 값에 `trigger='onlyisn'`, `onlyIsn=<n>`이 함께 기록됩니다(정기 실행은 `trigger='schedule'`, `onlyIsn=0`).
+  - 판정 로직의 정본은 `scripts/gissue/lib/only-isn.ps1`(순수 판정 함수 + 단건 조회)이며, 회귀 테스트는 `scripts/gissue/tests/test-only-isn.ps1`입니다.
 - Windows Task Scheduler 대신 cron/systemd timer 등 다른 스케줄러로 이식할 경우, 이 커맨드 자체를
   그대로 그 스케줄러의 실행 대상으로 등록하면 됩니다(플랫폼별 셸 래퍼만 다르면 됨).
 

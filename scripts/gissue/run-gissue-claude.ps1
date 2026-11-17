@@ -58,6 +58,7 @@
 param(
     [switch]$DryRun,          # claude 미기동, 무엇을 실행할지 로그만
     [string]$OnlyCsn = '',    # 특정 CSN만 (테스트용)
+    [int]$OnlyIsn = 0,        # 이슈 번호 지정 실행 (0=미지정) — 큐 우선순위·READY 경과 조건만 우회하고 안전 게이트는 유지 (giip 5544, 판정 정본 lib/only-isn.ps1)
     # [저장소 정비 2026-10-23] 아래 2개는 **테스트 전용** 파라미터다.
     #   -FunctionsOnly : 이 파일을 닷소싱(. .\run-gissue-claude.ps1)했을 때 **함수 정의만** 적재하고
     #                     스케줄러 본문(Phase 1 이후) 실행을 건너뛴다. 닷소싱은 top-level 코드가 전부
@@ -1317,6 +1318,9 @@ $HeartbeatCfg = Get-GissueHeartbeatConfig $mapRoot
 # 엔진이 죽은 바로 그 상황에서도 스케줄러 본체가 직접 보낼 수 있어야 하기 때문이다(가이드 §17).
 . (Join-Path $Root 'lib/kvs-report.ps1')
 
+# [giip 5544] 이슈 번호 지정 실행(-OnlyIsn)의 판정·조회 정본 — lib/only-isn.ps1.
+. (Join-Path $Root 'lib/only-isn.ps1')
+
 # [giip #5398] 토큰 사용량 합산 — 엔진 세션 기록(JSONL)의 usage 를 호스트 로컬에서 모델별로 합산한다.
 # 원본 기록은 호스트 밖으로 내보내지 않고, 합산 결과만 Send-GissueTokenUsageRecord 로 보낸다.
 # 설계 정본: docs/60-operations/token-usage-metering.md §3.
@@ -2538,7 +2542,19 @@ foreach ($csn in $map.PSObject.Properties.Name) {
     # (같은 판정 함수를 쓴다: 판정 복붙 금지, 규칙 48).
     if (-not (Test-GissueCsnEntryValid $csn $entry)) { continue }
     # 스케줄러 비활성 CSN 은 무인 :07 실행에서 건너뛴다("enabled": false). 명시적 -OnlyCsn 수동 실행만 허용.
-    if ($entry.enabled -eq $false -and (-not $OnlyCsn)) { Write-Log $csn "SKIP: 스케줄러 비활성(enabled=false)"; continue }
+    # [giip 5544] 번호 지정 실행도 명시적 수동 실행이라 같은 면제를 받는다.
+    if ($entry.enabled -eq $false -and (-not $OnlyCsn) -and $OnlyIsn -le 0) { Write-Log $csn "SKIP: 스케줄러 비활성(enabled=false)"; continue }
+    # [giip 5544] 번호 지정 실행: 지정 이슈가 이 CSN 에서 보이는 경우에만 잡을 띄운다.
+    #   Phase 1 은 기동 여부만 정한다 — 게이트 판정과 스킵 코멘트는 잡이 같은 판정 함수
+    #   (lib/only-isn.ps1 Get-GissueOnlyIsnVerdict)로 수행한다.
+    $onlyIsnRow = $null
+    if ($OnlyIsn -gt 0) {
+        $lk = Get-GissueIssueByIsn $ListIssuesScript $csn $GiipAccountsFile $ApiBase $OnlyIsn
+        if ($lk.Error) { Write-Log $csn "[ONLYISN] isn=$OnlyIsn 조회 실패 — $($lk.Error)"; continue }
+        $onlyIsnRow = $lk.Row
+        if (-not $onlyIsnRow) { Write-Log $csn "[ONLYISN] isn=$OnlyIsn 이 CSN에서 찾지 못함 — 잡 미기동"; continue }
+        if ($onlyIsnRow.Csn -and $onlyIsnRow.Csn -ne $csn) { Write-Log $csn "[ONLYISN] isn=$OnlyIsn 소속 불일치(응답 cSn=$($onlyIsnRow.Csn)) — 실행하지 않음"; continue }
+    }
     $workdir = $entry.workdir
     # 이 CSN 프로젝트의 "정상 휴지 브랜치"(csn-projects.json 의 선택적 restBranch). 원격 기본 브랜치와
     # 상시 작업 브랜치가 다른 프로젝트(dev-first 등)에서 busy-check 오탐을 막는다.
@@ -2684,6 +2700,11 @@ foreach ($csn in $map.PSObject.Properties.Name) {
         Invoke-GissuePresweep $csn $workdir -DryRun
         $issueQueueDry = @(Get-GissueIssueQueue $ListIssuesScript $csn $GiipAccountsFile $ApiBase $reviewTestedMaxAgeHours)  # giip #1665: 방어적 @() 강제
         Write-Log $csn "[DryRun] 처리 대상 $($issueQueueDry.Count)건"
+        if ($OnlyIsn -gt 0 -and $onlyIsnRow) {
+            $inDryQ = @($issueQueueDry | Where-Object { "$($_.Isn)" -eq "$OnlyIsn" })
+            $dryVerdict = Get-GissueOnlyIsnVerdict -Found $true -Status $onlyIsnRow.Status -RowCsn $onlyIsnRow.Csn -TargetCsn "$csn" -Title $onlyIsnRow.Title -InQueue ($inDryQ.Count -gt 0) -QueueStatus $(if ($inDryQ.Count -gt 0) { "$($inDryQ[0].Status)" } else { '' })
+            Write-Log $csn "[DryRun][ONLYISN] isn=$OnlyIsn status=$($onlyIsnRow.Status) 판정=$($dryVerdict.Action) 사유=$($dryVerdict.Reason) 큐상태=$($dryVerdict.QueueStatus)"
+        }
         foreach ($dq in $issueQueueDry) {
             $engineNoteIssue = if ($dq.Status -eq 'TESTED') {
                 "claude($ClaudeModel) 강제(TESTED, giip #1472)"
@@ -2719,7 +2740,7 @@ foreach ($csn in $map.PSObject.Properties.Name) {
               $reviewIssuePrompt, $testedIssuePrompt, $runTimeoutMin, $registerIssueScript, $listIssuesScript,
               $issueEngineDeadlineMin, $reviewEngineDeadlineMin, $issueEnginePollMin, $logDir, $csnSk, $runIdKey, $reviewRecheckCooldownHours,
               $projectLang, $divergeFailAlertThreshold, $bashExe, $presweepScript, $reviewTestedMaxAgeHours, $softBudgetMin,
-              $repoMaintDeadlineMin)
+              $repoMaintDeadlineMin, $onlyIsn)
         Set-Location -Path $workdir
         # [ENCODING][giip #1204 버그 B] Start-Job 은 별도 프로세스라 바깥 스코프의 콘솔 인코딩 설정이
         # 상속되지 않는다 — 한글 프롬프트를 stdin 파이프로 넘기기 전에 이 잡 스코프에서도 UTF-8 로 고정한다.
@@ -2737,6 +2758,9 @@ foreach ($csn in $map.PSObject.Properties.Name) {
         #   같은 판정·실행 코드를 쓰게 해 복붙 격차를 막고, 회귀 테스트가 러너와 동일 코드를 닷소싱해 검증한다.
         #   $root 는 scripts/gissue 루트(ArgumentList 첫 인자 $Root). 잡은 별도 프로세스라 여기서 닷소싱한다.
         . (Join-Path $root 'lib/gissue-stash-unblock-lib.ps1')
+
+        # [giip 5544] 번호 지정 실행의 판정·조회 정본(잡은 별도 프로세스라 여기서 닷소싱).
+        . (Join-Path $root 'lib/only-isn.ps1')
 
         # [ENCODING][giip #1073] watchdog 코멘트 안전 등록 헬퍼 — giipfaw API 경유(DB 직접 접근 불필요).
         # watchdog note 들은 모두 한글을 포함한다. 커맨드라인 인자로 직접 넘기면 무인(headless) 실행
@@ -3513,6 +3537,36 @@ ${function:Invoke-GissueEngine}
         }
         $issueQueue = @(Get-GissueIssueQueue $listIssuesScript $csn $accountsFile $apiBase $reviewTestedMaxAgeHours)  # giip #1665: 방어적 @() 강제
         Write-Output "[QUEUE] CSN $csn 처리 대상 $($issueQueue.Count)건"
+        # [giip 5544] 번호 지정 실행 — 큐를 지정 1건으로 교체한다. 판정은 lib/only-isn.ps1 정본.
+        #   RUN 이면 큐 행을 재사용하거나(게이트를 이미 통과한 행) READY 경과 우회 행을 구성한다.
+        #   SKIP 이면 로그 + 해당 이슈에 운영 코멘트를 남기고(조용한 종료 금지) 큐를 비운다.
+        #   REVIEW/TESTED 재검증 쿨다운·회차 상한은 아래 루프의 기존 게이트가 그대로 판정한다.
+        if ($onlyIsn -gt 0) {
+            $lk = Get-GissueIssueByIsn $listIssuesScript $csn $accountsFile $apiBase $onlyIsn
+            if ($lk.Error) {
+                Write-Output "[ONLYISN-SKIP] isn=$onlyIsn reason=LOOKUP_ERROR — $($lk.Error)"
+                $issueQueue = @()
+            } else {
+                $onlyRow = $lk.Row
+                $inQ = @($issueQueue | Where-Object { "$($_.Isn)" -eq "$onlyIsn" })
+                $verdict = Get-GissueOnlyIsnVerdict -Found:($null -ne $onlyRow) -Status $(if ($onlyRow) { $onlyRow.Status } else { '' }) -RowCsn $(if ($onlyRow) { $onlyRow.Csn } else { '' }) -TargetCsn "$csn" -Title $(if ($onlyRow) { $onlyRow.Title } else { '' }) -InQueue:($inQ.Count -gt 0) -QueueStatus $(if ($inQ.Count -gt 0) { "$($inQ[0].Status)" } else { '' })
+                if ($verdict.Action -eq 'RUN') {
+                    if ($inQ.Count -gt 0) {
+                        $issueQueue = @($inQ[0])
+                    } else {
+                        $issueQueue = @([pscustomobject]@{ Isn = "$onlyIsn"; Title = $onlyRow.Title; Status = $verdict.QueueStatus; ElapsedMin = '0'; LastAuthor = '' })
+                    }
+                    Write-Output "[ONLYISN] isn=$onlyIsn 지정 실행 — 큐 우선순위·READY 경과 조건 우회(안전 게이트는 기존 경로 그대로 적용)"
+                } else {
+                    Write-Output "[ONLYISN-SKIP] isn=$onlyIsn reason=$($verdict.Reason) status=$(if ($onlyRow) { $onlyRow.Status } else { '?' })"
+                    if ($onlyRow) {
+                        try { Add-GissueWatchdogComment $root $accountsFile $apiBase "$onlyIsn" (Get-GissueOnlyIsnSkipNote -Reason $verdict.Reason -Isn $onlyIsn -Status $onlyRow.Status) $csn }
+                        catch { Write-Output "[ONLYISN-SKIP] isn=$onlyIsn 스킵 코멘트 등록 실패: $($_.Exception.Message)" }
+                    }
+                    $issueQueue = @()
+                }
+            }
+        }
         Write-Output "[SOFT-BUDGET] 설정 = $(Format-GissueSoftBudgetSetting $softBudgetMin $runTimeoutMin)"
 
         # [giip #3557] 예산 스킵 상태 추적 — 동시쓰기 완화를 위해 3회 재시도 패턴 적용 (review_recheck_state.json 과 동일)
@@ -3792,7 +3846,7 @@ ${function:Invoke-GissueEngine}
                     $reviewIssuePromptSub, $testedIssuePromptSub, $RunTimeoutMin, $RegisterIssueScript, $ListIssuesScript,
                     $IssueEngineDeadlineMin, $ReviewEngineDeadlineMin, $IssueEnginePollMin, $LogDir, $csnSk, $runIdKey, $ReviewRecheckCooldownHours,
                     $projectLang, $DivergeFailAlertThreshold, $BashExe, $PresweepScript, $reviewTestedMaxAgeHours, $SoftBudgetMin,
-                    $RepoMaintDeadlineMin
+                    $RepoMaintDeadlineMin, $OnlyIsn
     $runs += [pscustomobject]@{
         Csn = $csn; Job = $job; Lock = $lock; Done = $false; Workdir = $workdir
         Deadline = (Get-Date).AddMinutes($RunTimeoutMin)
@@ -4138,6 +4192,9 @@ Invoke-GissuePostProcessPump -Drain
                 hostname   = $hostId.hostname
                 ips        = @($hostId.ips)
                 csnResults = @($runs | ForEach-Object { @{ csn = "$($_.Csn)"; processed = $_.ProcessedCount; failed = $_.FailedCount } })
+                # [giip 5544] 번호 지정 트리거 실행임을 이력에 남긴다(정기 실행과 구분).
+                trigger    = if ($OnlyIsn -gt 0) { 'onlyisn' } else { 'schedule' }
+                onlyIsn    = $OnlyIsn
                 summary    = "CSN [$csnList] 처리 $totalProcessed / 실패 $totalFailed"
             }
             $anySk = @($runs | Where-Object { $_.Sk } | Select-Object -First 1).Sk
