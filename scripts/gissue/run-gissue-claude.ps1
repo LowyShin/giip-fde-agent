@@ -2821,14 +2821,18 @@ foreach ($csn in $map.PSObject.Properties.Name) {
             if (-not $changedFiles) { return }
             $fileListText = ($changedFiles | ForEach-Object { Join-Path $Workdir $_ }) -join "`n"
             $qaPrompt = "아래 [대상 파일] 목록을 각각 Read 도구로 읽어라. 이 프로젝트의 산출물 언어 규칙은 '일본어 전용'이다. 각 파일에서 그 규칙에 맞지 않는 언어(특히 중국어 간체 어휘·문법, 또는 일본어 상용한자가 아닌 한자)가 섞여 있는지 판정하라. 다른 설명 없이 파일마다 정확히 한 줄로만, 다음 형식 중 하나로 답하라: ``<파일경로>: CONTAMINATED(<발견 위치·문구를 짧게>)`` 또는 ``<파일경로>: CLEAN``.`n`n[대상 파일]`n$fileListText"
+            # [giip #5449] 이 2차 판정은 AI 엔진(claude)이 수행하고 그 결과를 이슈 코멘트로 남긴다 →
+            # 요구 4("AI 엔진이 작성하는 코멘트가 대상")에 해당하므로 판정 모델명을 코멘트에 표기한다.
+            # 모델명은 한 곳($qaJudgeModel)에서만 정하고 호출·코멘트가 같은 값을 쓴다.
+            $qaJudgeModel = 'claude-haiku-4-5'
             try {
-                $qaOutput = ($qaPrompt | & claude -p --allowedTools Read --add-dir $Workdir --model claude-haiku-4-5 2>&1 | Out-String).Trim()
+                $qaOutput = ($qaPrompt | & claude -p --allowedTools Read --add-dir $Workdir --model $qaJudgeModel 2>&1 | Out-String).Trim()
             } catch {
                 Write-Output "[WARN][CJK-QA] isn=$Isn claude 판정 호출 실패($($_.Exception.Message))"
                 $qaOutput = "(claude 판정 호출 실패 — 1차 grep 필터만으로 혼입 의심 상태)"
             }
             if ($qaOutput -match 'CONTAMINATED') {
-                $note = "[dp01-scheduler][CJK-QA] gissue 스케줄러 MiniMax 산출물에서 중국어 혼입 의심이 발견됐습니다(giip #2047 QA 게이트, 1차 grep 필터 통과 후 claude -p 2차 판정). 자동 재작성/재시도는 하지 않았습니다 — 아래 판정 결과를 사람이 확인해주세요.`n`n$qaOutput"
+                $note = "[dp01-scheduler][CJK-QA] gissue 스케줄러 MiniMax 산출물에서 중국어 혼입 의심이 발견됐습니다(giip #2047 QA 게이트, 1차 grep 필터 통과 후 claude -p 2차 판정). 자동 재작성/재시도는 하지 않았습니다 — 아래 판정 결과를 사람이 확인해주세요.`n`n사용 모델: $qaJudgeModel`n`n$qaOutput"
                 Add-GissueWatchdogComment $Root $AccountsFile $ApiBase $Isn $note $Csn
                 Write-Output "[CJK-QA] isn=$Isn 중국어 혼입 의심 — 이슈 코멘트 등록함"
             } else {
@@ -3148,7 +3152,7 @@ foreach ($csn in $map.PSObject.Properties.Name) {
                 return
             }
             # [giip #5449] 실행 모델 주입 — Claude 직접 실행 경로.
-            $claudeModelLine = "[실행 모델] 이 세션은 Claude 모델 '$Model' 로 실행 중이다. 이슈에 남기는 모든 코멘트에 사용 모델으로 이 값을 표기하라."
+            $claudeModelLine = "[실행 모델] 이 세션은 Claude 모델 '$Model' 로 실행 중이다. 이슈에 남기는 모든 코멘트에 사용 모델로 이 값을 표기하라."
             $promptWithModel = "$claudeModelLine`n`n$PromptText"
             $promptWithModel | & claude -p --dangerously-skip-permissions --add-dir $Root --model $Model 2>&1
         }
