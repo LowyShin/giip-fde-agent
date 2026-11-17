@@ -2740,7 +2740,7 @@ foreach ($csn in $map.PSObject.Properties.Name) {
               $reviewIssuePrompt, $testedIssuePrompt, $runTimeoutMin, $registerIssueScript, $listIssuesScript,
               $issueEngineDeadlineMin, $reviewEngineDeadlineMin, $issueEnginePollMin, $logDir, $csnSk, $runIdKey, $reviewRecheckCooldownHours,
               $projectLang, $divergeFailAlertThreshold, $bashExe, $presweepScript, $reviewTestedMaxAgeHours, $softBudgetMin,
-              $repoMaintDeadlineMin, $onlyIsn)
+              $onlyIsn, $repoMaintDeadlineMin)
         Set-Location -Path $workdir
         # [ENCODING][giip #1204 버그 B] Start-Job 은 별도 프로세스라 바깥 스코프의 콘솔 인코딩 설정이
         # 상속되지 않는다 — 한글 프롬프트를 stdin 파이프로 넘기기 전에 이 잡 스코프에서도 UTF-8 로 고정한다.
@@ -3846,7 +3846,7 @@ ${function:Invoke-GissueEngine}
                     $reviewIssuePromptSub, $testedIssuePromptSub, $RunTimeoutMin, $RegisterIssueScript, $ListIssuesScript,
                     $IssueEngineDeadlineMin, $ReviewEngineDeadlineMin, $IssueEnginePollMin, $LogDir, $csnSk, $runIdKey, $ReviewRecheckCooldownHours,
                     $projectLang, $DivergeFailAlertThreshold, $BashExe, $PresweepScript, $reviewTestedMaxAgeHours, $SoftBudgetMin,
-                    $RepoMaintDeadlineMin, $OnlyIsn
+                    $OnlyIsn, $RepoMaintDeadlineMin
     $runs += [pscustomobject]@{
         Csn = $csn; Job = $job; Lock = $lock; Done = $false; Workdir = $workdir
         Deadline = (Get-Date).AddMinutes($RunTimeoutMin)
