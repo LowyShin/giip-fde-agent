@@ -50,7 +50,7 @@ powershell.exe -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass `
   - **우회하지 않는 것(안전 게이트)**: CSN 소속 검증(응답 cSn 불일치 시 미실행, giip #1053), NEEDS_DECISION 제외, 신선한 IN_PROGRESS 중복 실행 금지(60분 이상 정체한 IN_PROGRESS는 기존 회수 경로 STALE_IN_PROGRESS로 처리), [OPS] 자동 감지 이슈 제외, REVIEW/TESTED 재검증 쿨다운·회차 상한(잡 루프의 기존 게이트가 그대로 판정).
   - **대상이 아니면 조용히 끝나지 않습니다**: 실행 로그에 `[ONLYISN-SKIP] isn=<n> reason=<코드>`를 남기고, 이슈가 대상 CSN에서 확인된 경우 그 이슈에 사유 운영 코멘트(`[ONLYISN-SKIP] …`)도 남깁니다. 사유 코드: `CSN_MISMATCH` / `AUTO_OPS` / `NEEDS_DECISION` / `IN_PROGRESS_ACTIVE` / `REVIEW_NO_NEW_SIGNAL` / `STATUS_NOT_PROCESSABLE` / `NOT_FOUND` / `LOOKUP_ERROR`.
   - **실행 이력**: 종료 시 tKVS `scheduler_run_history` 값에 `trigger='onlyisn'`, `onlyIsn=<n>`이 함께 기록됩니다(정기 실행은 `trigger='schedule'`, `onlyIsn=0`).
-  - 판정 로직의 정본은 `scripts/gissue/lib/only-isn.ps1`(순수 판정 함수 + 단건 조회)이며, 회귀 테스트는 `scripts/gissue/tests/test-only-isn.ps1`입니다.
+  - 판정 로직의 정본은 `scripts/gissue/lib/only-isn.ps1`(순수 판정 함수 + 단건 조회)이며, 회귀 테스트는 `scripts/gissue/tests/test-only-isn.ps1`입니다. **상세 사양은 §18**, AI 인스턴스용 사용법은 [`only-isn-ai-guide.md`](only-isn-ai-guide.md)를 봅니다.
 - Windows Task Scheduler 대신 cron/systemd timer 등 다른 스케줄러로 이식할 경우, 이 커맨드 자체를
   그대로 그 스케줄러의 실행 대상으로 등록하면 됩니다(플랫폼별 셸 래퍼만 다르면 됨).
 
@@ -1076,6 +1076,7 @@ giip 4429 의 "한계(알려진 미해결)" 3건을 각각 독립 PR 로 해소�
 
 ## 14) 연결 문서
 
+- **이슈 번호 지정 실행(`-OnlyIsn`) AI 인스턴스용 유저가이드**: `./only-isn-ai-guide.md` (사양은 본 문서 §18)
 - **Docker 배포(auto clone + csn/sk/login_id 자동 등록 + Linux/pwsh 이식)**: `./docker-deployment.md`
 - **보조 시간별 스케줄러 5종 + 태스크 등록 게이트**: `./aux-hourly-schedulers.md` (§15 참고)
 - 이슈 처리 세션 안전 규칙 색인: `../../.agent/rules/41_issue_session_safety_index.md`
@@ -1299,3 +1300,78 @@ Test-Path scripts\gissue\lib\liveness-ops-issue.js
 ### 17-6) 테스트
 
 - `scripts/gissue/tests/test-kvs-report.ps1` — 판정(limit 서명 · 알람 종류)과 페이로드(kType/kKey/kFactor/kValue, hostname/IP 포함)를 네트워크 없이 검증한다(전송 포트를 가짜로 교체). 게이트 기대 건수에 포함된다.
+
+## 18) 이슈 번호 지정 실행 `-OnlyIsn` (giip 5544)
+
+> 요약은 §3 실행 커맨드 템플릿의 `-OnlyIsn` 항목, **AI 인스턴스용 사용 가이드는 [`only-isn-ai-guide.md`](only-isn-ai-guide.md)** 를 본다. 이 절이 사양의 정본이다.
+
+### 18-1) 목적
+
+정기 실행(:07, 우선순위 큐)이 닿기까지 최대 1시간 걸리는 구조에서, 외부 감지기(예: 5분 간격 폴링)나 운영자가 "지금 이 이슈"를 지정해 즉시 처리시키기 위한 표준 진입점이다. 호스트 로컬 래퍼가 아니라 러너 본체 파라미터로 두어, 모든 배포 인스턴스가 self-pull 로 같은 동작을 받는다.
+
+### 18-2) 파라미터
+
+| 파라미터 | 형 | 기본값 | 의미 |
+|---|---|---|---|
+| `-OnlyIsn` | int | 0 (미지정) | 지정 실행할 이슈 번호(isn). 0이면 기존 정기 실행과 완전히 동일하게 동작한다 |
+| `-OnlyCsn` | string | '' | 함께 쓰면 그 CSN만 대상으로 한다. 없이 쓰면 매핑된 전 CSN 중 지정 이슈가 보이는 CSN의 잡만 기동된다 |
+| `-DryRun` | switch | — | 조합 가능. 잡을 띄우지 않고 CSN별 판정(`[DryRun][ONLYISN] … 판정=RUN/SKIP 사유=<코드>`)만 로그에 남긴다 |
+
+### 18-3) 처리 흐름
+
+1. **Phase 1 (기동 판정)** — CSN마다 지정 이슈를 단건 조회(`list-issues.js --status` 직접 조회)한다. 이슈가 보이지 않는 CSN은 잡을 띄우지 않고 `[ONLYISN] isn=<n> 이 CSN에서 찾지 못함 — 잡 미기동`을 로그에 남긴다. 응답 cSn이 그 CSN과 다르면 `[ONLYISN] … 소속 불일치` 로그 후 미기동. 스케줄러 비활성(`enabled: false`) CSN도 명시 지정 실행에서는 `-OnlyCsn`과 같은 면제를 받는다.
+2. **잡 (큐 교체)** — 잡은 평소처럼 일반 큐를 조회한 뒤, 판정 정본 `lib/only-isn.ps1` 의 `Get-GissueOnlyIsnVerdict` 로 지정 1건의 RUN/SKIP을 판정한다. RUN이면 큐를 그 1건으로 교체하고, 이후 처리(프롬프트 선택·엔진 실행·상태별 시간 추적)는 일반 경로와 동일하다.
+3. **종료** — 실행 이력(§17 표의 `scheduler_run_history`)에 `trigger`/`onlyIsn` 필드가 함께 기록된다(18-6).
+
+### 18-4) 판정표 — 우회하는 것과 우회하지 않는 것
+
+**우회**: 큐 우선순위 정렬, READY 경과 조건(기본 60분). READY인데 경과 부족으로 큐에 없는 이슈를 행으로 만들어 실행하는 지점이 유일한 우회다.
+
+**유지(안전 게이트)** — 아래 중 하나라도 걸리면 SKIP이며, 사유 코드가 판정의 정본이다:
+
+| 사유 코드 | 조건 | 비고 |
+|---|---|---|
+| `CSN_MISMATCH` | 단건 조회의 응답 cSn ≠ 대상 CSN | giip #1053 가드. 실행하지 않는다 |
+| `AUTO_OPS` | 제목이 `[OPS] gissue 처리 무소식 감지`와 정확히 같거나 그로 시작 | 자동 감지 기록은 작업이 아니다(giip #4907). 판정 문자열은 `list-issues.js`의 `AUTO_OPS_TITLE_PREFIX`와 커플링 — 한쪽만 바꾸면 테스트가 실패한다 |
+| `NEEDS_DECISION` | 상태가 NEEDS_DECISION | 사람의 결정이 먼저다. 큐 포함 여부와 무관하게 게이트가 우선한다 |
+| `IN_PROGRESS_ACTIVE` | IN_PROGRESS인데 일반 큐에 없음(=60분 미만 신선) | 다른 실행이 처리 중 — 중복 실행 금지. 60분 이상 정체 건은 큐 라벨 `STALE_IN_PROGRESS`로 일반 회수 경로를 탄다 |
+| `REVIEW_NO_NEW_SIGNAL` | REVIEW/TESTED인데 큐에서 빠짐 | [ACTIONFLOW-TEST] dedup 또는 최대 경과 초과로 큐가 제외한 상태 |
+| `STATUS_NOT_PROCESSABLE` | DONE 등 처리 대상 상태가 아님 | 대상 상태는 PENDING/READY/IN_PROGRESS/REVIEW/TESTED뿐 |
+| `NOT_FOUND` | 대상 CSN 스코프에서 조회되지 않음 | 타 CSN 소속이거나 없는 번호 |
+| `LOOKUP_ERROR` | 단건 조회 자체가 실패 | 잡 단계에서만 발생(Phase 1 실패는 잡 미기동으로 끝남) |
+
+REVIEW/TESTED의 **재검증 쿨다운(기본 4시간)과 회차당 상한은 판정 대상이 아니다** — 큐에 들어온 행을 잡 루프의 기존 게이트가 그대로 판정한다. 즉 지정 실행으로도 쿨다운을 우회할 수 없다.
+
+### 18-5) 로그와 운영 코멘트
+
+- RUN: 잡 출력에 `[ONLYISN] isn=<n> 지정 실행 — 큐 우선순위·READY 경과 조건 우회(안전 게이트는 기존 경로 그대로 적용)`.
+- SKIP: 잡 출력에 `[ONLYISN-SKIP] isn=<n> reason=<코드> status=<상태>`. 이슈가 대상 CSN에서 확인된 경우, 그 이슈에 운영 코멘트 `[ONLYISN-SKIP] isn=<n> 번호 지정 실행을 건너뜁니다 — <사유 설명>`도 남긴다(조용한 종료 금지). `NOT_FOUND`/`LOOKUP_ERROR`는 코멘트를 남길 대상을 확정할 수 없어 로그만 남긴다.
+- 코멘트 문구의 정본은 `lib/only-isn.ps1` 의 `Get-GissueOnlyIsnSkipNote` 다.
+
+### 18-6) 실행 이력 기록
+
+종료 시 tKVS `scheduler_run_history` 값에 아래 필드가 추가된다(§17-2 표의 기존 필드와 함께):
+
+| 필드 | 정기 실행 | 지정 실행 |
+|---|---|---|
+| `trigger` | `'schedule'` | `'onlyisn'` |
+| `onlyIsn` | `0` | 지정한 isn |
+
+### 18-7) 호출 예시
+
+```powershell
+# 특정 CSN의 이슈 1건을 즉시 처리
+powershell.exe -File "<REPO_ROOT>/scripts/gissue/run-gissue-claude.ps1" -OnlyCsn 47 -OnlyIsn 5544
+
+# CSN을 모를 때: 매핑된 CSN 중 이슈가 보이는 곳만 기동
+powershell.exe -File "<REPO_ROOT>/scripts/gissue/run-gissue-claude.ps1" -OnlyIsn 5544
+
+# 판정만 먼저 확인(잡 미기동)
+powershell.exe -File "<REPO_ROOT>/scripts/gissue/run-gissue-claude.ps1" -DryRun -OnlyIsn 5544
+```
+
+동시 실행 주의: 지정 실행도 CSN별 lock을 쓰는 일반 실행과 같은 자원 경합 규칙을 따른다. 정기 실행이 같은 CSN을 처리 중이면 lock 대기로 밀릴 수 있고, 그 경우에도 지정 이슈가 신선한 IN_PROGRESS로 보이면 `IN_PROGRESS_ACTIVE`로 중복 실행되지 않는다.
+
+### 18-8) 테스트
+
+- `scripts/gissue/tests/test-only-isn.ps1` — 판정(RUN 5건·CSN 차단·게이트 유지 9건), 스킵 코멘트 문구, [OPS] 접두사와 `list-issues.js`의 커플링을 네트워크 없이 검증한다. 게이트 기대 건수에 포함된다.
