@@ -12,6 +12,7 @@
  */
 const fs = require('fs');
 const { postCommentVerified, DEFAULT_API_BASE } = require('./comment-api');
+const { resolveAuthorDisplayName } = require('./resolve-actor');
 
 const [, , isnArg, contentArg, sk, apiBaseArg, issuetypeArg, roleArg] = process.argv;
 
@@ -25,6 +26,11 @@ if (content.startsWith('@')) {
   content = fs.readFileSync(content.slice(1), 'utf8');
 }
 
+// 표시 이름: 로컬 AI 이름(GIIP_ACTOR/aiName) → hostname → 없으면 보내지 않는다(서버 폴백).
+// 해석이 실패해도 게시를 막지 않는다 — 이름은 구분용이지 인증이 아니다.
+let displayAuthor;
+try { displayAuthor = resolveAuthorDisplayName() || undefined; } catch { displayAuthor = undefined; }
+
 postCommentVerified({
   apiBase: apiBaseArg || DEFAULT_API_BASE,
   apiKey: sk,
@@ -32,6 +38,7 @@ postCommentVerified({
   content,
   issuetype: issuetypeArg || 'note',
   loadedRole: roleArg || undefined,
+  author: displayAuthor,
 })
   .then((r) => {
     r.log.forEach((l) => console.log(l));

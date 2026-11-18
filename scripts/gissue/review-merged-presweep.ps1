@@ -37,10 +37,18 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# ── [giip #2613] AI 행위자 고정 ────────────────────────────────────────────────
-$env:GIIP_ACTOR = 'ai.dp01.gissue-scheduler'
+# ── [giip #2613] AI 행위자 — 이름은 하드코딩하지 않는다 ─────────────────────────
+# 로컬 AI 이름의 단일 출처는 csn-projects.json 최상위 aiName 이고, 해석(인자 >
+# GIIP_ACTOR 환경변수 > aiName > 레지스트리 기본값)의 정본은 lib/resolve-actor.js 다.
+# 자식 프로세스 상속을 위해 해석된 이름을 env 에 확정해 둔다(이미 있으면 그 값이 우선).
 
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
+if (-not $env:GIIP_ACTOR) {
+    try {
+        $resolvedActorName = (& node (Join-Path $Root 'lib/resolve-actor.js') --name 2>$null | Out-String).Trim()
+        if ($resolvedActorName) { $env:GIIP_ACTOR = $resolvedActorName }
+    } catch {}
+}
 $LogDir = Join-Path $Root 'logs'
 if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Force -Path $LogDir > $null }
 $LogFile = Join-Path $LogDir 'gissue_presweep.log'

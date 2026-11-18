@@ -73,11 +73,15 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 
-# ── [giip #2613] 이 실행의 AI 행위자(actor) 고정 ───────────────────────────────
+# ── [giip #2613] 이 실행의 AI 행위자(actor) ───────────────────────────────
 # 배경: giip 코멘트 SP 가 작성자를 정할 때 마지막 폴백이 "SK 가 가리키는 CSn 의 결제자(사람)"라,
 # csn 스코프 SK 로 코멘트를 쓰면 전부 사람 계정에 귀속되어 "어느 프로세스가 썼는지"를 사후에
-# 확인할 수 없었다. 이 환경변수는 자식 프로세스(claude CLI → get-issue.sh)까지 상속된다.
-$env:GIIP_ACTOR = 'ai.dp01.gissue-scheduler'
+# 확인할 수 없었다. 주체 이름은 코드에 박지 않는다 — 로컬 AI 이름의 단일 출처는
+# csn-projects.json 최상위 aiName 이고, 해석 순서(인자 > GIIP_ACTOR 환경변수 > aiName >
+# 레지스트리 기본값)의 정본은 lib/resolve-actor.js 다. 이 러너는 매핑 파싱 직후(Phase -3)에
+# 해석 결과를 $env:GIIP_ACTOR 로 확정한다 — 자식 프로세스(claude CLI → get-issue.sh)까지
+# 상속되므로, 여기서 확정해야 엔진이 남기는 코멘트까지 이 인스턴스의 이름으로 기록된다.
+# (예전에는 여기서 'ai.dp01.gissue-scheduler' 로 하드코딩해 어느 호스트든 dp01 이름이 찍혔다.)
 
 # [ENCODING][giip #1204 버그 B] 프롬프트(대부분 한글)를 `$p | & claude -p ...` stdin 파이프로 넘길 때
 # PowerShell 5.1 기본 콘솔 코드페이지로 인코딩되어 UTF-8 과 어긋나 한글이 깨질 수 있다. 이 스크립트
@@ -616,6 +620,26 @@ try {
         -MapFilePath $MapFile -WriteCache:(-not $DryRun))
 } catch {
     Write-Host "[CSN-MAP] 폴백 패스 자체가 실패(현행 동작으로 계속): $($_.Exception.Message)"
+}
+# (1-b3) **로컬 AI 이름(aiName) 확정** — 코멘트 작성 주체를 이 인스턴스의 이름으로 고정한다.
+#   단일 출처는 csn-projects.json 최상위 aiName(값 = ai-actors.json 에 등록된 actor key)이고
+#   해석의 정본은 lib/resolve-actor.js 다. 여기서는 해석 결과를 env 로 확정하고 상태를
+#   [ACTOR] 로그로 남기기만 한다. 이름이 없거나 해석이 안 되면 임의의 이름을 만들지 않고
+#   기존 폴백(기본 주체/계정 identity)에 맡긴다 — 단 그 사실을 반드시 로그로 남긴다.
+$script:AiName = "$($script:MapRoot.aiName)".Trim()
+if (-not $env:GIIP_ACTOR) {
+    try {
+        $actorJson = & node (Join-Path $Root 'lib/resolve-actor.js') --json 2>$null | Out-String
+        $actorInfo = $actorJson | ConvertFrom-Json -ErrorAction Stop
+        if ($actorInfo -and $actorInfo.actor) { $env:GIIP_ACTOR = "$($actorInfo.actor)" }
+    } catch {}
+}
+if ($env:GIIP_ACTOR) {
+    Write-Host "[ACTOR] 코멘트 작성 주체: $env:GIIP_ACTOR"
+} elseif ($script:AiName) {
+    Write-Host "[ACTOR] aiName '$script:AiName' 를 해석하지 못했습니다(레지스트리 미등록 또는 AK 없음) — 인증은 기본 폴백으로 게시됩니다. 등록 절차: scripts/gissue/AI_ACTOR_ACCOUNTS.md"
+} else {
+    Write-Host "[ACTOR] csn-projects.json 에 aiName 미설정 — 인증은 기본 주체로, 표시 이름은 이 장비의 hostname 으로 전송됩니다(인스턴스 구분용). 고정 이름을 쓰려면 aiName 을 설정하세요."
 }
 # (1-c) **채우지 않은 placeholder 검사(§13 절차의 중간 상태)**. `.example` 을 복사만 하고 아직 값을
 #   채우지 않은 상태가 배포 절차상 반드시 한 번은 존재한다. 그 상태에서 CSN 키는 `<CSN번호>`,
@@ -3531,6 +3555,11 @@ ${function:Invoke-GissueEngine}
             'gissue-scheduler-watchdog', 'gissue-scheduler-wrapper', 'Workflow Orchestrator',
             'ai.dp01.gissue-scheduler', 'ai.dp01.gissue-watchdog'
         )
+        # 이 인스턴스의 로컬 AI 이름(aiName 으로 확정된 주체)으로 달린 코멘트도 "자기 신호"로
+        # 본다 — 호스트마다 이름이 다르므로 고정 목록만으로는 남의 호스트 이름을 놓친다.
+        if ($env:GIIP_ACTOR -and ($reviewRecheckBotAuthors -notcontains $env:GIIP_ACTOR)) {
+            $reviewRecheckBotAuthors += $env:GIIP_ACTOR
+        }
         $reviewRecheckStateFile = Join-Path $logDir 'review_recheck_state.json'
         # 여러 CSN 잡이 동시에 이 파일을 읽고 쓸 수 있어 최소한의 재시도(3회, 짧은 대기)로 동시쓰기 충돌을
         # 완화한다 — 완벽한 파일 락은 아닌 최선노력 수준.

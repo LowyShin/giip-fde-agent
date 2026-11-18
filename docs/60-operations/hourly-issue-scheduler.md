@@ -1416,3 +1416,48 @@ powershell.exe -File "<REPO_ROOT>/scripts/gissue/run-gissue-claude.ps1" -DryRun 
 
 - `scripts/gissue/tests/test-csn-mapping-fallback.ps1` — 판정(LOCAL/REMOTE/UNMAPPED·remote_invalid·fail-soft), 병합의 로컬 필드 보존, 캐시 기록(타 항목·최상위 키 보존, 파일 부재 시 생성 안 함), 오케스트레이션, 후보 수집, 소스 커플링.
 - `scripts/gissue/tests/test-csn-mapping.mjs` — 응답 해석(camelCase/gcm 접두사/래핑, enabled 강제 변환, 스코프 불일치 차단)과 엔드포인트 계약 문자열.
+## 20) 코멘트 작성자 — 로컬 AI 이름(`aiName`) 단일 출처 (giip 5667)
+
+> 배경: 코멘트 author는 인증에 쓴 키로 서버가 확정한다(giip #2613의 actor 체계). 그런데 주체 선택이 스크립트마다 `$env:GIIP_ACTOR = 'ai.dp01.gissue-scheduler'`로 하드코딩돼 있어, 어느 호스트에서 돌려도 dp01 스케줄러 이름으로 기록됐다. 여러 인스턴스가 작업해도 **작업한 AI가 코멘트에 남아야** 하므로, 이름을 로컬 설정에서 읽는 구조로 바꾼다.
+
+### 20-1. 단일 출처: `csn-projects.json` 최상위 `aiName`
+
+```json
+{ "aiName": "ai.dp01.gissue-scheduler", "csn": { "...": "..." } }
+```
+
+- 값은 `scripts/gissue/ai-actors.json`에 등록된 actor key(`ai.<host>.<process>` 명명 규칙)여야 한다. 새 이름이 필요하면 먼저 `scripts/gissue/AI_ACTOR_ACCOUNTS.md` 절차로 계정·AK를 등록한다 — **설정에만 적고 등록이 없으면 해석이 실패한다**.
+- 왜 이 파일인가: ① 스케줄러 배포마다 반드시 존재하는 유일한 로컬 설정 파일이다. `giipAgent.cfg`는 선택 사항(heartbeat 미설정 배포가 존재)이고 giipAgent라는 다른 프로그램의 파일이라 스케줄러 인스턴스의 정체성을 담기 부적합하다(`ai_name=` 안은 이 이유로 기각). ② 레지스트리·해석기와 같은 폴더라 해석기가 자기 위치 기준으로 읽는다. ③ 파일이 인스턴스(PC)마다 분리돼 있어(gitignore) "인스턴스마다 자기 이름"과 정확히 대응한다.
+
+### 20-2. 해석 순서 (정본: `lib/resolve-actor.js`의 `pickActorKey`)
+
+1. 호출 인자 `actorKey`
+2. 환경변수 `GIIP_ACTOR`
+3. **`csn-projects.json`의 `aiName`**
+4. `ai-actors.json`의 `defaultActor`
+
+- 러너는 매핑 파싱 직후(Phase -3) 해석 결과를 `$env:GIIP_ACTOR`로 확정해 자식 프로세스(claude CLI → get-issue.sh)까지 같은 이름이 상속되게 하고, 상태를 `[ACTOR]` 로그로 남긴다. 독립 스크립트(review-done-audit, pr-gate-sweep, pr-attribution-sweep, review-merged-presweep, page-feedback-analyze)도 같은 해석을 탄다 — 하드코딩된 actor 할당은 두지 않는다.
+- REVIEW 재검증 쿨다운의 "자기 author" 목록에는 고정 목록에 더해 확정된 주체(`$env:GIIP_ACTOR`)를 동적으로 포함한다 — 호스트마다 이름이 달라도 자기 코멘트를 새 신호로 오인하지 않기 위해서다.
+
+### 20-3. 미설정·무효일 때 — 표시 이름은 hostname으로 (보완 지시)
+
+인증 주체와 **표시 이름은 별개 채널**이다. 인증은 위 해석 순서(actor AK 체계)를 따르고, 코멘트와 함께 보내는 표시 이름(`author` 필드)은 다음 순서로 정한다 — 정본은 `lib/resolve-actor.js`의 `pickAuthorDisplayName`/`resolveAuthorDisplayName`, 전송은 `lib/post-comment.js`가 게시마다 실어 보낸다.
+
+1. 로컬 AI 이름 (`GIIP_ACTOR` 환경변수 > `csn-projects.json`의 `aiName`)
+2. **이 장비의 hostname**
+3. 그것도 만들 수 없을 때만 보내지 않는다(서버 폴백)
+
+- **미설정**: 'Agent' 같은 공통값으로 뭉개지 않는다 — 인스턴스 구분이 이 구조의 목적이라, 이름이 없으면 hostname이 그 인스턴스의 구분자다. 러너는 `[ACTOR] … aiName 미설정 — 표시 이름은 hostname으로 전송` 로그를 남긴다.
+- **무효(레지스트리에 없는 이름·AK 없음)**: 인증 해석은 실패한다(조용한 폴백으로 사람 이름이 찍히는 상태를 막는 것이 #2613의 원칙). 러너는 `[ACTOR] … 해석하지 못했습니다` 로그를 남기고 기본 폴백으로 계속 실행한다. 표시 이름은 위 순서대로 정해져 함께 전송된다.
+- 표시 이름이 최종 author 표시로 남는 것은 서버측 표시 보존 개편(giip #5663 계열)이 배포된 뒤다. 그전까지 기존 엔드포인트는 `author` 필드를 무시할 수 있으며, 무시돼도 게시 동작은 기존과 같다.
+
+### 20-4. 외부 인스턴스(Muse 등)에 대한 규칙
+
+- 이 스케줄러를 직접 돌리지 않는 인스턴스라도, giip 코멘트를 게시할 때는 같은 규칙을 따른다: 자기 배포의 `csn-projects.json`에 `aiName`을 두거나 `GIIP_ACTOR` 환경변수로 자기 actor key를 지정하고, 게시에는 그 actor의 AK를 쓴다. SK로 게시하면 author가 SK 소유 계정으로 찍힐 수 있다.
+- 서버측 표시 보존(AT로 해석되는 키에서도 클라이언트 이름을 최종 표시로 남기는 개편)은 별도 프로젝트에서 진행한다 — 이 절은 에이전트(로컬) 쪽 규칙만 다룬다.
+- 코멘트 **본문 안의 라벨**(`gissue-review-audit` 등 자기 과거 코멘트 탐색용)은 이 구조의 대상이 아니다. 바꾸는 것은 인증 주체(계정) 선택뿐이다.
+
+### 20-5. 테스트
+
+- `scripts/gissue/tests/test-resolve-actor.mjs` — 해석 우선순위(인자/환경변수/aiName/기본값)와 출처 표기, `readLocalAiName`(trim·BOM·깨진 파일·미존재)의 무예외 폴백.
+- `scripts/gissue/tests/test-ai-name.ps1` — PS 스크립트에 하드코딩 actor 할당이 남지 않았음, 러너의 aiName 확정·[ACTOR] 로그·쿨다운 목록 동적 포함, 독립 스크립트의 해석 경유를 소스 단언으로 고정.
