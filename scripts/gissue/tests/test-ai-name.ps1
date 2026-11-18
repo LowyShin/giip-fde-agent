@@ -13,8 +13,9 @@ $gissueRoot = Split-Path $PSScriptRoot -Parent
 Write-Host '== PS 스크립트에 하드코딩된 actor 할당이 없다 =='
 $offenders = @()
 foreach ($f in (Get-ChildItem -LiteralPath $gissueRoot -Filter '*.ps1' -File)) {
-    $text = Get-Content -Raw -Encoding UTF8 $f.FullName
-    if ($text -match '\$env:GIIP_ACTOR\s*=\s*''ai\.') { $offenders += $f.Name }
+    # 주석 줄(옛 코드를 인용하는 설명)은 제외하고 실제 할당만 본다.
+    $codeOnly = ((Get-Content -Encoding UTF8 $f.FullName) | Where-Object { $_ -notmatch '^\s*#' }) -join "`n"
+    if ($codeOnly -match '\$env:GIIP_ACTOR\s*=\s*''ai\.') { $offenders += $f.Name }
 }
 Assert-True ($offenders.Count -eq 0) "하드코딩 할당 잔존: $($offenders -join ', ')"
 
