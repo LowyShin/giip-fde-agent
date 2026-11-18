@@ -527,8 +527,9 @@ function Invoke-PfaSetIssueStatus([string]$Isn, [string]$Status) {
 }
 
 # 이슈 코멘트. AI 행위자 계정의 AK 로 쓴다(SK 로 쓰면 사람 계정 이름으로 기록된다, giip 2613).
+# 주체 이름은 하드코딩하지 않는다 — 아래 resolve-actor.js 가 csn-projects.json 의 aiName
+# (로컬 AI 이름의 단일 출처) → GIIP_ACTOR 환경변수 → 레지스트리 기본값 순으로 해석한다.
 function Invoke-PfaPostComment([string]$Isn, [string]$Content) {
-    $env:GIIP_ACTOR = 'ai.dp01.gissue-scheduler'
     $ak = ((& node (Join-Path $script:PfaToolDir 'lib/resolve-actor.js') --ak 2>$null) | Out-String).Trim()
     if ($LASTEXITCODE -ne 0 -or -not $ak) { throw 'AI 행위자 AK 를 구하지 못했습니다' }
     Add-PfaSecret $ak

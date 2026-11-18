@@ -25,8 +25,19 @@
  *
  * 사용:
  *   const { resolveActor } = require('./resolve-actor');
- *   const actor = resolveActor();            // GIIP_ACTOR 또는 레지스트리 defaultActor
+ *   const actor = resolveActor();            // 아래 해석 순서로 확정된 주체
  *   const actor = resolveActor({ actorKey: 'ai.dp01.gissue-scheduler' });
+ *
+ * 주체 해석 순서 (로컬 AI 이름의 단일 출처는 csn-projects.json 의 aiName):
+ *   1) 인자 actorKey
+ *   2) 환경변수 GIIP_ACTOR
+ *   3) csn-projects.json 최상위 aiName — 그 인스턴스(PC)의 스케줄러가 자기 이름으로
+ *      남기 위한 설정. 값은 이 레지스트리에 등록된 actor key 여야 한다.
+ *   4) ai-actors.json 의 defaultActor
+ *   예전에는 스크립트마다 GIIP_ACTOR 를 'ai.dp01.gissue-scheduler' 로 하드코딩해
+ *   어느 호스트에서 돌려도 dp01 이름으로 기록됐다 — 그래서 3) 을 단일 출처로 세웠다.
+ *   giipAgent.cfg 는 giipAgent 라는 다른 프로그램의 파일이고 스케줄러 배포마다
+ *   존재가 보장되지 않아 출처로 쓰지 않는다.
  *
  * CLI(셸 스크립트용):
  *   node resolve-actor.js --ak      -> AccessToken 만 stdout 으로
@@ -38,6 +49,9 @@ const path = require('path');
 
 const SCRIPT_DIR = __dirname;
 const REGISTRY_FILE = path.join(SCRIPT_DIR, '..', 'ai-actors.json');
+// 로컬 AI 이름(aiName)의 단일 출처 — 스케줄러 배포 설정 파일. 레지스트리와 같은 폴더라
+// 이 파일 자기 위치 기준으로 읽는다(작업 디렉터리와 무관).
+const PROJECTS_FILE = path.join(SCRIPT_DIR, '..', 'csn-projects.json');
 // giip-accounts.json 은 git 비추적이라 worktree 체크아웃에는 존재하지 않는다.
 //
 // [giip #2645 이식] 원본(lowyworkenv)은 폴백 경로로 이 PC 의 절대경로 2개를 박아 뒀었다. 이 레포는
@@ -65,14 +79,40 @@ function readJson(file, label) {
   }
 }
 
+// csn-projects.json 의 aiName 을 읽는다. 파일이 없거나 깨졌거나 값이 비면 $null —
+// 던지지 않는다(미설정은 오류가 아니라 기본 해석으로 넘어가는 정상 상태다).
+function readLocalAiName(projectsFile = PROJECTS_FILE) {
+  try {
+    if (!fs.existsSync(projectsFile)) return null;
+    const raw = fs.readFileSync(projectsFile, 'utf8').replace(/^﻿/, '');
+    const j = JSON.parse(raw);
+    const v = j && typeof j.aiName === 'string' ? j.aiName.trim() : '';
+    return v || null;
+  } catch {
+    return null;
+  }
+}
+
+// 주체 키 선택의 순수 판정 — 우선순위와 출처 표기의 단일 출처.
+// 반환: { key, source } (아무 출처도 없으면 key=null)
+function pickActorKey({ actorKey, envActor, localName, defaultActor } = {}) {
+  if (actorKey) return { key: String(actorKey).trim(), source: 'arg:actorKey' };
+  if (envActor && String(envActor).trim()) return { key: String(envActor).trim(), source: 'env:GIIP_ACTOR' };
+  if (localName && String(localName).trim()) return { key: String(localName).trim(), source: 'config:csn-projects.json#aiName' };
+  if (defaultActor) return { key: String(defaultActor).trim(), source: 'ai-actors.json:defaultActor' };
+  return { key: null, source: 'none' };
+}
+
 /**
  * 이번 실행의 주체를 확정하고 그 AK 를 돌려준다.
  *
- * 우선순위: 인자 actorKey > 환경변수 GIIP_ACTOR > ai-actors.json 의 defaultActor.
+ * 우선순위: 인자 actorKey > 환경변수 GIIP_ACTOR > csn-projects.json aiName >
+ * ai-actors.json 의 defaultActor (판정은 pickActorKey 가 단일 출처).
  * 하드코딩된 주체 이름은 이 파일 어디에도 없다(요구사항: 주체 식별을 코드에 박지 말 것).
  *
  * 실패 시 던진다 — 조용히 예전 SK 로 폴백하지 않는다. 폴백하면 그 순간 다시 사람 계정
  * (lowyshin.giip)으로 기록되기 시작하는데, 그건 이 변경이 막으려는 바로 그 상태라 침묵이 더 나쁘다.
+ * 단 aiName 미설정 자체는 실패가 아니다 — 위 순서대로 기본 주체로 넘어간다.
  *
  * @returns {{actor:string, usn:number|null, ak:string, source:string}}
  */
@@ -80,18 +120,17 @@ function resolveActor({ actorKey, accountsFile } = {}) {
   const registry = readJson(REGISTRY_FILE, 'AI 행위자 레지스트리(ai-actors.json)');
   const accounts = readJson(accountsFile || DEFAULT_ACCOUNTS_FILE, '자격증명 파일(giip-accounts.json)');
 
-  let source = 'ai-actors.json:defaultActor';
-  let key = actorKey;
-  if (!key && process.env.GIIP_ACTOR) {
-    key = process.env.GIIP_ACTOR.trim();
-    source = 'env:GIIP_ACTOR';
-  } else if (key) {
-    source = 'arg:actorKey';
-  }
-  if (!key) key = registry.defaultActor;
+  const picked = pickActorKey({
+    actorKey,
+    envActor: process.env.GIIP_ACTOR,
+    localName: readLocalAiName(),
+    defaultActor: registry.defaultActor,
+  });
+  const key = picked.key;
+  const source = picked.source;
 
   if (!key) {
-    throw new Error('주체를 결정하지 못했습니다: GIIP_ACTOR 환경변수도, ai-actors.json 의 defaultActor 도 없습니다.');
+    throw new Error('주체를 결정하지 못했습니다: GIIP_ACTOR 환경변수도, csn-projects.json 의 aiName 도, ai-actors.json 의 defaultActor 도 없습니다.');
   }
 
   const known = registry.actors || {};
@@ -120,7 +159,7 @@ function resolveActor({ actorKey, accountsFile } = {}) {
   return { actor: key, usn: typeof cred.usn === 'number' ? cred.usn : null, ak: cred.ak, source };
 }
 
-module.exports = { resolveActor, REGISTRY_FILE, DEFAULT_ACCOUNTS_FILE };
+module.exports = { resolveActor, pickActorKey, readLocalAiName, REGISTRY_FILE, DEFAULT_ACCOUNTS_FILE, PROJECTS_FILE };
 
 if (require.main === module) {
   const mode = process.argv[2] || '--json';
