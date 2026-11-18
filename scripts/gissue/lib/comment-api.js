@@ -27,10 +27,14 @@ const { escapeNonAscii } = require('./text-escape');
 
 const DEFAULT_API_BASE = 'https://giipfaw.azurewebsites.net/api';
 
-/** giipIssueComments POST body 를 순수 ASCII 로 만든다. loadedRole 이 주어지면(giip #1324) body 에 loadedRole 키를 포함시킨다 — V2 엔드포인트 전용 필드. */
-function buildCommentBody(isn, content, issuetype = 'note', loadedRole) {
+/** giipIssueComments POST body 를 순수 ASCII 로 만든다. loadedRole 이 주어지면(giip #1324) body 에 loadedRole 키를 포함시킨다 — V2 엔드포인트 전용 필드.
+ * author 가 주어지면 body 에 author 키를 포함시킨다 — 보낸 표시 이름(로컬 AI 이름 → hostname 순,
+ * 해석은 lib/resolve-actor.js 의 resolveAuthorDisplayName). 서버측 표시 보존 개편(giip #5663 계열)이
+ * 배포되기 전까지 기존 엔드포인트는 이 필드를 무시할 수 있다 — 무시돼도 게시 자체는 기존과 같다. */
+function buildCommentBody(isn, content, issuetype = 'note', loadedRole, author) {
   const body = { isn: Number(isn), content, issuetype };
   if (loadedRole) body.loadedRole = loadedRole;
+  if (author) body.author = author;
   return escapeNonAscii(JSON.stringify(body));
 }
 
@@ -75,11 +79,11 @@ async function listComments({ apiBase = DEFAULT_API_BASE, apiKey, isn }) {
 /** loadedRole 이 주어지면(giip #1324) 신규 giipIssueCommentsV2 엔드포인트로 보낸다 — 기존
  * giipIssueComments(성역 파일)는 loadedRole/inquiryStatus 를 받아도 무시하고 버리기 때문이다.
  * loadedRole 이 없으면 기존 엔드포인트/기존 동작 그대로(하위호환). */
-async function postComment({ apiBase = DEFAULT_API_BASE, apiKey, isn, content, issuetype = 'note', loadedRole }) {
+async function postComment({ apiBase = DEFAULT_API_BASE, apiKey, isn, content, issuetype = 'note', loadedRole, author }) {
   const endpoint = loadedRole ? `${apiBase}/giipIssueCommentsV2` : `${apiBase}/giipIssueComments`;
   return request('POST', endpoint, {
     apiKey,
-    body: buildCommentBody(isn, content, issuetype, loadedRole),
+    body: buildCommentBody(isn, content, issuetype, loadedRole, author),
   });
 }
 
@@ -157,7 +161,7 @@ function detectMojibake(expected, actual) {
  *
  * @returns {{csn:number|null, attempts:number, verified:boolean, log:string[]}}
  */
-async function postCommentVerified({ apiBase = DEFAULT_API_BASE, apiKey, isn, content, issuetype = 'note', loadedRole, maxAttempts = 2 }) {
+async function postCommentVerified({ apiBase = DEFAULT_API_BASE, apiKey, isn, content, issuetype = 'note', loadedRole, author, maxAttempts = 2 }) {
   const log = [];
   let lastReasons = [];
 
@@ -172,7 +176,7 @@ async function postCommentVerified({ apiBase = DEFAULT_API_BASE, apiKey, isn, co
     }
 
     // 2) 등록
-    const res = await postComment({ apiBase, apiKey, isn, content, issuetype, loadedRole });
+    const res = await postComment({ apiBase, apiKey, isn, content, issuetype, loadedRole, author });
     if (res.status !== 200) {
       throw new Error(`코멘트 등록 실패 (HTTP ${res.status}): ${res.text.slice(0, 500)}`);
     }

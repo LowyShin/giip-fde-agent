@@ -131,7 +131,15 @@ $ErrorActionPreference = 'Stop'
 #   (2) scripts/gissue/get-issue.sh --comment (giipfaw API) -> 이 주체의 AccessToken 으로 인증한다
 # 주체 목록/명명 규칙: scripts/gissue/ai-actors.json, 절차: scripts/gissue/AI_ACTOR_ACCOUNTS.md
 # PR 게이트 스윕도 :07 스케줄러 계열이다. author 라벨(gissue-pr-gate 등)은 멱등성 판정에 쓰이므로 유지한다.
-$env:GIIP_ACTOR = 'ai.dp01.gissue-scheduler'
+# 주체 이름은 하드코딩하지 않는다 — lib/resolve-actor.js 가 csn-projects.json 의 aiName
+# (로컬 AI 이름의 단일 출처) → GIIP_ACTOR 환경변수 → 레지스트리 기본값 순으로 해석한다.
+# 자식 프로세스 상속을 위해 해석된 이름을 env 에 확정해 둔다(이미 있으면 그 값이 우선).
+if (-not $env:GIIP_ACTOR) {
+    try {
+        $resolvedActorName = (& node (Join-Path $PSScriptRoot 'lib/resolve-actor.js') --name 2>$null | Out-String).Trim()
+        if ($resolvedActorName) { $env:GIIP_ACTOR = $resolvedActorName }
+    } catch {}
+}
 
 # [ENCODING][giip #1210 -DryRun 실측 중 발견] scope-match/comment-gate 판정(gissue-audit-lib.ps1의
 # Invoke-GissueJudge)이 `$prompt | & claude -p ...` stdin 파이프로 한글이 대부분인 이슈 content/코멘트를

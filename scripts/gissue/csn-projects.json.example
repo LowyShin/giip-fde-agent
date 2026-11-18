@@ -13,6 +13,9 @@
 
   "_comment_heartbeat": "スケジューラ自身の liveness/実行履歴の発行設定。lssn は tLSvr に登録済みの番号、hostname はその tLSvr の hostname、skFile は sk = \"...\" 形式の agent cfg のパス(git非追跡)。未設定なら heartbeat/実行履歴を発行しない。例: \"heartbeat\": { \"lssn\": \"71291\", \"hostname\": \"Lowy-DP01-gissue-hourly-scheduler\", \"skFile\": \"C:/path/to/giipAgent.cfg\" }",
 
+  "aiName": "<このインスタンスのAI名 — ai-actors.json に登録済みの actor key (例: ai.dp01.gissue-scheduler)>",
+  "_comment_aiName": "省略可(強く推奨)。このインスタンス(PC)が giip コメントを投稿するときの作成者名の単一の出所。値は ai-actors.json 登録済みの actor key。未設定だとレジストリ既定/アカウント identity で記録され、実行ログに [ACTOR] 警告が出る。解釈順序と規則は docs/60-operations/hourly-issue-scheduler.md の aiName 節を参照。",
+
   "softBudgetMin": 0,
   "_comment_softBudgetMin": "선택(giip 3615). 새 이슈를 시작해도 되는 시간(분). 0 또는 생략 = 비활성(기존 동작: 큐가 빌 때까지 처리). N(>0) 이면 실행 시작 후 N분이 지난 뒤에는 새 이슈를 시작하지 않고(진행 중 이슈는 끝까지 마침) 남은 이슈는 다음 틱으로 넘긴다. 하드 타임아웃(105분)과 락은 바뀌지 않는다. 20분 주기 docker 인스턴스는 15 안팎을 권장. 환경변수 GISSUE_SOFT_BUDGET_MIN 보다 이 키가 우선하며(0 이면 docker 기본값을 끈다), 한 실행에서 최소 1건은 시작한다.",
 
