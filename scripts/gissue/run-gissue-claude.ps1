@@ -336,6 +336,11 @@ function Get-GissueCsnSk($csn) {
     return $null
 }
 
+# [giip 5664] 로컬 매핑 부족 시 GIIP 프로젝트 매핑 조회 폴백의 정본 — lib/csn-mapping.ps1.
+# Phase -3(매핑 파싱 직후)과 Phase -2.5(미매핑 감시 직전)가 같은 모듈을 쓴다. 항목 충분
+# 여부의 판정은 위 Test-GissueCsnEntryValid 를 주입해 쓰며 이 모듈은 판정을 복제하지 않는다.
+. (Join-Path $Root 'lib/csn-mapping.ps1')
+
 # 이 CSN 회사의 언어(giipdb tCorp.cLang)를 언어코드(ko/ja/en/zh-CN/zh-TW)로 돌려준다.
 # slack-bot 의 csn-lang-cache.js 와 같은 영속 캐시(slack-bot/.csn-lang-cache.env, dotenv 형식
 # CSN_<n>_LANG / CSN_<n>_LANG_AT(epoch ms), git-ignored)를 먼저 읽고, 24시간 안의 값이면 그대로 쓴다.
@@ -594,6 +599,23 @@ if (-not $script:MapRoot.csn -or -not @($script:MapRoot.csn.PSObject.Properties.
         ""
     )
     exit 2
+}
+# (1-b2) **로컬 매핑 부족분의 GIIP 조회 폴백** [giip 5664, 정본 lib/csn-mapping.ps1].
+#   항목이 없거나 placeholder 인 CSN 은 placeholder 검사(1-c)보다 먼저 GIIP 정본 매핑
+#   (tGissueCsnMapping)으로 결정을 시도한다 — 낡은 로컬 매핑 때문에 전 CSN 이 무효가 돼
+#   preflight 치명으로 끝나거나 낡은 폴더로 진행하는 사고를 막는다. 충분한 항목은 조회
+#   자체를 하지 않는다(현행 동작 그대로). 결정된 항목은 캐시 파일에도 병합 기록한다
+#   (-DryRun 에서는 기록하지 않음). GIIP 에도 없으면 항목은 무효인 채로 남아 (1-c) 와
+#   Phase -2.5 미매핑 감시가 기존 경로로 보고한다(fail-soft — 조회 실패가 실행을 막지 않음).
+try {
+    $csnMapKeys = @($script:MapRoot.csn.PSObject.Properties.Name)
+    [void](Resolve-GissueCsnMappings -CsnKeys $csnMapKeys -MapRoot $script:MapRoot `
+        -Validator { param($k, $e) Test-GissueCsnEntryValid $k $e } `
+        -SkResolver { param($c) Get-GissueCsnSk $c } `
+        -ApiBase $ApiBase -HelperPath (Join-Path $Root 'lib/get-csn-mapping.js') `
+        -MapFilePath $MapFile -WriteCache:(-not $DryRun))
+} catch {
+    Write-Host "[CSN-MAP] 폴백 패스 자체가 실패(현행 동작으로 계속): $($_.Exception.Message)"
 }
 # (1-c) **채우지 않은 placeholder 검사(§13 절차의 중간 상태)**. `.example` 을 복사만 하고 아직 값을
 #   채우지 않은 상태가 배포 절차상 반드시 한 번은 존재한다. 그 상태에서 CSN 키는 `<CSN번호>`,
@@ -2303,6 +2325,26 @@ function Invoke-GissueUnmappedCsnGuard {
 # 해석 실패($null)면 Phase -3 preflight 가 이미 행동지시 경고를 냈다. 그 경우에도 여기서 맨 'bash'
 # 로 떨어뜨리지 않는다 — 호출부가 "해석 실패"를 구분해 로그에 남길 수 있어야 하기 때문이다.
 $BashExe = Resolve-GissueBashExe
+# 미매핑 감시의 사전 패스 [giip 5664]: 매핑 파일에 아예 없는 후보 CSN 도 경고보다 먼저
+# GIIP 정본 매핑으로 결정을 시도한다. 결정되면 캐시 파일과 $script:MapRoot 에 들어가고,
+# 파일을 다시 읽는 아래 감시에서는 이번 실행부터 대상에서 빠진다. Phase 1 이 쓰는 $map 은
+# 이 패스보다 앞에서 $script:MapRoot 에서 이미 떠 둔 스냅샷이라, 처리 대상으로는 다음
+# 실행부터 들어간다(Phase -3 패스에서 결정된 항목은 스냅샷 전이라 이번 실행부터 적용).
+# 결정이 안 되면 감시가 기존대로 보고한다.
+try {
+    $mappedNow = @($script:MapRoot.csn.PSObject.Properties.Name)
+    $unmappedCandidates = @(Get-GissueCandidateCsnList -ProjectCsnFile $ProjectCsnFile -GiipAccountsFile $GiipAccountsFile |
+        Where-Object { $mappedNow -notcontains $_ })
+    if ($unmappedCandidates.Count -gt 0) {
+        [void](Resolve-GissueCsnMappings -CsnKeys $unmappedCandidates -MapRoot $script:MapRoot `
+            -Validator { param($k, $e) Test-GissueCsnEntryValid $k $e } `
+            -SkResolver { param($c) Get-GissueCsnSk $c } `
+            -ApiBase $ApiBase -HelperPath (Join-Path $Root 'lib/get-csn-mapping.js') `
+            -MapFilePath $MapFile -WriteCache:(-not $DryRun))
+    }
+} catch {
+    Write-Host "[CSN-MAP] 미매핑 사전 패스 실패(감시는 기존대로 계속): $($_.Exception.Message)"
+}
 try {
     # -SkipPosting:$DryRun — 조회/판정은 -DryRun 에서도 그대로 돌리되(읽기전용이라 안전), 실제 코멘트
     # 게시만 건너뛴다. lowyworkenv 운영본은 -DryRun 에서도 실제로 게시하는데, 이 레포는 아무 PC 에나

@@ -1375,3 +1375,44 @@ powershell.exe -File "<REPO_ROOT>/scripts/gissue/run-gissue-claude.ps1" -DryRun 
 ### 18-8) 테스트
 
 - `scripts/gissue/tests/test-only-isn.ps1` — 판정(RUN 5건·CSN 차단·게이트 유지 9건), 스킵 코멘트 문구, [OPS] 접두사와 `list-issues.js`의 커플링을 네트워크 없이 검증한다. 게이트 기대 건수에 포함된다.
+
+## 19) 프로젝트 정보 로딩 — 로컬 매핑 부족 시 GIIP 매핑 조회 폴백 (giip 5664)
+
+> 배경: 러너는 이슈의 작업 환경을 호스트 로컬 `csn-projects.json`에서만 결정해 왔고, 항목이 없거나 placeholder인 CSN은 GIIP 쪽 정본을 확인할 길이 없었다(낡은 로컬 매핑 그대로 진행하거나 조용히 건너뛰는 사고 — 빈 폴더에서 세션이 시작하는 부류). DB 정본은 `tGissueCsnMapping`(giip #2363)이지만 DB→JSON 동기화는 별도 결함으로 막혀 있고, 동기화 스크립트(`sync-csn-mapping-from-db.ps1`)는 DB 직접 접속 전제라 **DB 직접 접근이 없는 이 레포에는 이식 대상이 아니다**(§13-2 격차). 그래서 동기화 복구가 아니라 **조회 폴백**으로 대체한다.
+
+### 19-1. 결정 구조
+
+| 로컬 항목 | GIIP 매핑 조회 | 결과 |
+|---|---|---|
+| 충분(`Test-GissueCsnEntryValid` 통과) | **하지 않음** | 로컬 항목 그대로 (현행 동작) |
+| 없음/placeholder | 행 있음 + 병합 항목도 유효 | 원격 값으로 결정 + 캐시 기록 (`[CSN-MAP]` 로그) |
+| 없음/placeholder | 없음(404)·스코프 불일치(403)·행 자체가 placeholder | UNMAPPED — 추측 진행 금지, 보고는 Phase -2.5 미매핑 감시 경로 |
+| 없음/placeholder | 조회 실패(네트워크·미배포·SK 없음) | UNMAPPED와 동일하게 fail-soft — 로그만 남기고 현행 동작 유지 |
+
+- `csn-projects.json`의 지위: 수기 편집 파일이 아니라 **로컬 우선 + GIIP 폴백으로 채워지는 캐시**다. 사람이 손으로 넣은 충분한 항목은 조회 대상이 아니며, 폴백 병합은 로컬에만 있는 선택 필드(`restBranch`·`note` 등)를 지우지 않는다.
+- 판정의 단일 출처: 항목 충분 여부는 러너의 `Test-GissueCsnEntryValid`를 주입받아 쓰고, LOCAL/REMOTE/UNMAPPED 결정은 `scripts/gissue/lib/csn-mapping.ps1`의 `Resolve-GissueCsnMapEntry` 한 곳에서만 한다.
+
+### 19-2. 배선 (2곳)
+
+1. **Phase -3 직후 패스**: 매핑 파싱이 끝나면 전 항목을 대상으로 부족분을 조회·보완한다. placeholder 검사(1-c)와 "유효 항목 0건이면 치명" 판정보다 **먼저** 돌므로, 로컬이 전부 낡아도 GIIP 매핑으로 복구되면 실행이 계속된다. 이 패스의 결정은 이번 실행의 Phase 1부터 적용된다.
+2. **Phase -2.5 사전 패스**: 매핑 파일에 아예 없는 후보 CSN(감시와 같은 두 출처 — slack-bot/project-csn.json + giip-accounts.json)도 경고보다 먼저 조회를 시도한다. 결정되면 캐시에 들어가 감시 대상에서 빠지고, 처리 대상으로는 다음 실행부터 들어간다(Phase 1의 맵 스냅샷이 이 패스보다 앞에 있기 때문). 결정이 안 되면 감시가 기존대로 `[UNMAPPED-CSN-WARN]`으로 보고한다.
+
+- `-DryRun`에서는 캐시 파일을 쓰지 않는다(판정·로그만). 캐시 기록은 임시 파일에 써서 교체하므로 중간에 죽어도 원본이 깨지지 않는다.
+
+### 19-3. 읽기 경로 계약 (스코프드 byAK)
+
+- `GET {apiBase}/giipGissueCsnMapping?csn=<n>`, 헤더 `x-api-key: <그 CSN의 SK>`.
+- AK에서 도출되는 CSN과 요청 CSN이 일치할 때만 그 CSN의 행 1건(`csn`·`projectName`·`workdir`·`enabled`)을 반환한다. 불일치는 403, 없음은 404.
+- 기존 `pApiGissueCsnMappingListbyAK`(sysadmin 전용·전체 반환)는 이 용도로 쓰지 않는다.
+- 응답의 `csn`이 요청과 다르면 채택하지 않는다(큐 조회의 cSn 대조와 같은 방어 — `lib/get-csn-mapping.js`의 `parseMappingResponse`).
+- SP·엔드포인트 구현은 별도 작업으로 분리했다 — giip #5665. CSN별 상태 정의(giip #5572)의 읽기도 같은 스코프드 byAK 패턴으로 통일한다.
+- 조회 헬퍼: `scripts/gissue/lib/get-csn-mapping.js` (사용법·출력 형식은 파일 헤더).
+
+### 19-4. 운영자가 채울 것
+
+- GIIP 프로젝트 상세(매핑)의 `gcmProjectName`·`gcmWorkdir`·`gcmEnabled`가 폴백의 정본 값이다. `gcmWorkdir`는 그 CSN의 이슈를 처리할 폴더의 절대경로로 채운다 — 비어 있거나 placeholder면 폴백이 성립하지 않는다(remote_invalid).
+
+### 19-5. 테스트
+
+- `scripts/gissue/tests/test-csn-mapping-fallback.ps1` — 판정(LOCAL/REMOTE/UNMAPPED·remote_invalid·fail-soft), 병합의 로컬 필드 보존, 캐시 기록(타 항목·최상위 키 보존, 파일 부재 시 생성 안 함), 오케스트레이션, 후보 수집, 소스 커플링.
+- `scripts/gissue/tests/test-csn-mapping.mjs` — 응답 해석(camelCase/gcm 접두사/래핑, enabled 강제 변환, 스코프 불일치 차단)과 엔드포인트 계약 문자열.
