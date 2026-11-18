@@ -1,4 +1,4 @@
-# csn-mapping.ps1 — 로컬 매핑 부족 시 GIIP 프로젝트 매핑 조회 폴백의 정본 (giip 5664)
+﻿# csn-mapping.ps1 — 로컬 매핑 부족 시 GIIP 프로젝트 매핑 조회 폴백의 정본 (giip 5664)
 #
 # 배경: 러너는 이슈의 작업 환경을 호스트 로컬 csn-projects.json 에서만 결정해 왔다.
 #   항목이 없거나 placeholder 면 GIIP 쪽 정본(tGissueCsnMapping, giip #2363)을 확인할

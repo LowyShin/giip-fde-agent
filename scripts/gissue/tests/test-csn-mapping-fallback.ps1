@@ -1,4 +1,4 @@
-# test-csn-mapping-fallback.ps1 — lib/csn-mapping.ps1 회귀 테스트 (giip 5664)
+﻿# test-csn-mapping-fallback.ps1 — lib/csn-mapping.ps1 회귀 테스트 (giip 5664)
 # 실행: pwsh -NoProfile -File scripts/gissue/tests/test-csn-mapping-fallback.ps1
 # 네트워크·실제 스케줄러를 건드리지 않는다 — 전송은 스크립트블록으로 주입하고,
 # 캐시는 임시 파일로만 검증한다.
