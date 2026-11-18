@@ -1399,10 +1399,17 @@ powershell.exe -File "<REPO_ROOT>/scripts/gissue/run-gissue-claude.ps1" -DryRun 
 - 러너는 매핑 파싱 직후(Phase -3) 해석 결과를 `$env:GIIP_ACTOR`로 확정해 자식 프로세스(claude CLI → get-issue.sh)까지 같은 이름이 상속되게 하고, 상태를 `[ACTOR]` 로그로 남긴다. 독립 스크립트(review-done-audit, pr-gate-sweep, pr-attribution-sweep, review-merged-presweep, page-feedback-analyze)도 같은 해석을 탄다 — 하드코딩된 actor 할당은 두지 않는다.
 - REVIEW 재검증 쿨다운의 "자기 author" 목록에는 고정 목록에 더해 확정된 주체(`$env:GIIP_ACTOR`)를 동적으로 포함한다 — 호스트마다 이름이 달라도 자기 코멘트를 새 신호로 오인하지 않기 위해서다.
 
-### 20-3. 미설정·무효일 때
+### 20-3. 미설정·무효일 때 — 표시 이름은 hostname으로 (보완 지시)
 
-- **미설정**: 임의의 이름을 만들지 않는다. 해석은 기본 주체로 넘어가고, 실제로 SK로 게시되는 경로에서는 계정 identity로 기록될 수 있다. 러너는 그 사실을 `[ACTOR] … aiName 미설정` 로그로 남긴다.
-- **무효(레지스트리에 없는 이름·AK 없음)**: 해석이 실패한다(조용한 폴백으로 사람 이름이 찍히는 상태를 막는 것이 #2613의 원칙). 러너는 `[ACTOR] … 해석하지 못했습니다` 로그를 남기고 기본 폴백으로 계속 실행한다.
+인증 주체와 **표시 이름은 별개 채널**이다. 인증은 위 해석 순서(actor AK 체계)를 따르고, 코멘트와 함께 보내는 표시 이름(`author` 필드)은 다음 순서로 정한다 — 정본은 `lib/resolve-actor.js`의 `pickAuthorDisplayName`/`resolveAuthorDisplayName`, 전송은 `lib/post-comment.js`가 게시마다 실어 보낸다.
+
+1. 로컬 AI 이름 (`GIIP_ACTOR` 환경변수 > `csn-projects.json`의 `aiName`)
+2. **이 장비의 hostname**
+3. 그것도 만들 수 없을 때만 보내지 않는다(서버 폴백)
+
+- **미설정**: 'Agent' 같은 공통값으로 뭉개지 않는다 — 인스턴스 구분이 이 구조의 목적이라, 이름이 없으면 hostname이 그 인스턴스의 구분자다. 러너는 `[ACTOR] … aiName 미설정 — 표시 이름은 hostname으로 전송` 로그를 남긴다.
+- **무효(레지스트리에 없는 이름·AK 없음)**: 인증 해석은 실패한다(조용한 폴백으로 사람 이름이 찍히는 상태를 막는 것이 #2613의 원칙). 러너는 `[ACTOR] … 해석하지 못했습니다` 로그를 남기고 기본 폴백으로 계속 실행한다. 표시 이름은 위 순서대로 정해져 함께 전송된다.
+- 표시 이름이 최종 author 표시로 남는 것은 서버측 표시 보존 개편(giip #5663 계열)이 배포된 뒤다. 그전까지 기존 엔드포인트는 `author` 필드를 무시할 수 있으며, 무시돼도 게시 동작은 기존과 같다.
 
 ### 20-4. 외부 인스턴스(Muse 등)에 대한 규칙
 

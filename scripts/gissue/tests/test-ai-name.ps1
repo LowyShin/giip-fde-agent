@@ -1,4 +1,4 @@
-# test-ai-name.ps1 — 로컬 AI 이름(aiName) 구조의 소스 단언 회귀 테스트
+﻿# test-ai-name.ps1 — 로컬 AI 이름(aiName) 구조의 소스 단언 회귀 테스트
 # 실행: pwsh -NoProfile -File scripts/gissue/tests/test-ai-name.ps1
 # 네트워크·실제 스케줄러를 건드리지 않는다 — 하드코딩 제거와 배선을 소스로 고정한다.
 $ErrorActionPreference = 'Stop'
@@ -30,6 +30,15 @@ foreach ($name in @('review-done-audit.ps1', 'pr-gate-sweep.ps1', 'pr-attributio
     $text = Get-Content -Raw -Encoding UTF8 (Join-Path $gissueRoot $name)
     Assert-True ($text -match 'resolve-actor\.js') "$name 이 resolve-actor.js 를 경유한다"
 }
+
+Write-Host '== 표시 이름(hostname 폴백) 전송 배선 =='
+$commentApi = Get-Content -Raw -Encoding UTF8 (Join-Path $gissueRoot 'lib/comment-api.js')
+Assert-True ($commentApi -match 'body\.author = author') 'comment-api 가 author 필드를 body 에 싣는다'
+$postComment = Get-Content -Raw -Encoding UTF8 (Join-Path $gissueRoot 'lib/post-comment.js')
+Assert-True ($postComment -match 'resolveAuthorDisplayName') 'post-comment 가 표시 이름을 해석해 전송한다'
+$resolver2 = Get-Content -Raw -Encoding UTF8 (Join-Path $gissueRoot 'lib/resolve-actor.js')
+Assert-True ($resolver2 -match 'pickAuthorDisplayName') '표시 이름 판정 pickAuthorDisplayName 이 해석기에 있다'
+Assert-True ($runner -match 'hostname') '러너의 [ACTOR] 미설정 로그가 hostname 전송을 알린다'
 
 Write-Host '== 예시 파일·해석기 커플링 =='
 $example = Get-Content -Raw -Encoding UTF8 (Join-Path $gissueRoot 'csn-projects.json.example')

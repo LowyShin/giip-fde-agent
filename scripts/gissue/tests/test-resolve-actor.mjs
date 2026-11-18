@@ -51,6 +51,14 @@ fs.writeFileSync(f4, '﻿' + JSON.stringify({ aiName: 'ai.bom.test' }), 'utf-8')
 eq(readLocalAiName(f4), 'ai.bom.test', 'BOM 이 붙어도 읽는다');
 fs.rmSync(tmp, { recursive: true, force: true });
 
+console.log('== 표시 이름: 로컬 이름 → hostname → null ==');
+const { pickAuthorDisplayName } = require(path.join(here, '..', 'lib', 'resolve-actor.js'));
+eq(pickAuthorDisplayName({ envActor: 'ai.a.x', localName: 'ai.b.y', hostname: 'HOST1' }), 'ai.a.x', '환경변수 이름이 최우선');
+eq(pickAuthorDisplayName({ localName: 'ai.b.y', hostname: 'HOST1' }), 'ai.b.y', 'aiName 이 hostname 보다 우선');
+eq(pickAuthorDisplayName({ hostname: 'HOST1' }), 'HOST1', '이름이 없으면 hostname (공통값으로 뭉개지 않음)');
+eq(pickAuthorDisplayName({ envActor: ' ', localName: '', hostname: '  ' }), null, '전부 비면 null — 서버 폴백');
+eq(pickAuthorDisplayName({}), null, '아무것도 없으면 null');
+
 console.log('== 소스 커플링 ==');
 const src = fs.readFileSync(path.join(here, '..', 'lib', 'resolve-actor.js'), 'utf-8');
 ok(src.includes("path.join(SCRIPT_DIR, '..', 'csn-projects.json')"), '해석기가 자기 위치 기준으로 csn-projects.json 을 읽는다');

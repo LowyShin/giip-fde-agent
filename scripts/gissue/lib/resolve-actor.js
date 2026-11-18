@@ -39,6 +39,11 @@
  *   giipAgent.cfg 는 giipAgent 라는 다른 프로그램의 파일이고 스케줄러 배포마다
  *   존재가 보장되지 않아 출처로 쓰지 않는다.
  *
+ * 표시 이름(인증과 별개 채널): 코멘트에 함께 보내는 author 표시 이름은
+ *   로컬 AI 이름(환경변수 > aiName) → hostname → (못 만들 때만) 서버 폴백 순이다
+ *   (pickAuthorDisplayName / resolveAuthorDisplayName). 'Agent' 같은 공통값으로
+ *   뭉개지 않는다 — 인스턴스 구분이 목적이기 때문이다.
+ *
  * CLI(셸 스크립트용):
  *   node resolve-actor.js --ak      -> AccessToken 만 stdout 으로
  *   node resolve-actor.js --name    -> 주체 이름(uloginid)만
@@ -77,6 +82,32 @@ function readJson(file, label) {
   } catch (e) {
     throw new Error(`${label} 파싱 실패(${file}): ${e.message}`);
   }
+}
+
+// ── 표시 이름(display author) 해석 ─────────────────────────────────────────
+// 인증 주체(actor/AK)와 별개로, 코멘트와 함께 "보낸 이름"을 정한다. 서버측 표시
+// 보존 개편(giip #5663 계열)이 배포되면 이 이름이 최종 author 표시로 남는다.
+// 순서(사용자 보완 지시): 로컬 AI 이름(GIIP_ACTOR 환경변수 > csn-projects.json
+// aiName) → 없으면 이 장비의 hostname → 그것도 못 만들면 null(서버 폴백에 맡김).
+// 'Agent' 같은 공통값으로 뭉개지 않는 것이 요점 — 인스턴스 구분이 목적이기 때문이다.
+// 순수 판정: 셋 다 비면 null.
+function pickAuthorDisplayName({ envActor, localName, hostname } = {}) {
+  if (envActor && String(envActor).trim()) return String(envActor).trim();
+  if (localName && String(localName).trim()) return String(localName).trim();
+  if (hostname && String(hostname).trim()) return String(hostname).trim();
+  return null;
+}
+
+// 실제 환경에서 표시 이름을 해석한다. 자격증명 파일을 읽지 않으므로 던지지 않는다
+// (표시 이름이 없다고 코멘트 게시 자체를 막지 않는다 — 그 경우 서버 폴백).
+function resolveAuthorDisplayName() {
+  let hostname = null;
+  try { hostname = require('os').hostname(); } catch { hostname = null; }
+  return pickAuthorDisplayName({
+    envActor: process.env.GIIP_ACTOR,
+    localName: readLocalAiName(),
+    hostname,
+  });
 }
 
 // csn-projects.json 의 aiName 을 읽는다. 파일이 없거나 깨졌거나 값이 비면 $null —
@@ -159,17 +190,22 @@ function resolveActor({ actorKey, accountsFile } = {}) {
   return { actor: key, usn: typeof cred.usn === 'number' ? cred.usn : null, ak: cred.ak, source };
 }
 
-module.exports = { resolveActor, pickActorKey, readLocalAiName, REGISTRY_FILE, DEFAULT_ACCOUNTS_FILE, PROJECTS_FILE };
+module.exports = { resolveActor, pickActorKey, readLocalAiName, pickAuthorDisplayName, resolveAuthorDisplayName, REGISTRY_FILE, DEFAULT_ACCOUNTS_FILE, PROJECTS_FILE };
 
 if (require.main === module) {
   const mode = process.argv[2] || '--json';
-  try {
-    const a = resolveActor();
-    if (mode === '--ak') process.stdout.write(a.ak);
-    else if (mode === '--name') process.stdout.write(a.actor);
-    else process.stdout.write(JSON.stringify({ actor: a.actor, usn: a.usn, akLength: a.ak.length, source: a.source }));
-  } catch (e) {
-    process.stderr.write(`${e.message}\n`);
-    process.exit(2);
+  if (mode === '--display-name') {
+    // 자격증명을 읽지 않는 가벼운 해석 — 표시 이름만 필요할 때 쓴다.
+    process.stdout.write(resolveAuthorDisplayName() || '');
+  } else {
+    try {
+      const a = resolveActor();
+      if (mode === '--ak') process.stdout.write(a.ak);
+      else if (mode === '--name') process.stdout.write(a.actor);
+      else process.stdout.write(JSON.stringify({ actor: a.actor, usn: a.usn, akLength: a.ak.length, source: a.source }));
+    } catch (e) {
+      process.stderr.write(`${e.message}\n`);
+      process.exit(2);
+    }
   }
 }

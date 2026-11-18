@@ -615,9 +615,9 @@ if (-not $env:GIIP_ACTOR) {
 if ($env:GIIP_ACTOR) {
     Write-Host "[ACTOR] 코멘트 작성 주체: $env:GIIP_ACTOR"
 } elseif ($script:AiName) {
-    Write-Host "[ACTOR] aiName '$script:AiName' 를 해석하지 못했습니다(레지스트리 미등록 또는 AK 없음) — 기본 폴백으로 게시됩니다. 등록 절차: scripts/gissue/AI_ACTOR_ACCOUNTS.md"
+    Write-Host "[ACTOR] aiName '$script:AiName' 를 해석하지 못했습니다(레지스트리 미등록 또는 AK 없음) — 인증은 기본 폴백으로 게시됩니다. 등록 절차: scripts/gissue/AI_ACTOR_ACCOUNTS.md"
 } else {
-    Write-Host "[ACTOR] csn-projects.json 에 aiName 미설정 — 기본 주체/계정 identity 로 게시될 수 있습니다. 이 인스턴스의 이름을 aiName 에 설정하세요."
+    Write-Host "[ACTOR] csn-projects.json 에 aiName 미설정 — 인증은 기본 주체로, 표시 이름은 이 장비의 hostname 으로 전송됩니다(인스턴스 구분용). 고정 이름을 쓰려면 aiName 을 설정하세요."
 }
 # (1-c) **채우지 않은 placeholder 검사(§13 절차의 중간 상태)**. `.example` 을 복사만 하고 아직 값을
 #   채우지 않은 상태가 배포 절차상 반드시 한 번은 존재한다. 그 상태에서 CSN 키는 `<CSN번호>`,
