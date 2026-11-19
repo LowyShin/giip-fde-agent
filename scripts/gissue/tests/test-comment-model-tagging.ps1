@@ -39,7 +39,11 @@ $runnerPath = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\run-gissue
 $src = Get-Content -LiteralPath $runnerPath -Raw
 
 Write-Output '1. MiniMax 우선 경로 — [실행 모델] 주입'
-Assert-True ($src.Contains('$mmModelLine = "[실행 모델]')) '1a MiniMax 모델 라인 정의'
+# [giip #5671/PR #535] $mmModelLine 은 gair 미고정/MiniMax 고정 두 경우로 조건 분기한다.
+# 두 분기 모두 [실행 모델] 마커를 주입해야 "모델 표기 조용한 제거"를 막는다(원 단일 리터럴 단언은 분기 이후 stale).
+Assert-True ($src.Contains('$mmModelLine = if ($NoFixedModel)')) '1a 모델 라인 정의 — gair 미고정/MiniMax 고정 조건 분기'
+Assert-True ($src.Contains('[실행 모델] 이 세션은 MiniMax')) '1a-2 MiniMax 분기에 [실행 모델] 마커 주입'
+Assert-True ($src.Contains('[실행 모델] 이 세션은 gair')) '1a-3 gair 분기에 [실행 모델] 마커 주입'
 Assert-True ($src.Contains("MiniMax 모델 '`$MinimaxModel'")) '1b 실제 MiniMax 모델 변수 사용'
 Assert-True ($src.Contains('$mmPrompt = "$mmModelLine')) '1c 모델 라인을 프롬프트 앞에 결합'
 Assert-True ($src.Contains('$mmPrompt | & claude')) '1d claude 호출이 모델 포함 프롬프트를 사용'

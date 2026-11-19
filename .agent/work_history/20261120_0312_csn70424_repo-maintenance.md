@@ -12,10 +12,13 @@
 - 열린 PR **0건**(REST `pulls` 빈 배열). → CONFLICTING 대상 0건.
 - nested giip 제품 git 레포 없음(standalone, 자기 `.git` 1건, `find -maxdepth 3 -name .git` 결과 0건). 서브모듈 디렉터리 부재 → nested 대상 0건.
 
-## [E] 열린 PR CI/검증 실패 — 0건
+## [E] 열린 PR CI/검증 실패 — 1건 해소(본 기록 PR #537 의 PS1 게이트)
 
-- 열린 PR 0건이므로 CI 실패(FAILURE/ERROR) 대상도 0건(점검할 PR 없음). 성역(giipfaw 내 `giipApi`/`giipApiSk2`·`run.ps1`)은 이 레포에 없음.
-- main 의 green 은 199차/PR #536 머지 run 으로 확정된 상태이고, 본 커밋은 추적 코드(.ps1/.mjs) 0건 변경(마크다운 1건만 추가)이라 회귀 가능성 없음.
+- 착수 시점엔 열린 PR 0건이었으나, **본 기록 PR #537 을 열자 PS1 게이트가 FAILURE**로 떴다(GitGuardian·MJS 는 success). 본 커밋은 마크다운 1건뿐이므로 이 실패는 내 변경이 아니라 **base `5317e14`(PR #535/#536 이후 main)에서 상속된 선행 회귀**다 — [H] 5857 코멘트가 이미 지목한 그 실패와 동일.
+- **원인 확정(로컬 재현)**: `scripts/gissue/run-repo-gates.ps1`(ps1) → `test-comment-model-tagging.ps1` 의 `1a MiniMax 모델 라인 정의` 1건 FAIL(PASS=14 FAIL=1, exit 1). PR #535(`0863dfb`)가 `$mmModelLine` 을 `if ($NoFixedModel) { gair… } else { MiniMax… }` 조건 분기로 바꿨는데, 단일 리터럴 `$mmModelLine = "[실행 모델]` 을 단언하던 1a 가 분기 이후 stale 이 됐다(런타임 동작은 정상 — 두 분기 모두 `[실행 모델]` 마커를 주입한다).
+- **조치(수술적, 성역 무접촉, [E] 규칙 4)**: 테스트 소스 단언만 보완 — 조건 분기 정의(`$mmModelLine = if ($NoFixedModel)`) + 두 분기(MiniMax/gair) 각각의 `[실행 모델]` 마커 주입을 단언하도록 교체(1a → 1a/1a-2/1a-3). 런타임 코드·성역(`giipApi`/`giipApiSk2`)은 건드리지 않았다. 커밋 `2b81e22`.
+- **로컬 재검증 게이트(rule 5)**: 수정 후 `test-comment-model-tagging.ps1` 로컬 실행 **PASS=17 FAIL=0 (exit 0)**. 나머지 ps1 테스트는 base 에서 이미 green(이 1건만 FAIL 이었음) → 전체 PS1 게이트 green 복귀 예상, CI 재실행 결과로 최종 확정(PR 코멘트 인계).
+- 효과: 이 선행 회귀는 **모든 신규 PR**(정비 PR 포함)의 CI 를 red 로 만들던 것이라, 수정으로 저장소 PR 게이트 전반이 복구된다. 근본 지목·REVIEW 는 [H] 5857(gair/`giip 5671`, 사람 소관)이 보유.
 
 ## [F] Orphan auto-unblock stash — 1건 해소(drop)
 
@@ -71,3 +74,9 @@
 ## 저장소 락
 
 - 저장소 락 미획득이 정답 — CSN 70424 workdir = `giip-fde-agent`(≠ lowyworkenv) 이므로 lowyworkenv 사전 락 조건 미성립(196~199차와 동일).
+
+## 정정(2026-11-20 03:2x) — 기록 PR #537 이 stale head 로 조기 머지돼 [E] 수정이 유실, 후속 PR 로 재반영
+
+- 본 기록 PR **#537** 을 올린 뒤 테스트 수정(`2b81e22`)·[E] 절 정정(`994005a`) 커밋을 이어서 push 했으나, GitHub 의 PR synchronize 반영 지연으로 PR head 가 **첫 커밋 `3944c66`(work_history 단독, [E] 미수정)** 에 머문 사이, 자동 머지 스윕(merged_by `LowyShin`)이 그 stale head 를 **squash 머지**했다(merge 커밋 `f076d20`, `2026-11-19T18:23:08Z`). 결과 origin/main 에는 **work_history 73줄만** 반영되고 **PS1 게이트 수정(test-comment-model-tagging.ps1)·[E] 정정이 유실**됐다 — 즉 선행 회귀가 main 에 그대로 남아 모든 신규 PR 의 CI 를 계속 red 로 만든다.
+- 재발 원인: ① CI red(3944c66 의 PS1 FAIL)에도 스윕이 머지함 ② 1커밋 push → 추가 커밋 push 의 2단계라 조기 머지 창이 열림. **대응: 이 후속 PR 은 origin/main(`f076d20`)에서 테스트 수정 + [E] 정정 + 본 인시던트 노트를 한 번에(단일 push) 올려 stale-head 창을 없앴다**(어느 순간 머지돼도 수정이 함께 들어간다).
+- 이 후속 PR 로 반영되는 실제 조치는 위 [E] 절(테스트 소스 단언 보완, 로컬 PASS=17 FAIL=0)과 동일하다. CI red 를 스윕이 머지한 동작 자체는 별도 점검거리로 남긴다(본 세션 범위 밖, 기록만).
