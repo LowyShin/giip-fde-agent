@@ -12,10 +12,13 @@
 - 열린 PR **0건**(REST `pulls` 빈 배열). → CONFLICTING 대상 0건.
 - nested giip 제품 git 레포 없음(standalone, 자기 `.git` 1건, `find -maxdepth 3 -name .git` 결과 0건). 서브모듈 디렉터리 부재 → nested 대상 0건.
 
-## [E] 열린 PR CI/검증 실패 — 0건
+## [E] 열린 PR CI/검증 실패 — 1건 해소(본 기록 PR #537 의 PS1 게이트)
 
-- 열린 PR 0건이므로 CI 실패(FAILURE/ERROR) 대상도 0건(점검할 PR 없음). 성역(giipfaw 내 `giipApi`/`giipApiSk2`·`run.ps1`)은 이 레포에 없음.
-- main 의 green 은 199차/PR #536 머지 run 으로 확정된 상태이고, 본 커밋은 추적 코드(.ps1/.mjs) 0건 변경(마크다운 1건만 추가)이라 회귀 가능성 없음.
+- 착수 시점엔 열린 PR 0건이었으나, **본 기록 PR #537 을 열자 PS1 게이트가 FAILURE**로 떴다(GitGuardian·MJS 는 success). 본 커밋은 마크다운 1건뿐이므로 이 실패는 내 변경이 아니라 **base `5317e14`(PR #535/#536 이후 main)에서 상속된 선행 회귀**다 — [H] 5857 코멘트가 이미 지목한 그 실패와 동일.
+- **원인 확정(로컬 재현)**: `scripts/gissue/run-repo-gates.ps1`(ps1) → `test-comment-model-tagging.ps1` 의 `1a MiniMax 모델 라인 정의` 1건 FAIL(PASS=14 FAIL=1, exit 1). PR #535(`0863dfb`)가 `$mmModelLine` 을 `if ($NoFixedModel) { gair… } else { MiniMax… }` 조건 분기로 바꿨는데, 단일 리터럴 `$mmModelLine = "[실행 모델]` 을 단언하던 1a 가 분기 이후 stale 이 됐다(런타임 동작은 정상 — 두 분기 모두 `[실행 모델]` 마커를 주입한다).
+- **조치(수술적, 성역 무접촉, [E] 규칙 4)**: 테스트 소스 단언만 보완 — 조건 분기 정의(`$mmModelLine = if ($NoFixedModel)`) + 두 분기(MiniMax/gair) 각각의 `[실행 모델]` 마커 주입을 단언하도록 교체(1a → 1a/1a-2/1a-3). 런타임 코드·성역(`giipApi`/`giipApiSk2`)은 건드리지 않았다. 커밋 `2b81e22`.
+- **로컬 재검증 게이트(rule 5)**: 수정 후 `test-comment-model-tagging.ps1` 로컬 실행 **PASS=17 FAIL=0 (exit 0)**. 나머지 ps1 테스트는 base 에서 이미 green(이 1건만 FAIL 이었음) → 전체 PS1 게이트 green 복귀 예상, CI 재실행 결과로 최종 확정(PR 코멘트 인계).
+- 효과: 이 선행 회귀는 **모든 신규 PR**(정비 PR 포함)의 CI 를 red 로 만들던 것이라, 수정으로 저장소 PR 게이트 전반이 복구된다. 근본 지목·REVIEW 는 [H] 5857(gair/`giip 5671`, 사람 소관)이 보유.
 
 ## [F] Orphan auto-unblock stash — 1건 해소(drop)
 
