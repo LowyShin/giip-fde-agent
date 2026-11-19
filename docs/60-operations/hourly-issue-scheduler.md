@@ -1461,3 +1461,38 @@ powershell.exe -File "<REPO_ROOT>/scripts/gissue/run-gissue-claude.ps1" -DryRun 
 
 - `scripts/gissue/tests/test-resolve-actor.mjs` — 해석 우선순위(인자/환경변수/aiName/기본값)와 출처 표기, `readLocalAiName`(trim·BOM·깨진 파일·미존재)의 무예외 폴백.
 - `scripts/gissue/tests/test-ai-name.ps1` — PS 스크립트에 하드코딩 actor 할당이 남지 않았음, 러너의 aiName 확정·[ACTOR] 로그·쿨다운 목록 동적 포함, 독립 스크립트의 해석 경유를 소스 단언으로 고정.
+
+## 21) 초기 설정 — CSN의 GitHub repo 일괄 clone과 위치 저장 (giip 5783)
+
+> 배경: 인스턴스가 giip-fde-agent를 내려받아 초기 설정할 때 CSN과 SK를 받는다. 그 시점에 콘솔 GitHub Actions 화면(/en/project/{CSN}/github)에 그 CSN으로 등록된 repo를 전부 내려받고 위치를 저장해, 그 CSN의 gissue를 처리할 때 내려받은 repo에서 작업하게 한다. 콘솔 실측(2026-11-19): 설정 1건 = repo 1개(owner/name) + PAT 1개, Active 플래그가 있고 대표 지정·기본 브랜치 필드는 없다.
+
+### 21-1. 실행 진입점
+
+```powershell
+pwsh -NoProfile -File scripts/gissue/setup-csn-repos.ps1 -Csn <CSN> [-BaseDir <폴더>] [-DryRun]
+```
+
+- SK는 `-Sk`로 직접 주거나, 없으면 `slack-bot/.secrets/giip-accounts.json`에서 그 CSN의 SK를 찾는다(lib/resolve-sk.js).
+- docker 인스턴스는 bootstrap-instance.sh가 `GIIP_SETUP_CSN` 환경변수가 있을 때만 이 진입점을 호출한다(선택 단계, 실패해도 부트스트랩은 계속).
+- 조회 실패·설정 없음은 `[GHSETUP]` 로그만 남기고 종료 코드 0으로 끝낸다 — 초기 설정의 다른 절차를 막지 않는다(fail-soft).
+
+### 21-2. 조회 계약 (giip 5782가 정본)
+
+- `GET /api/giipGithubConfigs?csn=<n>`, 헤더 `x-api-key`에 그 CSN의 SK. AK에서 도출되는 CSN과 일치할 때만 그 CSN의 Active 설정 `[{ name, owner, repo, pat }]`를 반환한다(§19의 스코프드 byAK와 같은 패턴).
+- 클라이언트 정본은 `lib/get-github-configs.js` — 응답에 실린 csn이 요청과 어긋나면 채택하지 않는다(scope_mismatch). 이 헬퍼의 stdout에는 PAT가 포함되므로 호출자는 출력을 로그에 남기지 않는다.
+
+### 21-3. 위치 저장과 workdir 판정 (정본: lib/github-repos.ps1)
+
+- clone 위치: 기준 폴더(`-BaseDir` > csn-projects.json 최상위 `repoBaseDir` > `~/giip-repos`) 아래 `<기준>/<CSN>/<repo명>`.
+- 기록: csn-projects.json의 해당 CSN 항목에 `repos: [{ name, slug, path }]`를 병합 기록한다(다른 항목·키 보존, 원자적 교체 — §19의 캐시 병합과 같은 규칙).
+- workdir 판정: 기존 workdir가 유효하면 유지한다(운영자 설정 우선). 없을 때 repo가 1개면 그 repo 경로, 여러 개면 워크스페이스 폴더(`<기준>/<CSN>`)를 workdir로 기록한다.
+
+### 21-4. PAT 취급
+
+- PAT는 clone 호출에 `http.extraHeader`로 1회만 주입한다 — 원격 URL(.git/config)에 남지 않는다.
+- 이후 pull/push용 PAT는 `scripts/gissue/.secrets/github-pats.json`(gitignore 대상)에만 저장한다. 로그·리포트·이슈에 PAT 값을 쓰지 않는다.
+
+### 21-5. 테스트
+
+- `scripts/gissue/tests/test-github-configs.mjs` — 응답 해석(Active 필터, slug 해석, 스코프 방어, 빈 목록/404/500).
+- `scripts/gissue/tests/test-github-repos.ps1` — clone 계획(slug 중복 제거), workdir 판정 4경우, csn-projects 병합 보존, PAT 저장, PAT 비노출 소스 단언.
