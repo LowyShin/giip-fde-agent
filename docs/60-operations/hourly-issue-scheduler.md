@@ -124,6 +124,7 @@ powershell.exe -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass `
 ```
 :07 태스크 1회
  └─ CSN 마다 Start-Job 1개 (CSN 간 병렬. 이건 예전과 동일)
+     ├─ ⓪ 저장소 정비 사전 체크(LLM 호출 0) — 정비 대상 0건이면 ① 전체를 건너뛴다
      ├─ ① 저장소 정비 세션 — 그 CSN 저장소 전체 스코프로 **1회만** 기동
      │      ([0] PR conflict / [E] PR CI 수정 / [F] orphan stash 구조 / [H] 최근 코멘트 재검증)
      └─ ② 이슈별 세션 — 아래 단일 우선순위 큐를 돌며 **이슈 1건마다 별도 프로세스를 개별 기동**
@@ -143,17 +144,67 @@ powershell.exe -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass `
 
   | 큐 항목 상태 | 엔진 |
   |---|---|
-  | 저장소 정비 세션 | MiniMax 우선 → 실패 시 claude 폴백 |
+  | 저장소 정비 세션 | **gair 우선(모델 미고정)** → 실패 시 MiniMax → claude 폴백 (giip #5671) |
   | PENDING / READY / STALE_IN_PROGRESS | MiniMax 우선 → 실패 시 claude 폴백 |
   | **REVIEW** | **MiniMax 시도 없이 곧바로 claude**(사용자 지시 2026-08-23) |
   | TESTED | claude 강제 (giip #1472) |
 
   `MINIMAX_API_KEY`(env 또는 `slack-bot/.env`)가 **없으면** 전 구간이 claude 단독으로 동작합니다 —
   에러가 아니라 설계된 축퇴 경로입니다. 신규 clone 은 `slack-bot/.env` 가 없으므로 기본이 이쪽입니다.
+- **저장소 정비 세션은 사전 체크 게이트를 통과해야 기동한다**(giip #5671, §5-1-1): 정비 대상
+  ([0]/[E]/[F]/[H])이 0건이면 엔진 세션 자체를 띄우지 않는다 — 토큰 0. 기록 파일·PR 도 만들지 않는다.
+  게이트는 스크립트(LLM 이전) 단계에서 판정하고, 조회 자체가 실패하면 **fail-open** 으로 종전대로
+  세션을 띄운다.
 - **시간 예산 초과분은 LLM 없이 미룹니다**: 잡 전체 예산(`$RunTimeoutMin`, §8)에서 **마지막 5분을
   오버헤드 여유로 남기고**, 그 선을 넘으면 남은 큐 항목은 엔진을 기동하지 않고 스크립트가 직접
   note 코멘트를 남긴 뒤 다음 `:07` 로 넘깁니다. 큐가 길어도 태스크가 통째로 잘리지 않게 하는 장치입니다.
   (이것이 **하드 예산**이다. 그 앞에 선택적인 **소프트 예산**이 있다 — §8-1.)
+
+### 5-1-1) 저장소 정비 세션 — 사전 체크 게이트 + gair 경유 (giip #5671)
+
+CSN 마다 매시간 기동하는 **저장소 정비(REPO-MAINT) 세션**은 아래 두 가지 규칙을 추가로 따른다.
+
+#### (1) 스크립트 사전 체크 게이트 — 정비 대상 0건이면 세션 미기동 (토큰 0)
+
+정비 세션은 [0]/[E]/[F]/[H] 네 단계를 한 세션에서 처리한다. 대상이 **0건**인 회차에도 세션이
+기동되면 토큰을 쓰고 work_history 기록(PR 포함)까지 열린다. 그래서 **세션을 띄우기 전에** 스크립트가
+대상 수를 세고, 합계 0이면 세션 자체를 띄우지 않는다.
+
+| 단계 | 대상 판정 | 실제 조회 |
+|---|---|---|
+| [0] | 열린 PR 중 `mergeable == 'CONFLICTING'` | `gh pr list --repo <owner/repo> --state open --json number,mergeable,statusCheckRollup` |
+| [E] | 열린 PR 중 `statusCheckRollup` 에 `FAILURE` 체크가 있음 | 위와 동일(`conclusion`·`state` 두 필드를 모두 본다) |
+| [F] | `git stash list` 중 메시지가 `auto-unblock ` 로 시작하는 항목 | 대상 저장소마다 `git stash list` |
+| [H] | 최근 2시간 내 코멘트가 있는 이슈 | `list-issues.js --csn <csn> --status ... --hours-back 2 --json` |
+
+- 판정 정본은 `scripts/gissue/lib/repomaint-gate.ps1` — `Get-RepoMaintTargetCounts`(단계별 수 + 합계)와
+  `Test-RepoMaintNeeded`(합계 1건 이상인지) 두 **순수 함수**이며, 실제 조회는 **포트(스크립트블록) 주입**
+  으로 받는다(`lib/capped-wait.ps1` 와 같은 컨벤션). 회귀 테스트는 `tests/test-repomaint-gate.ps1`.
+- 합계 0이면 `Start-Job` 블록 전체를 건너뛰고
+  `[REPO-MAINT] CSN <csn> 정비 대상 0건 — 세션 기동 생략(스크립트 사전 체크)` 한 줄만 남긴다.
+  **기록 파일·PR 은 만들지 않는다.**
+- 게이트 실행이 예외로 실패하면(gh 실행 불가 등) 그 사실을 출력하고 **종전대로 세션을 기동한다(fail-open)** —
+  조회 실패를 "대상 0건"으로 오인해 정비를 놓치는 쪽이 위험하므로, 판정을 못 하면 세션을 띄운다.
+- 프롬프트에도 같은 규칙이 들어 있다: 실제로 수정한 파일이 0건이면 work_history 기록 파일을 만들지
+  말고 PR도 열지 말고 조용히 종료하라.
+
+#### (2) gair 경유 — 정비 세션만 (giip AI API 라우터, giip #5671)
+
+정비 세션의 엔진 호출은 **gair**(giip AI API 라우터)를 경유한다. 방식은 slack-bot 채팅 경로
+(`slack-bot/gair-accounts.js`)와 같다.
+
+- 베이스 URL: `https://giipfaw.azurewebsites.net/api/gair` (`ANTHROPIC_BASE_URL` 교체)
+- 인증: **CSN 의 SK 에서 파생한 AK** — `scripts/gissue/get-ak.sh <csn> --json` (AdminGetAK)
+- **모델은 고정하지 않는다** — `--model` 을 아예 붙이지 않고 gair 의 JEV 판정·프로파일 매핑에 맡긴다.
+- gair 호출 실패·AK 파생 실패 시 기존 **MiniMax → Claude** 경로로 폴백한다(fail-soft) — gair 장애가
+  정비를 막지 않는다. AK/SK 는 어떤 로그에도 남기지 않는다.
+
+#### 환경변수
+
+| 환경변수 | 기본값 | 효과 |
+|---|---|---|
+| `GISSUE_REPO_MAINT_GATE` | 켜짐(`0` 이 아니면) | `0` 이면 사전 체크 게이트를 끈다(종전 동작 — 매 회차 세션 기동) |
+| `GISSUE_REPO_MAINT_GAIR` | 켜짐(`0` 이 아니면) | `0` 이면 gair 경유를 끄고 기존 MiniMax → Claude 경로를 쓴다 |
 
 ### 5-2) 8단계 — 각 단계가 무엇을 판단하는가
 

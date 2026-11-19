@@ -1222,6 +1222,10 @@ $BlockRepoMaint = @'
        수행한 Actionflow 검증의 SUCCESS 결과로만 허용된다.**
      - **판단이 애매하면**: 억지로 결론 내지 말고 "재검증 결과 불확실함" note 만 남기고 넘어간다.
   6. 대상 이슈가 하나도 없으면 조용히 건너뛴다.
+
+[정비 결과 0건 종료 규칙 — giip #5671]:
+  위 [0]/[E]/[F]/[H] 를 모두 수행한 뒤 **실제로 수정한 파일이 0건이면** work_history 기록 파일을
+  만들지 말고, PR도 열지 말고, 조용히 종료하라. (기록 파일·PR·정정 코멘트 등 어떤 산출물도 만들지 않는다.)
 '@
 
 # ── [G] REVIEW 재검증 블록 ────────────────────────────────────────────────────────────────
@@ -3126,23 +3130,52 @@ foreach ($csn in $map.PSObject.Properties.Name) {
                 [string]$MinimaxApiKey,
                 [string]$MinimaxModel,
                 [string]$MinimaxBaseUrl,
-                [string]$MinimaxContextTokens
+                [string]$MinimaxContextTokens,
+                [string]$BaseUrlOverride = '',
+                [string]$ApiKeyOverride = '',
+                [switch]$NoFixedModel
             )
             $prevBase = $env:ANTHROPIC_BASE_URL; $prevKey = $env:ANTHROPIC_API_KEY
             $prevMaxCtx = $env:CLAUDE_CODE_MAX_CONTEXT_TOKENS
-            $env:ANTHROPIC_BASE_URL = $MinimaxBaseUrl
-            $env:ANTHROPIC_API_KEY = $MinimaxApiKey
+            $prevCustomHeaders = $env:ANTHROPIC_CUSTOM_HEADERS
+            # [giip #5671] 이 함수는 MiniMax 뿐 아니라 **gair(giip AI API 라우터) 경유 시도**에도 쓴다.
+            #   두 경로의 차이는 "베이스 URL·키"와 "모델 고정 여부"뿐이라 같은 함수 안에서 교체한다
+            #   (ANTHROPIC_BASE_URL/ANTHROPIC_API_KEY 바꿔치기 = slack-bot/gair-accounts.js 와 같은 자리).
+            $useBaseUrl = if ($BaseUrlOverride) { $BaseUrlOverride } else { $MinimaxBaseUrl }
+            $useApiKey  = if ($ApiKeyOverride)  { $ApiKeyOverride }  else { $MinimaxApiKey }
+            $env:ANTHROPIC_BASE_URL = $useBaseUrl
+            $env:ANTHROPIC_API_KEY = $useApiKey
             $env:CLAUDE_CODE_MAX_CONTEXT_TOKENS = $MinimaxContextTokens
+            if ($NoFixedModel) {
+                # gair 는 Azure Function(authLevel=function)일 수 있다 — 함수 키가 호스트 env 에 있으면
+                # 커스텀 헤더로 실어 보낸다(slack-bot/gair-accounts.js 와 동일). 키가 없으면 헤더를 싣지
+                # 않고 호출이 실패하면 호출측이 기존 경로로 폴백한다(fail-soft).
+                if ($env:GAIR_FUNCTION_KEY) { $env:ANTHROPIC_CUSTOM_HEADERS = "x-functions-key: $($env:GAIR_FUNCTION_KEY)" }
+                else { $env:ANTHROPIC_CUSTOM_HEADERS = $null }
+            }
             # [giip #5449] 실행 모델 주입 — 엔진은 자기 모델을 알 수 없다. 러너(호스트)만 알기 때문에
             # 프롬프트 맨 앞에 실제 모델명을 붙여 주입한다(코멘트에 모델을 표기하도록 지시).
             # 주입은 **이 함수 안에서 한 번만** 한다 — 재시도 프롬프트도 이 함수를 경유하므로 그쪽은
             # 따로 손대지 않는다. 판정(judge) 호출은 아래에서 별도로 프롬프트를 만들기 때문에 영향을 받지 않는다.
-            $mmModelLine = "[실행 모델] 이 세션은 MiniMax 모델 '$MinimaxModel' 로 실행 중이다. 이슈에 남기는 모든 코멘트에 사용 모델로 이 값을 표기하라."
+            $mmModelLine = if ($NoFixedModel) {
+                # gair 경유: 모델을 고정하지 않는다 — gair 의 JEV 판정·프로파일 매핑이 정한다.
+                "[실행 모델] 이 세션은 gair(giip AI API 라우터, giip #5671) 경유로 실행 중이다 — 모델을 고정하지 않는다(gair 가 라우팅한다)."
+            } else {
+                "[실행 모델] 이 세션은 MiniMax 모델 '$MinimaxModel' 로 실행 중이다. 이슈에 남기는 모든 코멘트에 사용 모델으로 이 값을 표기하라."
+            }
             $mmPrompt = "$mmModelLine`n`n$PromptText"
-            $mmOutput = $mmPrompt | & claude -p --dangerously-skip-permissions --add-dir $Root --model $MinimaxModel 2>&1
+            if ($NoFixedModel) {
+                # PowerShell 5.1 은 빈 문자열 인자를 통째로 누락시킨다 → --model 을 아예 붙이지 않는
+                # 경로로 분리한다(모델 미고정 = gair 라우터가 선택).
+                $mmOutput = $mmPrompt | & claude -p --dangerously-skip-permissions --add-dir $Root 2>&1
+            } else {
+                $mmOutput = $mmPrompt | & claude -p --dangerously-skip-permissions --add-dir $Root --model $MinimaxModel 2>&1
+            }
             $mmExit = $LASTEXITCODE
             $env:ANTHROPIC_BASE_URL = $prevBase; $env:ANTHROPIC_API_KEY = $prevKey
             $env:CLAUDE_CODE_MAX_CONTEXT_TOKENS = $prevMaxCtx
+            # 커스텀 헤더는 gair 경로에서만 건드린다(MiniMax 경로는 값에 손대지 않는다).
+            if ($NoFixedModel) { $env:ANTHROPIC_CUSTOM_HEADERS = $prevCustomHeaders }
             $mmText = ($mmOutput | Out-String)
             $usageLimitHit = $mmText -match '\b429\b|rate limit|quota|insufficient balance|insufficient.{0,10}credit|too many requests'
             $noRealActionTaken = $false
@@ -3198,12 +3231,29 @@ foreach ($csn in $map.PSObject.Properties.Name) {
                 [string]$MinimaxApiKey,
                 [string]$MinimaxModel,
                 [string]$MinimaxBaseUrl,
-                [string]$MinimaxContextTokens
+                [string]$MinimaxContextTokens,
+                [string]$GairBaseUrl = '',
+                [string]$GairApiKey = ''
             )
             $lastMmText = $null
             if ($ForceClaude) {
                 Write-Output "[ENGINE] $ForceReason — claude($Model) 강제 기동, MiniMax 시도 건너뜀."
-            } elseif ($MinimaxApiKey) {
+            } elseif ($GairApiKey -and $GairBaseUrl) {
+                # [giip #5671] gair 1순위 시도 — 정비 세션 한정. 모델을 고정하지 않고 gair 라우터에 맡긴다
+                #   (slack-bot/gair-accounts.js 와 같은 방식: 베이스 URL·키만 바꾸고 --model 은 붙이지 않는다).
+                #   실패하면 아래 MiniMax→Claude 경로로 폴백한다(fail-soft — gair 장애가 정비를 막지 않는다).
+                Write-Output "[ENGINE] gair 우선 시도 (모델 미고정 — gair 라우터가 선택)"
+                $gairAttempt = Invoke-GissueMinimaxAttempt -PromptText $PromptText -IssueContextLine $IssueContextLine -Root $Root `
+                    -MinimaxApiKey $GairApiKey -MinimaxModel '' -MinimaxBaseUrl '' -MinimaxContextTokens $MinimaxContextTokens `
+                    -BaseUrlOverride $GairBaseUrl -ApiKeyOverride $GairApiKey -NoFixedModel
+                if ($gairAttempt.Success) {
+                    $gairAttempt.Output
+                    return
+                }
+                Write-Output "[ENGINE] gair 시도 실패(exit=$($gairAttempt.Exit)) → 기존 MiniMax→Claude 경로로 폴백 (fail-soft)"
+            }
+            # MiniMax 우선 시도 — ForceClaude 가 아니고, gair 가 없거나 gair 가 실패했을 때.
+            if ((-not $ForceClaude) -and $MinimaxApiKey) {
                 Write-Output "[ENGINE] MiniMax 우선 시도 (model=$MinimaxModel)"
                 $attempt1 = Invoke-GissueMinimaxAttempt -PromptText $PromptText -IssueContextLine $IssueContextLine -Root $Root `
                     -MinimaxApiKey $MinimaxApiKey -MinimaxModel $MinimaxModel -MinimaxBaseUrl $MinimaxBaseUrl -MinimaxContextTokens $MinimaxContextTokens
@@ -3505,14 +3555,166 @@ foreach ($csn in $map.PSObject.Properties.Name) {
             Write-Output "[WARN][SchedulerState-init] 초기화 실패: $($_.Exception.Message)"
         }
 
+        # ── REPO-MAINT 게이트 포트 구현(실제 조회) ──────────────────────────────────────
+        # 판정 정본은 lib/repomaint-gate.ps1(순수 함수 + 포트 주입)이고, 여기 있는 것은 그 포트에
+        # 넘길 "실제 조회"뿐이다. 조회 실패는 예외로 올려 게이트 전체를 fail-open 으로 보낸다 —
+        # "조회 실패"와 "대상 0건"을 구분하지 못하면 정비 대상을 놓칠 수 있다.
+        #
+        # JSON 배열 파싱(PS 5.1 함정 회피): '[]' 를 ConvertFrom-Json 에 넘기면 $null 이 되고
+        # @($null) 은 원소 1개짜리 배열이 된다 → 빈 배열을 0건으로 정확히 세려면 문자열을 먼저 본다.
+        function ConvertTo-GissueJsonArray([string]$JsonText) {
+            $t = "$JsonText".Trim()
+            if (-not $t) { return @() }
+            if ($t -eq '[]') { return @() }
+            $parsed = $t | ConvertFrom-Json
+            if ($null -eq $parsed) { return @() }
+            return @($parsed)
+        }
+
+        # [0]/[E] 대상 PR: CSN 워크디렉터리(+nested repo)의 origin remote → owner/repo →
+        #   `gh pr list --repo <owner/repo> --state open --json number,mergeable,statusCheckRollup`.
+        #   gh 는 cwd 기준으로 owner/repo 를 추론하므로 --repo 를 반드시 명시한다(giip #2220).
+        function Get-GissueRepoMaintOpenPrs {
+            param([string]$Workdir)
+            $prs = @()
+            foreach ($repo in @(Get-GissueGitRepoPaths $Workdir $null)) {
+                $origin = $null
+                $prevEap = $ErrorActionPreference
+                try {
+                    $ErrorActionPreference = 'Continue'
+                    $origin = (git -C $repo remote get-url origin 2>$null | Out-String).Trim()
+                } finally { $ErrorActionPreference = $prevEap }
+                if (-not $origin) { continue }   # 로컬 전용 저장소 — PR 대상 아님
+                $ownerRepo = $null
+                if ("$origin" -match '[:/]([^/:]+)/([^/]+?)(\.git)?\s*$') { $ownerRepo = "$($Matches[1])/$($Matches[2])" }
+                if (-not $ownerRepo) { continue }
+                $json = ''
+                $ghExit = 0
+                $prevEap = $ErrorActionPreference
+                try {
+                    $ErrorActionPreference = 'Continue'
+                    $json = (& gh pr list --repo $ownerRepo --state open --json number,mergeable,statusCheckRollup --limit 200 2>$null | Out-String)
+                    $ghExit = $LASTEXITCODE
+                } finally { $ErrorActionPreference = $prevEap }
+                if ($ghExit -ne 0) { throw "gh pr list 실패($ownerRepo, exit=$ghExit)" }
+                foreach ($p in @(ConvertTo-GissueJsonArray $json)) { if ($p) { $prs += $p } }
+            }
+            return ,$prs
+        }
+
+        # [F] 대상 stash: 대상 저장소마다 `git stash list` → 메시지가 'auto-unblock ' 로 시작하는 항목.
+        function Get-GissueRepoMaintStashList {
+            param([string]$Workdir)
+            $lines = @()
+            foreach ($repo in @(Get-GissueGitRepoPaths $Workdir $null)) {
+                $out = @()
+                $exit = 0
+                $prevEap = $ErrorActionPreference
+                try {
+                    $ErrorActionPreference = 'Continue'
+                    $out = @(git -C $repo stash list 2>$null)
+                    $exit = $LASTEXITCODE
+                } finally { $ErrorActionPreference = $prevEap }
+                if ($exit -ne 0) { throw "git stash list 실패($repo, exit=$exit)" }
+                foreach ($l in $out) { if ($l) { $lines += "$l" } }
+            }
+            return ,$lines
+        }
+
+        # [H] 대상 이슈: `list-issues.js --csn <csn> --status <전체> --hours-back 2` 로 "최근 2시간 내
+        #   코멘트가 있는 이슈" 수를 센다 — 정비 프롬프트 [H] 블록과 같은 조회 경로(기존 방식 재사용).
+        function Get-GissueRepoMaintRecentCommentCount {
+            param([string]$Csn, [string]$ListIssuesScript, [string]$AccountsFile, [string]$ApiBase)
+            $statuses = 'PENDING,READY,IN_PROGRESS,REVIEW,TESTED,DONE'
+            $raw = ''
+            $exit = 0
+            $prevEap = $ErrorActionPreference
+            try {
+                $ErrorActionPreference = 'Continue'
+                $raw = (& node $ListIssuesScript --csn $Csn --status $statuses --hours-back 2 --accounts-file $AccountsFile --api-base $ApiBase --json 2>$null | Out-String)
+                $exit = $LASTEXITCODE
+            } finally { $ErrorActionPreference = $prevEap }
+            if ($exit -ne 0) { throw "list-issues.js 실패(csn=$Csn, exit=$exit)" }
+            return @(ConvertTo-GissueJsonArray $raw).Count
+        }
+
+        # [giip #5671] CSN 의 SK → AK 파생 — 정본 경로 scripts/gissue/get-ak.sh <csn> --json (AdminGetAK).
+        #   AK/SK 는 어떤 출력·로그에도 남기지 않는다(반환값으로만 쓴다).
+        function Get-GissueGairApiKey {
+            param([string]$BashExePath, [string]$Csn, [string]$RootPath)
+            if (-not $BashExePath) { return '' }
+            $akScript = Join-Path $RootPath 'get-ak.sh'
+            if (-not (Test-Path -LiteralPath $akScript)) { return '' }
+            $raw = ''
+            $exit = 0
+            $prevEap = $ErrorActionPreference
+            try {
+                $ErrorActionPreference = 'Continue'
+                $raw = (& $BashExePath $akScript $Csn --json 2>$null | Out-String)
+                $exit = $LASTEXITCODE
+            } finally { $ErrorActionPreference = $prevEap }
+            if ($exit -ne 0) { return '' }
+            $rows = @()
+            try { $rows = @(ConvertTo-GissueJsonArray $raw) } catch { return '' }
+            if ($rows.Count -lt 1) { return '' }
+            $ak = "$($rows[0].ak)"
+            if (-not $ak) { return '' }
+            return $ak
+        }
+
         # (A) 저장소 정비 — CSN 당 1회, MiniMax 우선(강제 claude 아님). [0]/[E]/[F]/[H] 규칙을 한 세션에서
         # 처리한다. 실패해도 이슈별 처리(B/C)는 계속 진행한다(저장소 정비 실패가 스케줄러 전체를 막지 않는다).
         # [giip 4431 항목 2] 엔진 호출을 내부 Start-Job 으로 감싸 ${repoMaintDeadlineMin}분 캡을 둔다(per-issue
         # timebox giip #1565 와 동일 패턴). 캡 초과 시 Stop-Job 후 이슈 순회로 진행한다 — 정비는 멱등이라
         # 후속 이슈 등록 없이 note 만 남기고 다음 :07 이 이어서 수행한다. (Start-Job 은 부모 스코프의 함수를
         # 상속하지 않으므로 엔진 함수 본문을 -InitializationScript 로 명시 전달한다.)
-        Write-Output "[REPO-MAINT] CSN $csn 저장소 정비 세션 시작 (캡 ${repoMaintDeadlineMin}분)"
-        $repoMaintInit = [scriptblock]::Create(@"
+        #
+        # [giip #5671] 스크립트 사전 체크 게이트 — 정비 대상 0건이면 **세션 자체를 띄우지 않는다**(토큰 0).
+        #   판정 정본은 lib/repomaint-gate.ps1(순수 함수 + 포트 주입), 실제 조회는 위 포트 구현이 맡는다.
+        #   게이트 실행이 예외로 실패하면(gh 불가 등) 그 사실을 출력하고 종전대로 세션을 기동한다(fail-open).
+        #   GISSUE_REPO_MAINT_GATE=0 이면 게이트를 끈다(종전 동작).
+        $repoMaintGateEnabled = ($env:GISSUE_REPO_MAINT_GATE -ne '0')
+        $repoMaintNeeded = $true
+        $repoMaintCounts = $null
+        if ($repoMaintGateEnabled) {
+            try {
+                . (Join-Path $root 'lib/repomaint-gate.ps1')
+                $repoMaintGatePorts = @{
+                    OpenPrs                 = { Get-GissueRepoMaintOpenPrs -Workdir $workdir }
+                    StashList              = { Get-GissueRepoMaintStashList -Workdir $workdir }
+                    RecentCommentIssueCount = { Get-GissueRepoMaintRecentCommentCount -Csn $csn -ListIssuesScript $listIssuesScript -AccountsFile $accountsFile -ApiBase $apiBase }
+                }
+                $repoMaintCounts = Get-RepoMaintTargetCounts -Ports $repoMaintGatePorts
+                $repoMaintNeeded = Test-RepoMaintNeeded -Counts $repoMaintCounts
+            } catch {
+                $repoMaintNeeded = $true
+                Write-Output "[REPO-MAINT][WARN] 게이트 실행 실패($($_.Exception.Message)) — 세션을 종전대로 기동(fail-open)"
+            }
+        }
+        if (-not $repoMaintNeeded) {
+            # 정비 대상 0건 — 엔진 세션·기록 파일·PR 모두 만들지 않는다(한 줄만 남긴다).
+            Write-Output "[REPO-MAINT] CSN $csn 정비 대상 0건 — 세션 기동 생략(스크립트 사전 체크)"
+        } else {
+            if ($repoMaintCounts) {
+                Write-Output "[REPO-MAINT] CSN $csn 정비 대상 게이트: [0]=$($repoMaintCounts.Stage0) [E]=$($repoMaintCounts.StageE) [F]=$($repoMaintCounts.StageF) [H]=$($repoMaintCounts.StageH) 합계=$($repoMaintCounts.Total)"
+            }
+            # [giip #5671] 정비 세션 엔진 경유 — CSN 의 SK 에서 AK 를 파생해 gair(giip AI API 라우터)로
+            #   보낸다. 모델은 고정하지 않는다(gair 가 라우팅). AK 파생 실패·gair 호출 실패 시 기존
+            #   MiniMax→Claude 경로로 폴백한다(fail-soft). GISSUE_REPO_MAINT_GAIR=0 이면 gair 를 끈다.
+            $gairBaseUrl = 'https://giipfaw.azurewebsites.net/api/gair'
+            $gairApiKey = ''
+            if ($env:GISSUE_REPO_MAINT_GAIR -eq '0') {
+                Write-Output "[REPO-MAINT][GAIR] GISSUE_REPO_MAINT_GAIR=0 — gair 경유 끔(기존 MiniMax→Claude 경로)"
+            } else {
+                try { $gairApiKey = Get-GissueGairApiKey -BashExePath $bashExe -Csn $csn -RootPath $root } catch { $gairApiKey = '' }
+                if ($gairApiKey) {
+                    Write-Output "[REPO-MAINT][GAIR] AK 파생 성공 — 정비 세션 엔진은 gair 경유(모델 미고정)"
+                } else {
+                    Write-Output "[REPO-MAINT][GAIR] AK 파생 실패 — 기존 MiniMax→Claude 경로로 폴백(fail-soft)"
+                }
+            }
+            Write-Output "[REPO-MAINT] CSN $csn 저장소 정비 세션 시작 (캡 ${repoMaintDeadlineMin}분)"
+            $repoMaintInit = [scriptblock]::Create(@"
 function Invoke-GissueMinimaxAttempt {
 ${function:Invoke-GissueMinimaxAttempt}
 }
@@ -3520,30 +3722,32 @@ function Invoke-GissueEngine {
 ${function:Invoke-GissueEngine}
 }
 "@)
-        $repoMaintJob = Start-Job -InitializationScript $repoMaintInit -ScriptBlock {
-            param($promptTextInner, $rootInner, $modelInner, $minimaxApiKeyInner, $minimaxModelInner, $minimaxBaseUrlInner, $minimaxContextTokensInner)
-            if ([Console]::OutputEncoding.WebName -ne 'utf-8') { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 }
-            if ($OutputEncoding.WebName -ne 'utf-8') { $OutputEncoding = [System.Text.Encoding]::UTF8 }
-            Invoke-GissueEngine -PromptText $promptTextInner -ForceClaude:$false -IssueContextLine '' -ForceReason '' `
-                -Root $rootInner -Model $modelInner -MinimaxApiKey $minimaxApiKeyInner -MinimaxModel $minimaxModelInner -MinimaxBaseUrl $minimaxBaseUrlInner -MinimaxContextTokens $minimaxContextTokensInner
-        } -ArgumentList $repoMaintenancePrompt, $agentRepo, $model, $minimaxApiKey, $minimaxModel, $minimaxBaseUrl, $minimaxContextTokens
-        try {
-            $repoMaintWait = Invoke-GissueCappedJobWait $repoMaintDeadlineMin $issueEnginePollMin @{
-                IsRunning = { $repoMaintJob.State -eq 'Running' }
-                Wait      = { param($sec) Wait-Job $repoMaintJob -Timeout $sec | Out-Null }
+            $repoMaintJob = Start-Job -InitializationScript $repoMaintInit -ScriptBlock {
+                param($promptTextInner, $rootInner, $modelInner, $minimaxApiKeyInner, $minimaxModelInner, $minimaxBaseUrlInner, $minimaxContextTokensInner, $gairBaseUrlInner, $gairApiKeyInner)
+                if ([Console]::OutputEncoding.WebName -ne 'utf-8') { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 }
+                if ($OutputEncoding.WebName -ne 'utf-8') { $OutputEncoding = [System.Text.Encoding]::UTF8 }
+                Invoke-GissueEngine -PromptText $promptTextInner -ForceClaude:$false -IssueContextLine '' -ForceReason '' `
+                    -Root $rootInner -Model $modelInner -MinimaxApiKey $minimaxApiKeyInner -MinimaxModel $minimaxModelInner -MinimaxBaseUrl $minimaxBaseUrlInner -MinimaxContextTokens $minimaxContextTokensInner `
+                    -GairBaseUrl $gairBaseUrlInner -GairApiKey $gairApiKeyInner
+            } -ArgumentList $repoMaintenancePrompt, $agentRepo, $model, $minimaxApiKey, $minimaxModel, $minimaxBaseUrl, $minimaxContextTokens, $gairBaseUrl, $gairApiKey
+            try {
+                $repoMaintWait = Invoke-GissueCappedJobWait $repoMaintDeadlineMin $issueEnginePollMin @{
+                    IsRunning = { $repoMaintJob.State -eq 'Running' }
+                    Wait      = { param($sec) Wait-Job $repoMaintJob -Timeout $sec | Out-Null }
+                }
+                if ($repoMaintWait.TimedOut) {
+                    # 캡 초과 — 강제 정리 후 이슈 순회로 진행한다. detach 된 엔진 자식은 고아로 남을 수 있고
+                    # 다음 :07 실행의 Phase 0 reaper 가 회수한다(per-issue timebox 와 동일).
+                    Write-Output "[REPO-MAINT] CSN $csn 정비 세션이 ${repoMaintDeadlineMin}분 캡 초과 — 강제 정리 후 이슈 순회로 진행 (멱등, 다음 :07 이 이어서 수행)"
+                    Stop-Job $repoMaintJob -ErrorAction SilentlyContinue
+                } else {
+                    try { Receive-Job $repoMaintJob } catch { Write-Output "[WARN] 저장소 정비 세션 출력 회수 오류($($_.Exception.Message)) — 이슈별 처리는 계속 진행" }
+                }
+            } catch {
+                Write-Output "[WARN] 저장소 정비 세션 오류($($_.Exception.Message)) — 이슈별 처리는 계속 진행"
+            } finally {
+                Remove-Job $repoMaintJob -Force -ErrorAction SilentlyContinue
             }
-            if ($repoMaintWait.TimedOut) {
-                # 캡 초과 — 강제 정리 후 이슈 순회로 진행한다. detach 된 엔진 자식은 고아로 남을 수 있고
-                # 다음 :07 실행의 Phase 0 reaper 가 회수한다(per-issue timebox 와 동일).
-                Write-Output "[REPO-MAINT] CSN $csn 정비 세션이 ${repoMaintDeadlineMin}분 캡 초과 — 강제 정리 후 이슈 순회로 진행 (멱등, 다음 :07 이 이어서 수행)"
-                Stop-Job $repoMaintJob -ErrorAction SilentlyContinue
-            } else {
-                try { Receive-Job $repoMaintJob } catch { Write-Output "[WARN] 저장소 정비 세션 출력 회수 오류($($_.Exception.Message)) — 이슈별 처리는 계속 진행" }
-            }
-        } catch {
-            Write-Output "[WARN] 저장소 정비 세션 오류($($_.Exception.Message)) — 이슈별 처리는 계속 진행"
-        } finally {
-            Remove-Job $repoMaintJob -Force -ErrorAction SilentlyContinue
         }
 
         # ── REVIEW/TESTED 재검증 쿨다운(2026-09-04, 사용자 지시: "재검증 주기를 줄인다") ──────────────
