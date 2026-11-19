@@ -11,6 +11,7 @@ AI 네이티브 조직 운영을 위한 핵심 문서 모음입니다.
 - Docker 인스턴스 dev 사용자·sudo 권한 (docker-bypass / setup-dev-sudo): `./docker-dev-user-and-sudo.md`
 - secwatch 보안점검 에이전트 설치·등록·운영: `./secwatch-agent.md`
 - secwatch — 지시받은 보안 로그 항목을 AI 가 상시감시에 편입(AI 실행용 지시서): `./secwatch-ai-onboarding.md`
+- gair 부트스트랩 — 각 PC의 Claude가 스스로 gair(giip ai api router)를 거치게 설정·검증(정본): `./gair-bootstrap.md`
 - 승인 게이트 워크플로우: `/.agent/workflows/human-approval-gate.md`
 - 주간 KPI 템플릿: `/.agent/templates/weekly-kpi-report.template.md`
 - Skill/Role 메타데이터 스키마: `/.agent/templates/shared/operational-metadata-schema.md`
