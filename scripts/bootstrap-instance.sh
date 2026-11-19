@@ -7,7 +7,9 @@
 # 언제 도나: entrypoint.sh 기동 시 자동. 수동: `bash /work/giip-fde-agent/scripts/bootstrap-instance.sh`
 # 하는 일: 1) root 소유 파일 회수  2) powershell→pwsh 링크  3) SqlServer 모듈  4) 허브 저장소 clone(없을 때만)
 #          5) giipdb/mgmt/dbconfig.json 생성(없을 때만)  6) claude 네이티브(dev 소유, 자동업데이트)  7) 허브의 환경 점검 실행
+#          8) (선택) GIIP_SETUP_CSN 이 있으면 그 CSN 의 GitHub repo 초기 clone + 위치 저장
 # 환경변수: GIIP_DB_SERVER GIIP_DB_NAME GIIP_DB_LOGIN GIIP_DB_PASSWORD (DB 직접 접속, 선택)
+#           GIIP_SETUP_CSN(선택, 있으면 8번 실행) GIIP_SK(선택, setup 에 넘길 SK)
 #           GIIP_HUB_URL(기본 https://github.com/LowyShin/giipprj-hub.git) GIIP_HUB_DIR(기본 /work/giipprj-hub) GIIP_SECRETS_DIR(기본 /work/.secrets)
 # 정본 설명: giipprj-hub .agent/k_layer/notes/KNOW-096_docker_instance_environment_and_linux_script_pitfalls.md
 FDE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -71,4 +73,10 @@ done
 
 # 7) 현재 상태 점검(읽기 전용) — 허브의 정본 점검 스크립트
 [ -f "$HUB/.agent/scripts/check_instance_env.sh" ] && FDE_DIR="$FDE" bash "$HUB/.agent/scripts/check_instance_env.sh" 2>&1 | grep -v setlocale
+# 8) CSN 의 GitHub repo 초기 clone(선택) — GIIP_SETUP_CSN 이 있을 때만. 실패해도 부트스트랩은 계속한다.
+if [ -n "${GIIP_SETUP_CSN:-}" ] && command -v pwsh >/dev/null 2>&1; then
+  SETUP_ARGS=(-Csn "$GIIP_SETUP_CSN")
+  [ -n "${GIIP_SK:-}" ] && SETUP_ARGS+=(-Sk "$GIIP_SK")
+  pwsh -NoProfile -File "$FDE/scripts/gissue/setup-csn-repos.ps1" "${SETUP_ARGS[@]}" 2>&1 | grep -v setlocale | sed 's/^/[bootstrap] /' || log WARN "CSN repo 설정 실패 — 수동 실행: setup-csn-repos.ps1 -Csn $GIIP_SETUP_CSN"
+fi
 exit 0
