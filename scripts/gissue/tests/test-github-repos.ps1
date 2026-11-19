@@ -77,7 +77,7 @@ $libSrc = Get-Content -Raw -Encoding UTF8 (Join-Path $gissueRoot 'lib/github-rep
 Assert-True ($libSrc -match 'extraHeader') 'PAT 는 extraHeader 로 1회 주입(원격 URL에 남기지 않음)'
 $setupSrc = Get-Content -Raw -Encoding UTF8 (Join-Path $gissueRoot 'setup-csn-repos.ps1')
 Assert-True ($setupSrc -match 'Get-GissueGithubConfigsRemote') '설정 진입점이 조회를 경유한다'
-Assert-True ($setupSrc -notmatch 'Write-Host.*\$item\.pat|Write-Host.*\$cfg\.pat') '설정 진입점이 PAT 를 로그에 쓰지 않는다'
+Assert-True ($setupSrc -notmatch 'Write-Host.*\$(item|cfg)\.pat(?![a-zA-Z])') '설정 진입점이 PAT 를 로그에 쓰지 않는다'
 
 Write-Host ''
 Write-Host "결과: PASS=$script:Pass FAIL=$script:Fail"
