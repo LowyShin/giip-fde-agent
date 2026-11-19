@@ -185,7 +185,7 @@ MANDATORY RULE — Task Number: If the user's message contains a 14-digit task n
 
   try {
     // giip-1063: userText 를 넘겨 한 메시지 안의 독립 조회를 한 번에 처리하도록(배치)
-    const reply = await callClaude(prompt, workDir, { userText: text });
+    const reply = await callClaude(prompt, workDir, { userText: text, channelId });
     // 코드레벨 강제: 사용자 메시지의 태스크 ID가 응답에 없으면 첫 줄에 삽입
     const missingIds = extractExistingTaskIds(text).filter(id => !reply.includes(id));
     const finalReply = missingIds.length > 0
@@ -342,7 +342,7 @@ async function handleDM({ channelId, ts, threadTs, text, conversations, workDir 
   prompt += `\n\nUser: ${text}\nAssistant:`;
 
   try {
-    const reply = await callClaude(prompt, workDir, { userText: text }); // giip-1063: 배치 처리 힌트
+    const reply = await callClaude(prompt, workDir, { userText: text, channelId }); // giip-1063: 배치 처리 힌트
     if (!conversations[convKey]) conversations[convKey] = [];
     conversations[convKey].push({ role: 'user', content: text });
     conversations[convKey].push({ role: 'assistant', content: reply });

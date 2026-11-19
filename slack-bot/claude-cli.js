@@ -4,6 +4,7 @@
 const { spawn } = require('child_process');
 const accounts = require('./claude-accounts');
 const minimax = require('./minimax-accounts');
+const gair = require('./gair-accounts');
 const { getAgentDir, BASE_DIR, PROJECTS_ROOT } = require('./config');
 const modelConfig = require('./model-config'); // giip-1063: 모델명 하드코딩 제거(중앙 설정)
 const costTracker = require('./cost-tracker');
@@ -117,7 +118,7 @@ async function reAuthClaude(account = null) {
  *
  * @param {string} prompt
  * @param {string} [workDir]
- * @param {object} [opts] { userText, taskId }
+ * @param {object} [opts] { userText, taskId, channelId } — channelId 는 gair 용 채널→계정 해석에 쓴다
  */
 async function callClaude(prompt, workDir = BASE_DIR, opts = {}) {
   const agentDir = getAgentDir(workDir);
@@ -170,7 +171,37 @@ async function callClaude(prompt, workDir = BASE_DIR, opts = {}) {
     // SLACKBOT_QNA_ALL_PROJECTS=1 롤백 수단으로만 허용(다른 프로젝트 내용이 답변에 섞이는 것 방지).
     ...(qnaAllProjects() ? ['--add-dir', PROJECTS_ROOT] : []),
   ];
-  // 우선순위(사용자 지정): MiniMax 먼저 시도 → 실패해야만 Claude 계정 풀로 폴백.
+  // 우선순위(사용자 지정, #5858): gair(라우터) → MiniMax → Claude 계정 풀.
+  // gair 는 모델을 고정하지 않는다(--model 미지정, ANTHROPIC_MODEL 제거) — 모델 선택은
+  // gair 의 JEV 판정 + 프로파일 매핑이 한다. 단 콘솔 shadow_mode=true 면 요청 모델이
+  // 그대로 쓰이므로, 실제 라우팅에는 해당 CSN 의 shadow_mode=false 설정이 필요하다.
+  // gair 실패(파생 실패·호출 오류·타임아웃)는 전부 기존 경로로 폴백한다(fail-soft).
+  const gacct = await gair.resolve(opts.channelId || null);
+  if (gacct) {
+    console.log('[Bot] gair 경유로 실행(Q&A)');
+    const tg = Date.now();
+    let gresult = null;
+    let gerr = null;
+    try {
+      gresult = await spawnAsync('claude', [...baseArgs], {
+        cwd: workDir,
+        ...engineSpawnOpts(),
+        env: gair.envFor(gacct),
+        input: prompt,
+      });
+    } catch (e) { gerr = e; }
+    const gout = gresult ? (gresult.stdout || '').trim() : '';
+    logCost({
+      provider: 'gair', model: 'gair-routed', attempt: 1, duration_ms: Date.now() - tg,
+      status: gresult && gresult.status === 0 ? 'success' : 'failed', output_chars: gout.length,
+      ...(gresult ? (costTracker.parseUsageFromOutput(`${gresult.stdout || ''}\n${gresult.stderr || ''}`) || {}) : {}),
+    });
+    if (gresult && gresult.status === 0) return gout;
+    gair.noteFailure();
+    console.log(`[Bot] gair 실패 → MiniMax/Claude 폴백으로 전환${gerr ? ` (${gerr.message})` : ''}`);
+  }
+
+  // MiniMax 시도 → 실패해야만 Claude 계정 풀로 폴백.
   let mmExhausted = false;
   const mm = minimax.resolve();
   if (mm) {
