@@ -74,3 +74,9 @@
 ## 저장소 락
 
 - 저장소 락 미획득이 정답 — CSN 70424 workdir = `giip-fde-agent`(≠ lowyworkenv) 이므로 lowyworkenv 사전 락 조건 미성립(196~199차와 동일).
+
+## 정정(2026-11-20 03:2x) — 기록 PR #537 이 stale head 로 조기 머지돼 [E] 수정이 유실, 후속 PR 로 재반영
+
+- 본 기록 PR **#537** 을 올린 뒤 테스트 수정(`2b81e22`)·[E] 절 정정(`994005a`) 커밋을 이어서 push 했으나, GitHub 의 PR synchronize 반영 지연으로 PR head 가 **첫 커밋 `3944c66`(work_history 단독, [E] 미수정)** 에 머문 사이, 자동 머지 스윕(merged_by `LowyShin`)이 그 stale head 를 **squash 머지**했다(merge 커밋 `f076d20`, `2026-11-19T18:23:08Z`). 결과 origin/main 에는 **work_history 73줄만** 반영되고 **PS1 게이트 수정(test-comment-model-tagging.ps1)·[E] 정정이 유실**됐다 — 즉 선행 회귀가 main 에 그대로 남아 모든 신규 PR 의 CI 를 계속 red 로 만든다.
+- 재발 원인: ① CI red(3944c66 의 PS1 FAIL)에도 스윕이 머지함 ② 1커밋 push → 추가 커밋 push 의 2단계라 조기 머지 창이 열림. **대응: 이 후속 PR 은 origin/main(`f076d20`)에서 테스트 수정 + [E] 정정 + 본 인시던트 노트를 한 번에(단일 push) 올려 stale-head 창을 없앴다**(어느 순간 머지돼도 수정이 함께 들어간다).
+- 이 후속 PR 로 반영되는 실제 조치는 위 [E] 절(테스트 소스 단언 보완, 로컬 PASS=17 FAIL=0)과 동일하다. CI red 를 스윕이 머지한 동작 자체는 별도 점검거리로 남긴다(본 세션 범위 밖, 기록만).
