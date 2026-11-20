@@ -145,7 +145,7 @@ powershell.exe -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass `
   | 큐 항목 상태 | 엔진 |
   |---|---|
   | 저장소 정비 세션 | **gair 우선(모델 미고정)** → 실패 시 MiniMax → claude 폴백 (giip #5671) |
-  | PENDING / READY / STALE_IN_PROGRESS | MiniMax 우선 → 실패 시 claude 폴백 |
+  | PENDING / READY / STALE_IN_PROGRESS | **허용 CSN(기본: gair 설정이 등록된 플랫폼 CSN)에서는 gair 우선(모델 미고정)** → MiniMax 우선 → 실패 시 claude 폴백 (giip #5671, §5-1-1 (2)) |
   | **REVIEW** | **MiniMax 시도 없이 곧바로 claude**(사용자 지시 2026-08-23) |
   | TESTED | claude 강제 (giip #1472) |
 
@@ -188,23 +188,30 @@ CSN 마다 매시간 기동하는 **저장소 정비(REPO-MAINT) 세션**은 아
 - 프롬프트에도 같은 규칙이 들어 있다: 실제로 수정한 파일이 0건이면 work_history 기록 파일을 만들지
   말고 PR도 열지 말고 조용히 종료하라.
 
-#### (2) gair 경유 — 정비 세션만 (giip AI API 라우터, giip #5671)
+#### (2) gair 경유 — 정비 세션 + 일반 이슈 세션(허용 CSN) (giip AI API 라우터, giip #5671)
 
-정비 세션의 엔진 호출은 **gair**(giip AI API 라우터)를 경유한다. 방식은 slack-bot 채팅 경로
-(`slack-bot/gair-accounts.js`)와 같다.
+정비 세션과, 허용 목록에 든 CSN의 **일반 이슈 처리 세션**의 엔진 호출은 **gair**(giip AI API
+라우터)를 경유한다. 방식은 slack-bot 채팅 경로(`slack-bot/gair-accounts.js`)와 같다.
 
 - 베이스 URL: `https://giipfaw.azurewebsites.net/api/gair` (`ANTHROPIC_BASE_URL` 교체)
 - 인증: **CSN 의 SK 에서 파생한 AK** — `scripts/gissue/get-ak.sh <csn> --json` (AdminGetAK)
 - **모델은 고정하지 않는다** — `--model` 을 아예 붙이지 않고 gair 의 JEV 판정·프로파일 매핑에 맡긴다.
 - gair 호출 실패·AK 파생 실패 시 기존 **MiniMax → Claude** 경로로 폴백한다(fail-soft) — gair 장애가
   정비를 막지 않는다. AK/SK 는 어떤 로그에도 남기지 않는다.
+- **일반 이슈 세션은 허용 CSN만 대상이다**: gair는 호출자 CSN의 `tSystemParameter`(category='gair')를
+  읽어 업스트림을 정하므로, gair 설정이 등록되지 않은 CSN이 시도하면 이슈마다 실패 호출만 쌓인다.
+  그래서 허용 목록으로 게이트한다(환경변수 표 참조). AK는 CSN 실행당 1회만 파생해 이슈 루프
+  전체에서 재사용한다. ForceClaude 이슈(REVIEW/TESTED 재검증)는 종전대로 gair를 건너뛰고
+  claude로 직행한다.
 
 #### 환경변수
 
 | 환경변수 | 기본값 | 효과 |
 |---|---|---|
 | `GISSUE_REPO_MAINT_GATE` | 켜짐(`0` 이 아니면) | `0` 이면 사전 체크 게이트를 끈다(종전 동작 — 매 회차 세션 기동) |
-| `GISSUE_REPO_MAINT_GAIR` | 켜짐(`0` 이 아니면) | `0` 이면 gair 경유를 끄고 기존 MiniMax → Claude 경로를 쓴다 |
+| `GISSUE_REPO_MAINT_GAIR` | 켜짐(`0` 이 아니면) | `0` 이면 정비 세션의 gair 경유를 끄고 기존 MiniMax → Claude 경로를 쓴다 |
+| `GISSUE_GAIR_CSNS` | gair 설정이 등록된 플랫폼 CSN | 일반 이슈 세션의 gair 경유 허용 CSN 목록(쉼표 구분). gair 설정을 등록한 CSN만 넣는다 |
+| `GISSUE_GAIR` | 켜짐(`0` 이 아니면) | `0` 이면 일반 이슈 세션의 gair 경유를 전부 끈다 |
 
 ### 5-2) 8단계 — 각 단계가 무엇을 판단하는가
 
