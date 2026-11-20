@@ -3239,7 +3239,7 @@ foreach ($csn in $map.PSObject.Properties.Name) {
             if ($ForceClaude) {
                 Write-Output "[ENGINE] $ForceReason — claude($Model) 강제 기동, MiniMax 시도 건너뜀."
             } elseif ($GairApiKey -and $GairBaseUrl) {
-                # [giip #5671] gair 1순위 시도 — 정비 세션 한정. 모델을 고정하지 않고 gair 라우터에 맡긴다
+                # [giip #5671] gair 1순위 시도 — 정비 세션 + 일반 이슈 세션(허용 CSN만). 모델을 고정하지 않고 gair 라우터에 맡긴다
                 #   (slack-bot/gair-accounts.js 와 같은 방식: 베이스 URL·키만 바꾸고 --model 은 붙이지 않는다).
                 #   실패하면 아래 MiniMax→Claude 경로로 폴백한다(fail-soft — gair 장애가 정비를 막지 않는다).
                 Write-Output "[ENGINE] gair 우선 시도 (모델 미고정 — gair 라우터가 선택)"
@@ -3750,6 +3750,29 @@ ${function:Invoke-GissueEngine}
             }
         }
 
+        # [giip #5671] 일반 이슈 처리 세션의 gair 경유 — gair 설정(category='gair')이 등록된 CSN만
+        #   대상으로 한다. gair는 호출자 CSN의 tSystemParameter를 읽으므로, 설정이 없는 CSN이 시도하면
+        #   이슈마다 실패 호출만 쌓인다 — 그래서 허용 목록으로 게이트한다. 허용 목록은 env
+        #   GISSUE_GAIR_CSNS(쉼표 구분), 미설정 시 기본값은 gair 설정이 등록된 플랫폼 CSN이다.
+        #   GISSUE_GAIR=0 이면 일반 경로의 gair 경유를 전부 끈다. AK는 CSN 실행당 1회만 파생해
+        #   이슈 루프 전체에서 재사용한다. AK 파생 실패·gair 호출 실패 시 기존 MiniMax→Claude
+        #   경로로 폴백한다(fail-soft). ForceClaude 이슈(REVIEW/TESTED 재검증)는 엔진 함수가
+        #   종전대로 gair를 건너뛰고 claude로 직행한다.
+        $issueGairBaseUrl = 'https://giipfaw.azurewebsites.net/api/gair'
+        $issueGairApiKey = ''
+        $gairCsnListRaw = if ($null -eq $env:GISSUE_GAIR_CSNS) { '47' } else { $env:GISSUE_GAIR_CSNS }
+        $gairCsnList = @($gairCsnListRaw -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+        if ($env:GISSUE_GAIR -eq '0') {
+            Write-Output "[GAIR] GISSUE_GAIR=0 — 일반 이슈 경로 gair 경유 끔(기존 MiniMax→Claude 경로)"
+        } elseif ($gairCsnList -contains "$csn") {
+            try { $issueGairApiKey = Get-GissueGairApiKey -BashExePath $bashExe -Csn $csn -RootPath $root } catch { $issueGairApiKey = '' }
+            if ($issueGairApiKey) {
+                Write-Output "[GAIR] CSN $csn AK 파생 성공 — 일반 이슈 세션 엔진은 gair 경유(모델 미고정)"
+            } else {
+                Write-Output "[GAIR] CSN $csn AK 파생 실패 — 기존 MiniMax→Claude 경로로 폴백(fail-soft)"
+            }
+        }
+
         # ── REVIEW/TESTED 재검증 쿨다운(2026-09-04, 사용자 지시: "재검증 주기를 줄인다") ──────────────
         # 최신 코멘트 author 가 아래 봇/게이트 자신 목록에 있으면(=사람의 새 신호 없음), 마지막으로 claude 로
         # 강제 재검증한 시각으로부터 $reviewRecheckCooldownHours 시간이 지나지 않는 한 이번 실행은 건너뛴다.
@@ -4032,15 +4055,16 @@ ${function:Invoke-GissueEngine}
 }
 "@)
             $innerJob = Start-Job -InitializationScript $innerEngineInit -ScriptBlock {
-                param($workdirInner, $promptText, $forceClaudeInner, $issueContextLineInner, $forceReasonInner, $rootInner, $modelInner, $minimaxApiKeyInner, $minimaxModelInner, $minimaxBaseUrlInner, $minimaxContextTokensInner)
+                param($workdirInner, $promptText, $forceClaudeInner, $issueContextLineInner, $forceReasonInner, $rootInner, $modelInner, $minimaxApiKeyInner, $minimaxModelInner, $minimaxBaseUrlInner, $minimaxContextTokensInner, $gairBaseUrlInner, $gairApiKeyInner)
                 Set-Location -Path $workdirInner
                 # [ENCODING][giip #3800 후속] 바깥 per-CSN 잡과 동일한 Broken-pipe 레이스 방지 — 이미 utf-8
                 # 이면 재대입하지 않는다(상세 사유는 바깥 잡 진입부 주석 참고).
                 if ([Console]::OutputEncoding.WebName -ne 'utf-8') { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 }
                 if ($OutputEncoding.WebName -ne 'utf-8') { $OutputEncoding = [System.Text.Encoding]::UTF8 }
                 Invoke-GissueEngine -PromptText $promptText -ForceClaude:$forceClaudeInner -IssueContextLine $issueContextLineInner -ForceReason $forceReasonInner `
-                    -Root $rootInner -Model $modelInner -MinimaxApiKey $minimaxApiKeyInner -MinimaxModel $minimaxModelInner -MinimaxBaseUrl $minimaxBaseUrlInner -MinimaxContextTokens $minimaxContextTokensInner
-            } -ArgumentList $workdir, $issuePrompt, $forceClaude, $issueContextLine, $forceReason, $agentRepo, $model, $minimaxApiKey, $minimaxModel, $minimaxBaseUrl, $minimaxContextTokens
+                    -Root $rootInner -Model $modelInner -MinimaxApiKey $minimaxApiKeyInner -MinimaxModel $minimaxModelInner -MinimaxBaseUrl $minimaxBaseUrlInner -MinimaxContextTokens $minimaxContextTokensInner `
+                    -GairBaseUrl $gairBaseUrlInner -GairApiKey $gairApiKeyInner
+            } -ArgumentList $workdir, $issuePrompt, $forceClaude, $issueContextLine, $forceReason, $agentRepo, $model, $minimaxApiKey, $minimaxModel, $minimaxBaseUrl, $minimaxContextTokens, $issueGairBaseUrl, $issueGairApiKey
             $issueElapsedMin = 0
             while ($innerJob.State -eq 'Running' -and $issueElapsedMin -lt $effectiveDeadlineMin) {
                 Wait-Job $innerJob -Timeout ($issueEnginePollMin * 60) | Out-Null
