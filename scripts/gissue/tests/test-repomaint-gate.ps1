@@ -116,6 +116,11 @@ Check 'H12 [H] 조회에 list-issues.js --hours-back 2 를 쓴다' ($src -match 
 Check 'H13 게이트 실패는 fail-open 으로 세션을 띄운다' ($src -match 'fail-open') ''
 Check 'H14 프롬프트에 0건 종료 규칙(기록 파일·PR 미생성)이 있다' (($src -match 'work_history 기록 파일을') -and ($src -match '만들지 말고, PR도 열지 말고, 조용히 종료하라')) ''
 Check 'H15 정비 세션 캡($RepoMaintDeadlineMin)은 그대로다' ($src -match 'Invoke-GissueCappedJobWait \$repoMaintDeadlineMin') ''
+Check 'H16 프롬프트 0건 규칙이 호스트 로컬 정리(워크트리 회수)를 수정 파일에서 제외한다' (($src -match '호스트 로컬 정리는') -and ($src -match '그런 정리를 근거로 기록 파일이나 PR 을 만들지 않는다')) ''
+Check 'H17 워크트리 회수는 기록·PR 의 근거가 되지 않는다고 명시한다' ($src -match ([regex]::Escape('기록·PR 의 근거가 되지 않는다'))) ''
+Check 'H18 워크트리 회수는 잡 종료 후처리 스크립트 단계(Invoke-GissueWorktreeCleanup)가 담당한다' (($src -match 'Invoke-GissueWorktreeCleanup') -and ($src -match '잡 종료 후처리 스크립트 단계')) ''
+$libSrc = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../lib/repomaint-gate.ps1') -Raw -Encoding UTF8
+Check 'H19 게이트 라이브러리도 워크트리 회수를 정비 대상에서 제외한다고 명시한다' (($libSrc -match '대상에 넣지 않는 것') -and ($libSrc -match '워크트리 회수')) ''
 
 if ($fail -gt 0) { Write-Output "FAILED: $fail"; exit 1 }
 Write-Output 'ALL PASS'

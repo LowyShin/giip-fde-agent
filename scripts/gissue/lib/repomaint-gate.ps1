@@ -11,6 +11,11 @@
 #   [F] git stash 목록 중 메시지가 'auto-unblock ' 로 시작하는 수  → orphan stash 구조 대상
 #   [H] 최근 2시간 내 코멘트가 있는 이슈 수                       → 최근 코멘트 재검증 대상
 #
+# 대상에 넣지 않는 것: 머지된 PR 의 워크트리 회수 같은 호스트 로컬 정리는 정비 대상이 아니다.
+#   그 정리는 스케줄러의 잡 종료 후처리 스크립트 단계(Invoke-GissueWorktreeCleanup)가 AI 없이
+#   수행하므로 합계에 세지 않고, 세션 안에서도 기록 파일·PR 의 근거가 되지 않는다 — 회수가
+#   필요한 워크트리가 있다는 이유만으로 세션을 띄우거나 기록 PR 을 만들지 않는다.
+#
 # 순수성: 실제 조회(gh pr list / git stash list / list-issues.js)는 **호출부가 포트로 주입**한다
 #   (lib/capped-wait.ps1 와 같은 컨벤션). 테스트는 가짜 포트로 합계·판정만 검증한다
 #   (tests/test-repomaint-gate.ps1). PowerShell 5.1 호환.
