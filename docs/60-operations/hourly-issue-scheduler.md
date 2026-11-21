@@ -162,6 +162,13 @@ powershell.exe -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass `
 
 ### 5-1-1) 저장소 정비 세션 — 사전 체크 게이트 + gair 경유 (giip #5671)
 
+> **⛔ 정비 전면 중지 (2026-11-21 운영 지시)** — REPO-MAINT는 현재 **중지 상태**다. 판정 정본
+> `scripts/gissue/lib/repomaint-gate.ps1`의 마스터 스위치 `Test-RepoMaintEnabled`가 `$false`인
+> 동안은 대상 수·게이트 환경변수와 무관하게 어떤 CSN에서도 정비 세션을 기동하지 않으며, 기록
+> 파일·PR도 만들지 않는다. 계기는 수정 0건 회차의 기록 PR이 반복 생성돼 토큰만 소모된 것이다.
+> **재개는 그 함수의 반환값을 `$true`로 바꾸는 PR로만 한다** — 환경변수나 호스트 로컬 설정으로는
+> 켤 수 없다. 아래 게이트·gair 규칙은 재개 시점에 다시 적용되는 규칙으로 보존한다.
+
 CSN 마다 매시간 기동하는 **저장소 정비(REPO-MAINT) 세션**은 아래 두 가지 규칙을 추가로 따른다.
 
 #### (1) 스크립트 사전 체크 게이트 — 정비 대상 0건이면 세션 미기동 (토큰 0)
