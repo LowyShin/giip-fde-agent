@@ -3697,6 +3697,18 @@ foreach ($csn in $map.PSObject.Properties.Name) {
                 Write-Output "[REPO-MAINT][WARN] 게이트 실행 실패($($_.Exception.Message)) — 세션을 종전대로 기동(fail-open)"
             }
         }
+        # [2026-11-21 운영 지시] REPO-MAINT 전면 중지 — 게이트 환경변수와 무관하게, lib/repomaint-gate.ps1 의
+        #   Test-RepoMaintEnabled 가 $false 인 동안은 정비 세션을 기동하지 않는다.
+        #   재개는 그 함수의 반환값을 바꾸는 PR 로만 한다(호스트 로컬 설정으로 켤 수 없다).
+        try {
+            . (Join-Path $root 'lib/repomaint-gate.ps1')
+            if (-not (Test-RepoMaintEnabled)) {
+                if ($repoMaintNeeded) { Write-Output "[REPO-MAINT] CSN $csn 정비 중지 상태 — 세션 기동 생략(운영 지시)" }
+                $repoMaintNeeded = $false
+            }
+        } catch {
+            Write-Output "[REPO-MAINT][WARN] 정비 중지 스위치 확인 실패($($_.Exception.Message)) — 게이트 판정을 따른다"
+        }
         if (-not $repoMaintNeeded) {
             # 정비 대상 0건 — 엔진 세션·기록 파일·PR 모두 만들지 않는다(한 줄만 남긴다).
             # 머지된 PR 의 워크트리 회수는 게이트 대상이 아니다 — 잡 종료 후처리 스크립트 단계

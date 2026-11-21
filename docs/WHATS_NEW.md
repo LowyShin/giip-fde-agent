@@ -6,9 +6,12 @@
 >
 > *(EN/JP 독자는 각 항목을 AI 에이전트에 번역 요청하세요. / Ask your AI assistant to translate entries.)*
 
-**기준일 (as of): 2026-11-20**
+**기준일 (as of): 2026-11-21**
 
 ---
+
+## 2026-11-21
+- **저장소 정비(REPO-MAINT) 전면 중지 — 게이트 마스터 스위치 신설** — Lowy님 지시(2026-11-21)로 매시간 정비를 끈다. 실제 수정 0건인 회차에서도 work_history 기록 PR이 반복 생성돼 토큰만 소모된 것이 계기다(게이트의 [H] 단계는 최근 코멘트 이슈를 대상에 세므로 바쁜 CSN에서는 합계 0이 거의 되지 않아 세션이 계속 기동됐다). **구현** — 판정 정본 `scripts/gissue/lib/repomaint-gate.ps1`에 마스터 스위치 `Test-RepoMaintEnabled`(현재 `$false`)를 신설하고 `Test-RepoMaintNeeded`가 중지 중에는 대상 합계와 무관하게 `$false`를 반환하게 했다. 러너(`run-gissue-claude.ps1`)는 게이트 환경변수와 무관하게 스위치를 확인해 중지 중이면 "정비 중지 상태 — 세션 기동 생략(운영 지시)" 한 줄만 남기고 세션·기록·PR을 만들지 않는다. **재개는 스위치 반환값을 바꾸는 PR로만 한다** — 환경변수·호스트 로컬 설정으로는 켤 수 없게 해 중지 상태가 조용히 풀리지 않게 했다. 회귀 테스트(`tests/test-repomaint-gate.ps1`)에 중지 판정 4건(X1·X2·B3·F2 갱신)과 배선 점검 2건(H20·H21)을 반영했고, 사양서 §5-1-1 머리에 중지 공지를 넣었다. → [사양](./60-operations/hourly-issue-scheduler.md), [게이트 라이브러리](../scripts/gissue/lib/repomaint-gate.ps1)
 
 ## 2026-11-20
 - **GitHub 디자인 리소스 8종을 추천 링크로 등록 (giip 5930, CSN 70424)** — Lowy님 지시로 LinkedIn 게시물(이상선, 2026-11-18)이 소개한 GitHub 디자인 도구들을 실측 검토한 뒤, 디자인 발견 가이드에 새 섹션을 만들었다. 검토 결과 8종 전부 실재·활성(최근 1주 내 갱신)·오픈 라이선스(MIT/Apache-2.0)였다: DESIGN.md 규격 원본(Google Labs — 이 레포 design-md 스킬의 근간 규격), UI UX Pro Max(디자인 인텔리전스 스킬), Anthropic 공식 스킬 3종(frontend-design·canvas-design·pptx — 이 레포 도입 스킬들의 원본), Astryx(Meta의 에이전트 대응 디자인 시스템), Figma Context MCP(Figma→에이전트 연동), agent-browser(구현 결과 검증). `docs/DESIGN_DISCOVERY_GUIDE.md`에 "GitHub 디자인 리소스" 섹션, `docs/02-design/DesignMD_Source_Matrix.md`에 "GitHub Design Resources for Agents" 섹션을 신설했고 기존 5대 플랫폼 매트릭스는 그대로 뒀다. → [작업 기록](../.agent/work_history/20261120_1636_csn70424_github-design-resources.md)
