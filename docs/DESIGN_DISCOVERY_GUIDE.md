@@ -20,6 +20,23 @@ GIIP Agent System은 단순한 코딩을 넘어, 전문 디자이너의 감각�
 
 ---
 
+## 🐙 GitHub 디자인 리소스 (에이전트용 추천 링크)
+
+위의 5대 플랫폼이 DESIGN.md 소스라면, 아래는 GitHub에 공개된 에이전트용 디자인 도구들입니다. 전부 오픈 라이선스(MIT/Apache-2.0, Anthropic 공식 레포 포함)의 활성 프로젝트로, 2026-11-20 실측으로 확인했습니다.
+
+| 리소스 | 주요 용도 | 특징 | 에이전트 동작 |
+| :--- | :--- | :--- | :--- |
+| **[DESIGN.md 규격 (Google Labs)](https://github.com/google-labs-code/design.md)** | **DESIGN.md 규격 원본** | 파일 하나로 브랜드 디자인 가이드와 스타일을 에이전트에 전달하는 규격 | 프로젝트의 DESIGN.md 작성·검증 시 규격을 정본으로 참조 |
+| **[UI UX Pro Max](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill)** | **디자인 인텔리전스 스킬** | UI 스타일 80종, 컬러 팔레트 192개, 폰트 조합 74개를 제공하는 스킬 | 스타일·팔레트·폰트 후보를 스킬 데이터에서 골라 DESIGN.md 토큰에 반영 |
+| **[frontend-design (Anthropic)](https://github.com/anthropics/skills/tree/main/skills/frontend-design)** | **프론트엔드 디자인 스킬** | Anthropic 공식 스킬 — 템플릿 같은 뻔한 디자인을 피하고 독창적인 인터페이스 생성 | 이 레포 도입 스킬의 원본. 업데이트 확인과 기준 대조의 정본 |
+| **[canvas-design (Anthropic)](https://github.com/anthropics/skills/tree/main/skills/canvas-design)** | **그래픽·포스터 제작 스킬** | Anthropic 공식 스킬 | 이 레포 도입 스킬의 원본 |
+| **[pptx (Anthropic)](https://github.com/anthropics/skills/tree/main/skills/pptx)** | **프레젠테이션 제작 스킬** | Anthropic 공식 스킬 | 이 레포 도입 스킬의 원본 |
+| **[Astryx (Meta)](https://github.com/meta/astryx)** | **디자인 시스템** | Meta의 오픈소스 디자인 시스템, 에이전트 활용을 고려해 설계됨 | 컴포넌트 체계와 토큰 구조를 DESIGN.md 설계의 레퍼런스로 참조 |
+| **[Figma Context MCP](https://github.com/GLips/Figma-Context-MCP)** | **Figma → 에이전트 연동** | Figma 레이아웃과 컨텍스트를 MCP로 에이전트에 전달 | Figma 디자인을 기준으로 구현할 때 레이아웃 정보를 직접 받아 구현 |
+| **[agent-browser (Vercel)](https://github.com/vercel-labs/agent-browser)** | **구현 결과 검증** | 에이전트가 브라우저를 직접 열어 결과물을 확인·테스트하는 도구 | 디자인 구현 후 실제 렌더링을 열어 시각 결과를 검증 |
+
+---
+
 ## 🛠️ 주요 사용법 (How to Use)
 
 ### 1. 브랜드 스타일 적용하기 (Brand Cloning)

@@ -38,7 +38,7 @@ $script:openPrs = @(New-FakePr 101 'CONFLICTING' $noRollup); $script:stashLines 
 $resB = Get-RepoMaintTargetCounts -Ports $ports
 Check 'B1 mergeable=CONFLICTING 1건 → Stage0=1' ($resB.Stage0 -eq 1) "Stage0=$($resB.Stage0)"
 Check 'B2 [0] 만 존재 → 다른 단계 0' (($resB.StageE -eq 0) -and ($resB.StageF -eq 0) -and ($resB.StageH -eq 0)) "SE=$($resB.StageE) SF=$($resB.StageF) SH=$($resB.StageH)"
-Check 'B3 [0] 1건 → Needed=true' (Test-RepoMaintNeeded -Counts $resB) ''
+Check 'B3 [0] 1건이어도 정비 중지 중에는 Needed=false' (-not (Test-RepoMaintNeeded -Counts $resB)) ''
 
 # ── (C) [E] CI 실패 PR 1건 → StageE=1 ──
 $script:openPrs = @(New-FakePr 102 'MERGEABLE' @([pscustomobject]@{ __typename = 'CheckRun'; name = 'build'; status = 'COMPLETED'; conclusion = 'FAILURE' })); $script:stashLines = @(); $script:recentCount = 0
@@ -83,7 +83,7 @@ $script:stashLines = @('stash@{0}: auto-unblock 2026-11-20 10:00: rescued from m
 $script:recentCount = 1
 $resF = Get-RepoMaintTargetCounts -Ports $ports
 Check 'F1 단계별 1건씩 → 합계 4' ($resF.Total -eq 4) "Total=$($resF.Total)"
-Check 'F2 단계별 1건씩 → Needed=true' (Test-RepoMaintNeeded -Counts $resF) ''
+Check 'F2 단계별 1건씩이어도 정비 중지 중에는 Needed=false' (-not (Test-RepoMaintNeeded -Counts $resF)) ''
 Check 'F3 단계별 값 1/1/1/1' (($resF.Stage0 -eq 1) -and ($resF.StageE -eq 1) -and ($resF.StageF -eq 1) -and ($resF.StageH -eq 1)) "S0=$($resF.Stage0) SE=$($resF.StageE) SF=$($resF.StageF) SH=$($resF.StageH)"
 
 # ── (G) 합계 계산: 2+3+1+4 = 10 ──
@@ -98,6 +98,10 @@ $script:stashLines = @('stash@{0}: auto-unblock x')
 $script:recentCount = 4
 $resG = Get-RepoMaintTargetCounts -Ports $ports
 Check 'G1 합계 계산 2+3+1+4=10' ($resG.Total -eq 10) "Total=$($resG.Total) S0=$($resG.Stage0) SE=$($resG.StageE) SF=$($resG.StageF) SH=$($resG.StageH)"
+
+# ── (X) 정비 마스터 스위치 (2026-11-21 운영 지시로 전면 중지) ──
+Check 'X1 정비 마스터 스위치 OFF (Test-RepoMaintEnabled=false)' (-not (Test-RepoMaintEnabled)) ''
+Check 'X2 대상 합계 10건이어도 중지 중에는 Needed=false' (-not (Test-RepoMaintNeeded -Counts $resG)) ''
 
 # ── (H) 러너 소스 배선 점검 ──
 $src = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../run-gissue-claude.ps1') -Raw -Encoding UTF8
@@ -121,6 +125,8 @@ Check 'H17 워크트리 회수는 기록·PR 의 근거가 되지 않는다고 �
 Check 'H18 워크트리 회수는 잡 종료 후처리 스크립트 단계(Invoke-GissueWorktreeCleanup)가 담당한다' (($src -match 'Invoke-GissueWorktreeCleanup') -and ($src -match '잡 종료 후처리 스크립트 단계')) ''
 $libSrc = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../lib/repomaint-gate.ps1') -Raw -Encoding UTF8
 Check 'H19 게이트 라이브러리도 워크트리 회수를 정비 대상에서 제외한다고 명시한다' (($libSrc -match '대상에 넣지 않는 것') -and ($libSrc -match '워크트리 회수')) ''
+Check 'H20 러너에 정비 중지 생략 메시지가 있다' ($src -match ([regex]::Escape('정비 중지 상태 — 세션 기동 생략(운영 지시)'))) ''
+Check 'H21 게이트 라이브러리에 정비 마스터 스위치(Test-RepoMaintEnabled)가 있다' ($libSrc -match 'function Test-RepoMaintEnabled') ''
 
 if ($fail -gt 0) { Write-Output "FAILED: $fail"; exit 1 }
 Write-Output 'ALL PASS'

@@ -23,6 +23,11 @@
 # fail-open: 게이트는 "어디까지 했는가"만 알려 주는 보조 장치다. 조회가 실패하면(git hub 불가 등)
 #   판정 자체가 실패한 것이므로 호출부가 예외를 받아 종전대로 세션을 기동한다. 이 파일은 예외를
 #   삼키지 않는다 — 삼키면 "조회 실패"와 "대상 0건"이 구분되지 않는다.
+#
+# 정비 전면 중지 (2026-11-21 운영 지시): Test-RepoMaintEnabled 가 $false 인 동안은 대상 수와
+#   무관하게 정비 세션을 기동하지 않는다. 수정 0건 회차의 기록 PR 이 반복 생성돼 토큰만 소모된
+#   것이 계기다. 재개는 이 함수의 반환값을 바꾸는 PR 로만 한다 — 환경변수나 호스트 로컬 설정
+#   으로는 켤 수 없다(켜는 경로가 흩어지면 중지 상태가 조용히 풀리는 사고가 재발한다).
 
 # [E] 판정: 열린 PR 의 statusCheckRollup 에 실패(FAILURE) 체크가 하나라도 있는가.
 # gh 의 statusCheckRollup 항목은 CheckRun(conclusion/state) 과 StatusContext(state) 가 섞여
@@ -85,10 +90,17 @@ function Get-RepoMaintTargetCounts {
     }
 }
 
-# 정비 세션을 띄워야 하는가 — 합계 1건 이상이면 true.
+# 정비 마스터 스위치 — $true 일 때만 정비가 동작한다.
+# 2026-11-21 운영 지시로 $false(전면 중지). 재개 절차는 파일 헤더의 "정비 전면 중지" 주석 참조.
+function Test-RepoMaintEnabled {
+    return $false
+}
+
+# 정비 세션을 띄워야 하는가 — 정비 중지 중이면 무조건 false, 아니면 합계 1건 이상이면 true.
 # Counts 는 Get-RepoMaintTargetCounts 의 반환값이다.
 function Test-RepoMaintNeeded {
     param([Parameter(Mandatory)]$Counts)
+    if (-not (Test-RepoMaintEnabled)) { return $false }
     $total = 0
     if ($null -ne $Counts.Total) {
         $total = [int]$Counts.Total
