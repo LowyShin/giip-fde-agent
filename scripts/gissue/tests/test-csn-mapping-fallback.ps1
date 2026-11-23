@@ -133,7 +133,16 @@ $libText = Get-Content -Raw -Encoding UTF8 (Join-Path $gissueRoot 'lib/csn-mappi
 Assert-True ($libText -notmatch 'function Test-GissueCsnEntryValid') 'lib 는 충분 여부 판정을 복제하지 않는다(러너 판정을 주입)'
 $runner = Get-Content -Raw -Encoding UTF8 (Join-Path $gissueRoot 'run-gissue-claude.ps1')
 Assert-True ($runner -match [regex]::Escape("lib/csn-mapping.ps1")) '러너가 lib 를 dot-source 한다'
-Assert-True (([regex]::Matches($runner, 'Resolve-GissueCsnMappings')).Count -ge 2) '러너 배선 2곳(Phase -3 패스 + Phase -2.5 사전 패스)'
+Assert-True (([regex]::Matches($runner, 'Resolve-GissueCsnMappings')).Count -eq 1) '러너 배선 1곳(Phase -3 폴백 패스만)'
+# [giip 4116, 2026-11-23] Phase -2.5 사전 패스는 **의도적으로 제거**했다.
+#   그 패스는 로컬 맵에 **아예 없는** 후보 csn 을 정본으로 결정해 로컬 맵에 병합(채택)했다.
+#   정본 배열 응답을 읽도록 고치면(giip 4116) 그 채택이 **처음으로 실제로 동작**하게 되고,
+#   그 결과 이 배포(CSN 70424)가 csn 47/70335/70428 같은 **타 CSN 을 통째로 떠안게** 된다
+#   = CSN 경계 위반. 정본 판정은 이제 읽기 전용 가드(lib/unmapped-csn-guard.ps1)가 하므로,
+#   채택은 Phase -3(1-b2)의 "이미 이 배포가 주장한 csn" 채우기만 남긴다.
+Assert-True ($runner -notmatch 'unmappedCandidates') '사전 패스(로컬 맵에 없는 csn 을 정본으로 채택) 코드는 제거됨 — CSN 경계 유지'
+Assert-True ($runner -match [regex]::Escape('lib/unmapped-csn-guard.ps1')) '러너가 미매핑 가드 lib 를 dot-source 한다'
+Assert-True ($runner -match [regex]::Escape('Invoke-GissueUnmappedCsnGuard')) '러너가 lib 가드 오케스트레이터를 호출한다'
 
 Remove-Item -LiteralPath $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host ''

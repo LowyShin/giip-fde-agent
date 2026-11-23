@@ -2226,44 +2226,9 @@ try {
 # csn-projects.json 에 없는 csn 만 list-issues.js 로 열린 이슈를 조회한다(사고의 실제 원인이었던
 # project-csn.json ↔ csn-projects.json 의 차집합을 그대로 겨냥한다).
 $UnmappedCsnGuardLog = Join-Path $LogDir 'gissue_csnguard.log'
-. (Join-Path $Root 'lib/csn-guard.ps1')   # giip 4116/4139: 응답 cSn 대조(Select-GissueRowsMatchingCsn)
+. (Join-Path $Root 'lib/csn-guard.ps1')            # giip 4116/4139: 응답 cSn 대조(Select-GissueRowsMatchingCsn)
+. (Join-Path $Root 'lib/unmapped-csn-guard.ps1')   # giip 4116/4139: 가드 판단 로직(정본 기준 판정 + 게시 단위 csn 1건)
 
-function Get-GissueOpenIssuesAllCsn($mappedCsns) {
-    $result = @()
-    $candidates = @{}
-    try {
-        if (Test-Path -LiteralPath $ProjectCsnFile) {
-            $pc = Get-Content -LiteralPath $ProjectCsnFile -Raw -Encoding UTF8 | ConvertFrom-Json
-            foreach ($p in $pc.PSObject.Properties) {
-                $v = $p.Value
-                $c = if ($v -is [string] -or $v -is [int]) { "$v" } elseif ($v.csn) { "$($v.csn)" } else { $null }
-                if ($c -and $c -match '^\d+$') { $candidates["$c"] = $true }
-            }
-        }
-    } catch {}
-    try {
-        if (Test-Path -LiteralPath $GiipAccountsFile) {
-            $acc = Get-Content -LiteralPath $GiipAccountsFile -Raw | ConvertFrom-Json
-            foreach ($ch in $acc.channels.PSObject.Properties) {
-                if ($ch.Value.csn) { $candidates["$($ch.Value.csn)"] = $true }
-            }
-        }
-    } catch {}
-    foreach ($c in $candidates.Keys) {
-        if ($mappedCsns -contains "$c") { continue }
-        try {
-            $raw = & node $ListIssuesScript --csn $c --status 'PENDING,READY,IN_PROGRESS,REVIEW,TESTED' --accounts-file $GiipAccountsFile --api-base $ApiBase --json 2>&1
-            if ($LASTEXITCODE -ne 0) { continue }
-            $parsed = ($raw | Out-String) | ConvertFrom-Json
-            # giip 4116/4139: 응답 행의 실제 cSn 이 요청 csn 과 같은 행만 신뢰한다(서버 클램프 방어).
-            $trusted = Select-GissueRowsMatchingCsn -Rows $parsed -RequestedCsn "$c" -Log { param($m) "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $m" | Out-File -FilePath $UnmappedCsnGuardLog -Append -Encoding UTF8 }
-            foreach ($r in @($trusted)) {
-                $result += [pscustomobject]@{ Csn = "$c"; Isn = "$($r.isn)"; Status = "$($r.status)" }
-            }
-        } catch {}
-    }
-    return ,$result
-}
 
 # get-issue.sh <isn> <csn> (조회 모드)로 이슈의 최신 코멘트를 가져와 그 content 에 $tag 가 이미 있는지
 # 확인한다. 실패(네트워크/파싱)하면 $null 을 반환한다 — 호출부는 이를 "판정 불가"로 보고 이번 사이클엔
@@ -2285,110 +2250,38 @@ function Test-GissueLatestCommentHasTag($bashExe, $getIssueScript, $isn, $csn, $
     }
 }
 
-# 메인 오케스트레이터. -SkipPosting 은 실제 코멘트 게시 대신 "무엇을 올렸을 것인지"만 출력한다
-# (구현 검증용 테스트 호출 전용 — 운영 :07 실행은 이 스위치를 절대 쓰지 않는다).
-function Invoke-GissueUnmappedCsnGuard {
-    param(
-        [Parameter(Mandatory = $true)][string]$MapFilePath,
-        [Parameter(Mandatory = $true)][string]$BashExePath,
-        [Parameter(Mandatory = $true)][string]$GetIssueScriptPath,
-        [Parameter(Mandatory = $true)][string]$LogFilePath,
-        [switch]$SkipPosting
-    )
-    $Tag = '[UNMAPPED-CSN-WARN]'
-    $found = @()
-    function Write-GuardLine($msg) {
-        $line = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $msg"
-        $line | Out-File -FilePath $LogFilePath -Append -Encoding UTF8
-        Write-Output $line
-    }
-    try {
-        if (-not (Test-Path -LiteralPath $MapFilePath)) {
-            Write-GuardLine "$Tag SKIP: 매핑 파일을 찾을 수 없음: $MapFilePath"
-            return ,$found
-        }
-        $mapJson = Get-Content -LiteralPath $MapFilePath -Raw -Encoding UTF8 | ConvertFrom-Json
-        $mappedCsns = @($mapJson.csn.PSObject.Properties.Name)
-
-        $openIssues = Get-GissueOpenIssuesAllCsn $mappedCsns
-        if (-not $openIssues -or $openIssues.Count -eq 0) {
-            Write-GuardLine "$Tag OK: 미매핑 csn 에서 발견된 오픈이슈 없음(또는 후보 csn 조회 결과 없음)"
-            return ,$found
-        }
-
-        $byCsn = @($openIssues) | Group-Object -Property Csn
-        foreach ($grp in $byCsn) {
-            $csnVal = $grp.Name
-            $isnList = @($grp.Group | ForEach-Object { $_.Isn })
-            Write-GuardLine "$Tag csn=$csnVal, 미처리 이슈 isn=[$($isnList -join ',')]"
-            $found += [pscustomobject]@{ Csn = $csnVal; Isns = $isnList }
-
-            # giip 4116/4139: 원래 이슈들에는 코멘트를 남기지 않는다(거짓 양성 코멘트 사고). 게시 단위는 csn 1건이며,
-            # 운영 이슈 등록은 GISSUE_CSNGUARD_OPS_CSN 이 지정된 때만 한다(기본 침묵 — 남의 CSN 에 쓰지 않는다).
-            $opsCsn = "$($env:GISSUE_CSNGUARD_OPS_CSN)".Trim()
-            $opsTitle = "[OPS] csn $csnVal 담당 배포 없음 — 이슈 $($isnList.Count)건 방치"
-            if (-not $opsCsn -or $opsCsn -notmatch '^\d+$') {
-                Write-GuardLine "$Tag SKIP-NOOPSCSN: csn=$csnVal 이슈 $($isnList.Count)건 — GISSUE_CSNGUARD_OPS_CSN 미지정이라 게시 없음(로그만)"
-                continue
-            }
-            if ($SkipPosting) {
-                Write-GuardLine "$Tag TEST-WOULD-POST: ops csn=$opsCsn title=$opsTitle"
-                continue
-            }
-            try {
-                $existing = & node $ListIssuesScript --csn $opsCsn --status 'PENDING,READY,IN_PROGRESS,REVIEW' --accounts-file $GiipAccountsFile --api-base $ApiBase --json 2>&1 | Out-String | ConvertFrom-Json
-                $dup = @($existing | Where-Object { $_.cSn -and "$($_.cSn)" -eq $opsCsn -and $_.title -like "[[]OPS] csn $csnVal 담당 배포 없음*" })
-                if ($dup.Count -gt 0) {
-                    Write-GuardLine "$Tag SKIP-DUP: 운영 이슈 이미 있음(isn=$($dup[0].isn)) csn=$csnVal"
-                    continue
-                }
-                $body = "csn $csnVal 에 열린 이슈 $($isnList.Count)건(isn=$($isnList -join ','))이 있으나 이 배포의 csn-projects.json 에 담당 매핑이 없습니다. (auto-detected: gissue_csnguard, giip 4116)"
-                $regOut = & node $RegisterIssueScript --title $opsTitle --content $body --csn $opsCsn 2>&1 | Out-String
-                Write-GuardLine "$Tag POSTED: ops csn=$opsCsn 운영 이슈 1건 등록. 출력: $($regOut.Trim())"
-            } catch {
-                Write-GuardLine "$Tag POST-FAIL: ops csn=$opsCsn 등록 실패: $($_.Exception.Message)"
-            }
-        }
-    } catch {
-        Write-GuardLine "$Tag ERROR: $($_.Exception.Message)"
-    }
-    return ,$found
-}
 
 # bash 경로는 Resolve-GissueBashExe 가 **유일한 출처**다(giip #2645). 하드코딩/맨 이름 금지.
 # 해석 실패($null)면 Phase -3 preflight 가 이미 행동지시 경고를 냈다. 그 경우에도 여기서 맨 'bash'
 # 로 떨어뜨리지 않는다 — 호출부가 "해석 실패"를 구분해 로그에 남길 수 있어야 하기 때문이다.
 $BashExe = Resolve-GissueBashExe
-# 미매핑 감시의 사전 패스 [giip 5664]: 매핑 파일에 아예 없는 후보 CSN 도 경고보다 먼저
-# GIIP 정본 매핑으로 결정을 시도한다. 결정되면 캐시 파일과 $script:MapRoot 에 들어가고,
-# 파일을 다시 읽는 아래 감시에서는 이번 실행부터 대상에서 빠진다. Phase 1 이 쓰는 $map 은
-# 이 패스보다 앞에서 $script:MapRoot 에서 이미 떠 둔 스냅샷이라, 처리 대상으로는 다음
-# 실행부터 들어간다(Phase -3 패스에서 결정된 항목은 스냅샷 전이라 이번 실행부터 적용).
-# 결정이 안 되면 감시가 기존대로 보고한다.
+# 미매핑 감시 호출 [giip 4116/4139] — 판단 로직은 lib/unmapped-csn-guard.ps1 에 있고(러너와 회귀
+# 테스트가 같은 함수를 쓴다), 여기서는 환경값만 주입한다.
+#   * 정본(tGissueCsnMapping) 기준 판정: 등록+활성 csn → SKIP-MAPPED-CANONICAL(게시 없음),
+#     조회 불가 → SKIP-CANONICAL-UNKNOWN(아무것도 쓰지 않음 — 로컬로 되돌아가지 않는다).
+#   * 응답 cSn 대조(SKIP-CLAMP/SKIP-NOCSN)는 lib/csn-guard.ps1 이 담당한다.
+#   * 게시 단위는 csn 1건이며 원래 이슈에는 코멘트를 남기지 않는다.
+#
+# [giip 5664 사전 패스 — 2026-11-23 제거] 예전에는 "매핑 파일에 아예 없는 후보 CSN" 을 정본으로
+#   결정해 로컬 맵에 병합(채택)했다. 그 병합은 이 배포가 그 csn 을 통째로 떠안는 결과가 되어
+#   (계정 파일에 여러 csn 채널이 있는 배포에서 타 CSN 이슈를 처리·게시하게 된다 = CSN 경계 위반),
+#   정본 조회가 배열 응답을 못 읽어(아래 lib/get-csn-mapping.js 수정 전) 실제로는 한 번도 채택된 적이
+#   없었다. 정본 판정은 위 가드가 읽기 전용으로 하므로, 채택은 Phase -3(1-b2)의 placeholder 항목
+#   채우기(이 배포가 이미 주장한 csn)만 남긴다.
 try {
-    $mappedNow = @($script:MapRoot.csn.PSObject.Properties.Name)
-    $unmappedCandidates = @(Get-GissueCandidateCsnList -ProjectCsnFile $ProjectCsnFile -GiipAccountsFile $GiipAccountsFile |
-        Where-Object { $mappedNow -notcontains $_ })
-    if ($unmappedCandidates.Count -gt 0) {
-        [void](Resolve-GissueCsnMappings -CsnKeys $unmappedCandidates -MapRoot $script:MapRoot `
-            -Validator { param($k, $e) Test-GissueCsnEntryValid $k $e } `
-            -SkResolver { param($c) Get-GissueCsnSk $c } `
-            -ApiBase $ApiBase -HelperPath (Join-Path $Root 'lib/get-csn-mapping.js') `
-            -MapFilePath $MapFile -WriteCache:(-not $DryRun))
-    }
-} catch {
-    Write-Host "[CSN-MAP] 미매핑 사전 패스 실패(감시는 기존대로 계속): $($_.Exception.Message)"
-}
-try {
-    # -SkipPosting:$DryRun — 조회/판정은 -DryRun 에서도 그대로 돌리되(읽기전용이라 안전), 실제 코멘트
-    # 게시만 건너뛴다. lowyworkenv 운영본은 -DryRun 에서도 실제로 게시하는데, 이 레포는 아무 PC 에나
-    # 클론되어 -DryRun 으로 시험될 수 있으므로 시험 실행이 남의 이슈에 코멘트를 남기지 않게 한다.
+    # -SkipPosting:$DryRun — 조회/판정은 -DryRun 에서도 그대로 돌리되(읽기전용이라 안전), 실제 등록만
+    # 건너뛴다. lowyworkenv 운영본은 -DryRun 에서도 실제로 게시하는데, 이 레포는 아무 PC 에나
+    # 클론되어 -DryRun 으로 시험될 수 있으므로 시험 실행이 남의 이슈에 글을 남기지 않게 한다.
     if (-not $BashExe) {
         # bash 해석 실패 — 조용히 넘어가지 않고 기록한다(preflight 경고와 짝이 되는 실행 시점 증거).
         "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] [UNMAPPED-CSN-WARN] SKIP: bash 실행파일 해석 실패 — 이 가드는 get-issue.sh 가 필요합니다(giip #2645)." | Out-File -FilePath $UnmappedCsnGuardLog -Append -Encoding UTF8
     } else {
-        Invoke-GissueUnmappedCsnGuard -MapFilePath $MapFile -BashExePath $BashExe `
-            -GetIssueScriptPath $GetIssueScript -LogFilePath $UnmappedCsnGuardLog -SkipPosting:$DryRun | Out-Null
+        $guardCandidates = @(Get-GissueUnmappedCandidateCsns -ProjectCsnFile $ProjectCsnFile -GiipAccountsFile $GiipAccountsFile)
+        Invoke-GissueUnmappedCsnGuard -MapFilePath $MapFile -CandidateCsns $guardCandidates `
+            -ListIssuesScript $ListIssuesScript -RegisterIssueScript $RegisterIssueScript `
+            -GiipAccountsFile $GiipAccountsFile -ApiBase $ApiBase -LogFilePath $UnmappedCsnGuardLog `
+            -MappingHelperPath (Join-Path $Root 'lib/get-csn-mapping.js') `
+            -SkResolver { param($c) Get-GissueCsnSk $c } -SkipPosting:$DryRun | Out-Null
     }
 } catch {
     "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] [UNMAPPED-CSN-WARN] ERROR: 실행 자체가 예외로 실패: $($_.Exception.Message)" | Out-File -FilePath $UnmappedCsnGuardLog -Append -Encoding UTF8

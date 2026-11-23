@@ -22,6 +22,11 @@
  *
  * 응답의 csn이 요청 csn과 다르면 절대 신뢰하지 않는다(scope_mismatch) — 큐 조회의
  * cSn 대조(giip 4116)와 같은 방어다.
+ *
+ * [giip 4116 · 2026-11-23 실측] 라이브 응답 형식은 **배열 컨테이너**다:
+ *   { "message":"OK", "ok":true, "count":1,
+ *     "mapping": [ { "gcmCsn":47, "gcmEnabled":true, "gcmProjectName":"giipprj", "gcmWorkdir":"..." } ] }
+ *   (단일 행 객체 · rows/data 컨테이너도 허용한다 — 아래 selectMappingRows 가 정규화한다.)
  */
 const https = require('https');
 const http = require('http');
@@ -29,14 +34,43 @@ const { URL } = require('url');
 
 // 응답 해석(순수 함수 — 회귀 테스트가 전송 없이 검증한다).
 // 반환: { found, reason?, row? }  row = { csn, projectName, workdir, enabled }
+//
+// [giip 4116] 실측 반영(2026-11-23): 라이브 엔드포인트는 행을 **배열**로 돌려준다.
+//   { "message":"OK", "ok":true, "count":1,
+//     "mapping": [ { "gcmCsn":47, "gcmEnabled":true, "gcmProjectName":"giipprj", "gcmWorkdir":"..." } ] }
+// 이전 해석은 j.mapping 을 "한 행 객체"로 가정했다 → 배열이면 row.csn 이 undefined 가 되어
+//   전부 scope_mismatch 로 오판되었다. 결과적으로 **정본에 등록된 csn 을 미매핑으로 오인**했고,
+//   그 오판이 미매핑 CSN 가드의 거짓 "담당 배포 없음" 게시로 이어질 뻔했다.
+// → 컨테이너가 배열이면 그중 요청 csn 과 일치하는 행만 고른다(일치 행이 없으면 scope_mismatch).
+function selectMappingRows(body) {
+  let container = body;
+  for (const key of ['mapping', 'rows', 'data', 'row']) {
+    if (body && Object.prototype.hasOwnProperty.call(body, key)) { container = body[key]; break; }
+  }
+  if (Array.isArray(container)) return container.filter(r => r && typeof r === 'object');
+  if (container && typeof container === 'object') return [container];
+  return [];
+}
+
 function parseMappingResponse(statusCode, bodyText, requestedCsn) {
   if (statusCode === 404) return { found: false, reason: 'not_found' };
   if (statusCode === 403) return { found: false, reason: 'scope_mismatch' };
   if (statusCode !== 200) return { found: false, reason: 'error', detail: `http_${statusCode}` };
   let j;
   try { j = JSON.parse(bodyText); } catch (e) { return { found: false, reason: 'error', detail: 'bad_json' }; }
-  const row = (j && (j.mapping || j.row || j.data)) || j;
-  if (!row || typeof row !== 'object') return { found: false, reason: 'not_found' };
+  const rows = selectMappingRows(j);
+  if (rows.length === 0) return { found: false, reason: 'not_found' };
+  // 요청 csn 과 일치하는 행만 신뢰한다(타 csn 행을 절대 채택하지 않음).
+  const matched = rows.filter(r => {
+    const c = r.csn != null ? r.csn : r.gcmCsn;
+    return c != null && String(c) === String(requestedCsn);
+  });
+  if (matched.length === 0) {
+    const first = rows[0];
+    const c = first.csn != null ? first.csn : first.gcmCsn;
+    return { found: false, reason: 'scope_mismatch', detail: `response_csn=${c}` };
+  }
+  const row = matched[0];
   const csnVal = row.csn != null ? row.csn : row.gcmCsn;
   if (csnVal == null || String(csnVal) !== String(requestedCsn)) {
     return { found: false, reason: 'scope_mismatch', detail: `response_csn=${csnVal}` };
