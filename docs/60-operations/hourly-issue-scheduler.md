@@ -144,8 +144,8 @@ powershell.exe -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass `
 
   | 큐 항목 상태 | 엔진 |
   |---|---|
-  | 저장소 정비 세션 | **gair 우선(모델 미고정)** → 실패 시 MiniMax → claude 폴백 (giip #5671) |
-  | PENDING / READY / STALE_IN_PROGRESS | **허용 CSN(기본: gair 설정이 등록된 플랫폼 CSN)에서는 gair 우선(모델 미고정)** → MiniMax 우선 → 실패 시 claude 폴백 (giip #5671, §5-1-1 (2)) |
+  | 저장소 정비 세션 | **gair 필수(모델 미고정)** — 실패 시 폴백 없이 오류로 종료 (giip #5671, #6229; `GISSUE_REPO_MAINT_GAIR=0` 이면 종전 MiniMax → claude 경로) |
+  | PENDING / READY / STALE_IN_PROGRESS | **허용 CSN(기본: gair 설정이 등록된 플랫폼 CSN)에서는 gair 필수(모델 미고정)** — 실패 시 폴백 없이 오류로 종료 (giip #5671, #6229, §5-1-1 (2)) |
   | **REVIEW** | **MiniMax 시도 없이 곧바로 claude**(사용자 지시 2026-08-23) |
   | TESTED | claude 강제 (giip #1472) |
 
@@ -210,8 +210,10 @@ CSN 마다 매시간 기동하는 **저장소 정비(REPO-MAINT) 세션**은 아
 - 베이스 URL: `https://giipfaw.azurewebsites.net/api/gair` (`ANTHROPIC_BASE_URL` 교체)
 - 인증: **CSN 의 SK 에서 파생한 AK** — `scripts/gissue/get-ak.sh <csn> --json` (AdminGetAK)
 - **모델은 고정하지 않는다** — `--model` 을 아예 붙이지 않고 gair 의 JEV 판정·프로파일 매핑에 맡긴다.
-- gair 호출 실패·AK 파생 실패 시 기존 **MiniMax → Claude** 경로로 폴백한다(fail-soft) — gair 장애가
-  정비를 막지 않는다. AK/SK 는 어떤 로그에도 남기지 않는다.
+- gair 호출 실패·AK 파생 실패 시 **폴백하지 않고 오류로 종료한다** (giip #6229, gair 단일 경로) —
+  `[ENGINE] gair 시도 실패…` 로그를 남기고 예외를 표면화하며, 실행 기록(§17-7)에는 `path-gair-failed`
+  로 집계된다. gair 경유를 끄는 스위치(`GISSUE_GAIR=0` / `GISSUE_REPO_MAINT_GAIR=0`)를 명시한 경우에만
+  종전 **MiniMax → Claude** 경로를 쓴다. AK/SK 는 어떤 로그에도 남기지 않는다.
 - **일반 이슈 세션은 허용 CSN만 대상이다**: gair는 호출자 CSN의 `tSystemParameter`(category='gair')를
   읽어 업스트림을 정하므로, gair 설정이 등록되지 않은 CSN이 시도하면 이슈마다 실패 호출만 쌓인다.
   그래서 허용 목록으로 게이트한다(환경변수 표 참조). AK는 CSN 실행당 1회만 파생해 이슈 루프

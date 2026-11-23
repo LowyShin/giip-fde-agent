@@ -3108,7 +3108,8 @@ foreach ($csn in $map.PSObject.Properties.Name) {
             if ($NoFixedModel) {
                 # gair 는 Azure Function(authLevel=function)일 수 있다 — 함수 키가 호스트 env 에 있으면
                 # 커스텀 헤더로 실어 보낸다(slack-bot/gair-accounts.js 와 동일). 키가 없으면 헤더를 싣지
-                # 않고 호출이 실패하면 호출측이 기존 경로로 폴백한다(fail-soft).
+                # 않는다. 실패 시 후처리는 호출측(Invoke-GissueEngine)이 정한다 — gair 필수 세션은 직접
+                # 폴백 없이 오류로 표면화하고(giip #6229), 그 외 세션은 기존 경로로 폴백한다(fail-soft).
                 if ($env:GAIR_FUNCTION_KEY) { $env:ANTHROPIC_CUSTOM_HEADERS = "x-functions-key: $($env:GAIR_FUNCTION_KEY)" }
                 else { $env:ANTHROPIC_CUSTOM_HEADERS = $null }
             }
@@ -3192,15 +3193,24 @@ foreach ($csn in $map.PSObject.Properties.Name) {
                 [string]$MinimaxBaseUrl,
                 [string]$MinimaxContextTokens,
                 [string]$GairBaseUrl = '',
-                [string]$GairApiKey = ''
+                [string]$GairApiKey = '',
+                # [giip #6229] $true 면 이 세션은 gair 단일 경로 — gair 를 쓸 수 없거나(AK 파생 실패)
+                #   시도가 실패하면 직접 폴백(MiniMax→Claude)을 하지 않고 오류로 표면화한다.
+                [bool]$GairRequired = $false
             )
             $lastMmText = $null
             if ($ForceClaude) {
                 Write-Output "[ENGINE] $ForceReason — claude($Model) 강제 기동, MiniMax 시도 건너뜀."
+            } elseif ($GairRequired -and -not ($GairApiKey -and $GairBaseUrl)) {
+                # [giip #6229] gair 필수 세션인데 AK 가 없다(파생 실패) — 직접 폴백 없이 오류로 종료한다.
+                #   실패 줄은 실행 기록(run-summary.ps1)이 'gair 시도 실패'로 집계한다.
+                Write-Output "[ENGINE] gair 시도 실패(AK 없음 — 파생 실패) — giip #6229 gair 단일 경로: 직접 폴백 없이 오류로 종료"
+                throw "gair required but AK unavailable (giip #6229)"
             } elseif ($GairApiKey -and $GairBaseUrl) {
                 # [giip #5671] gair 1순위 시도 — 정비 세션 + 일반 이슈 세션(허용 CSN만). 모델을 고정하지 않고 gair 라우터에 맡긴다
                 #   (slack-bot/gair-accounts.js 와 같은 방식: 베이스 URL·키만 바꾸고 --model 은 붙이지 않는다).
-                #   실패하면 아래 MiniMax→Claude 경로로 폴백한다(fail-soft — gair 장애가 정비를 막지 않는다).
+                #   실패 시 동작은 $GairRequired 가 정한다(giip #6229): 필수 세션은 직접 폴백 없이 오류로
+                #   표면화하고, 그 외 세션은 종전대로 아래 MiniMax→Claude 경로로 폴백한다(fail-soft).
                 Write-Output "[ENGINE] gair 우선 시도 (모델 미고정 — gair 라우터가 선택)"
                 $gairAttempt = Invoke-GissueMinimaxAttempt -PromptText $PromptText -IssueContextLine $IssueContextLine -Root $Root `
                     -MinimaxApiKey $GairApiKey -MinimaxModel '' -MinimaxBaseUrl '' -MinimaxContextTokens $MinimaxContextTokens `
@@ -3209,9 +3219,14 @@ foreach ($csn in $map.PSObject.Properties.Name) {
                     $gairAttempt.Output
                     return
                 }
+                if ($GairRequired) {
+                    Write-Output "[ENGINE] gair 시도 실패(exit=$($gairAttempt.Exit)) — giip #6229 gair 단일 경로: 직접 폴백 없이 오류로 종료"
+                    if ($gairAttempt.Output) { $gairAttempt.Output }
+                    throw "gair attempt failed (exit=$($gairAttempt.Exit)) (giip #6229)"
+                }
                 Write-Output "[ENGINE] gair 시도 실패(exit=$($gairAttempt.Exit)) → 기존 MiniMax→Claude 경로로 폴백 (fail-soft)"
             }
-            # MiniMax 우선 시도 — ForceClaude 가 아니고, gair 가 없거나 gair 가 실패했을 때.
+            # MiniMax 우선 시도 — ForceClaude 가 아니고, gair 가 없거나(비필수 세션) gair 가 실패했을 때(비필수 세션).
             if ((-not $ForceClaude) -and $MinimaxApiKey) {
                 Write-Output "[ENGINE] MiniMax 우선 시도 (model=$MinimaxModel)"
                 $attempt1 = Invoke-GissueMinimaxAttempt -PromptText $PromptText -IssueContextLine $IssueContextLine -Root $Root `
@@ -3673,18 +3688,20 @@ foreach ($csn in $map.PSObject.Properties.Name) {
                 Write-Output "[REPO-MAINT] CSN $csn 정비 대상 게이트: [0]=$($repoMaintCounts.Stage0) [E]=$($repoMaintCounts.StageE) [F]=$($repoMaintCounts.StageF) [H]=$($repoMaintCounts.StageH) 합계=$($repoMaintCounts.Total)"
             }
             # [giip #5671] 정비 세션 엔진 경유 — CSN 의 SK 에서 AK 를 파생해 gair(giip AI API 라우터)로
-            #   보낸다. 모델은 고정하지 않는다(gair 가 라우팅). AK 파생 실패·gair 호출 실패 시 기존
-            #   MiniMax→Claude 경로로 폴백한다(fail-soft). GISSUE_REPO_MAINT_GAIR=0 이면 gair 를 끈다.
+            #   보낸다. 모델은 고정하지 않는다(gair 가 라우팅). GISSUE_REPO_MAINT_GAIR=0 이면 gair 를 끈다.
+            #   [giip #6229] gair 를 끄지 않은 정비 세션은 gair 단일 경로다 — AK 파생 실패·gair 호출
+            #   실패 시 직접 폴백(MiniMax→Claude)을 하지 않고 엔진이 오류로 표면화한다.
             $gairBaseUrl = 'https://giipfaw.azurewebsites.net/api/gair'
             $gairApiKey = ''
-            if ($env:GISSUE_REPO_MAINT_GAIR -eq '0') {
+            $repoMaintGairRequired = ($env:GISSUE_REPO_MAINT_GAIR -ne '0')
+            if (-not $repoMaintGairRequired) {
                 Write-Output "[REPO-MAINT][GAIR] GISSUE_REPO_MAINT_GAIR=0 — gair 경유 끔(기존 MiniMax→Claude 경로)"
             } else {
                 try { $gairApiKey = Get-GissueGairApiKey -BashExePath $bashExe -Csn $csn -RootPath $root } catch { $gairApiKey = '' }
                 if ($gairApiKey) {
                     Write-Output "[REPO-MAINT][GAIR] AK 파생 성공 — 정비 세션 엔진은 gair 경유(모델 미고정)"
                 } else {
-                    Write-Output "[REPO-MAINT][GAIR] AK 파생 실패 — 기존 MiniMax→Claude 경로로 폴백(fail-soft)"
+                    Write-Output "[REPO-MAINT][GAIR] AK 파생 실패 — giip #6229 gair 단일 경로: 직접 폴백 없이 엔진이 오류로 표면화"
                 }
             }
             Write-Output "[REPO-MAINT] CSN $csn 저장소 정비 세션 시작 (캡 ${repoMaintDeadlineMin}분)"
@@ -3697,13 +3714,13 @@ ${function:Invoke-GissueEngine}
 }
 "@)
             $repoMaintJob = Start-Job -InitializationScript $repoMaintInit -ScriptBlock {
-                param($promptTextInner, $rootInner, $modelInner, $minimaxApiKeyInner, $minimaxModelInner, $minimaxBaseUrlInner, $minimaxContextTokensInner, $gairBaseUrlInner, $gairApiKeyInner)
+                param($promptTextInner, $rootInner, $modelInner, $minimaxApiKeyInner, $minimaxModelInner, $minimaxBaseUrlInner, $minimaxContextTokensInner, $gairBaseUrlInner, $gairApiKeyInner, $gairRequiredInner)
                 if ([Console]::OutputEncoding.WebName -ne 'utf-8') { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 }
                 if ($OutputEncoding.WebName -ne 'utf-8') { $OutputEncoding = [System.Text.Encoding]::UTF8 }
                 Invoke-GissueEngine -PromptText $promptTextInner -ForceClaude:$false -IssueContextLine '' -ForceReason '' `
                     -Root $rootInner -Model $modelInner -MinimaxApiKey $minimaxApiKeyInner -MinimaxModel $minimaxModelInner -MinimaxBaseUrl $minimaxBaseUrlInner -MinimaxContextTokens $minimaxContextTokensInner `
-                    -GairBaseUrl $gairBaseUrlInner -GairApiKey $gairApiKeyInner
-            } -ArgumentList $repoMaintenancePrompt, $agentRepo, $model, $minimaxApiKey, $minimaxModel, $minimaxBaseUrl, $minimaxContextTokens, $gairBaseUrl, $gairApiKey
+                    -GairBaseUrl $gairBaseUrlInner -GairApiKey $gairApiKeyInner -GairRequired:$gairRequiredInner
+            } -ArgumentList $repoMaintenancePrompt, $agentRepo, $model, $minimaxApiKey, $minimaxModel, $minimaxBaseUrl, $minimaxContextTokens, $gairBaseUrl, $gairApiKey, $repoMaintGairRequired
             try {
                 $repoMaintWait = Invoke-GissueCappedJobWait $repoMaintDeadlineMin $issueEnginePollMin @{
                     IsRunning = { $repoMaintJob.State -eq 'Running' }
@@ -3729,21 +3746,24 @@ ${function:Invoke-GissueEngine}
         #   이슈마다 실패 호출만 쌓인다 — 그래서 허용 목록으로 게이트한다. 허용 목록은 env
         #   GISSUE_GAIR_CSNS(쉼표 구분), 미설정 시 기본값은 gair 설정이 등록된 플랫폼 CSN이다.
         #   GISSUE_GAIR=0 이면 일반 경로의 gair 경유를 전부 끈다. AK는 CSN 실행당 1회만 파생해
-        #   이슈 루프 전체에서 재사용한다. AK 파생 실패·gair 호출 실패 시 기존 MiniMax→Claude
-        #   경로로 폴백한다(fail-soft). ForceClaude 이슈(REVIEW/TESTED 재검증)는 엔진 함수가
-        #   종전대로 gair를 건너뛰고 claude로 직행한다.
+        #   이슈 루프 전체에서 재사용한다. [giip #6229] 허용 목록에 든 CSN 의 세션은 gair 단일
+        #   경로다 — AK 파생 실패·gair 호출 실패 시 직접 폴백을 하지 않고 엔진이 오류로 표면화한다.
+        #   ForceClaude 이슈(REVIEW/TESTED 재검증)는 엔진 함수가 종전대로 gair를 건너뛰고
+        #   claude로 직행한다.
         $issueGairBaseUrl = 'https://giipfaw.azurewebsites.net/api/gair'
         $issueGairApiKey = ''
+        $issueGairRequired = $false
         $gairCsnListRaw = if ($null -eq $env:GISSUE_GAIR_CSNS) { '47' } else { $env:GISSUE_GAIR_CSNS }
         $gairCsnList = @($gairCsnListRaw -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
         if ($env:GISSUE_GAIR -eq '0') {
             Write-Output "[GAIR] GISSUE_GAIR=0 — 일반 이슈 경로 gair 경유 끔(기존 MiniMax→Claude 경로)"
         } elseif ($gairCsnList -contains "$csn") {
+            $issueGairRequired = $true
             try { $issueGairApiKey = Get-GissueGairApiKey -BashExePath $bashExe -Csn $csn -RootPath $root } catch { $issueGairApiKey = '' }
             if ($issueGairApiKey) {
                 Write-Output "[GAIR] CSN $csn AK 파생 성공 — 일반 이슈 세션 엔진은 gair 경유(모델 미고정)"
             } else {
-                Write-Output "[GAIR] CSN $csn AK 파생 실패 — 기존 MiniMax→Claude 경로로 폴백(fail-soft)"
+                Write-Output "[GAIR] CSN $csn AK 파생 실패 — giip #6229 gair 단일 경로: 직접 폴백 없이 엔진이 오류로 표면화"
             }
         }
 
@@ -4035,7 +4055,7 @@ ${function:Invoke-GissueEngine}
 }
 "@)
             $innerJob = Start-Job -InitializationScript $innerEngineInit -ScriptBlock {
-                param($workdirInner, $promptText, $forceClaudeInner, $issueContextLineInner, $forceReasonInner, $rootInner, $modelInner, $minimaxApiKeyInner, $minimaxModelInner, $minimaxBaseUrlInner, $minimaxContextTokensInner, $gairBaseUrlInner, $gairApiKeyInner)
+                param($workdirInner, $promptText, $forceClaudeInner, $issueContextLineInner, $forceReasonInner, $rootInner, $modelInner, $minimaxApiKeyInner, $minimaxModelInner, $minimaxBaseUrlInner, $minimaxContextTokensInner, $gairBaseUrlInner, $gairApiKeyInner, $gairRequiredInner)
                 Set-Location -Path $workdirInner
                 # [ENCODING][giip #3800 후속] 바깥 per-CSN 잡과 동일한 Broken-pipe 레이스 방지 — 이미 utf-8
                 # 이면 재대입하지 않는다(상세 사유는 바깥 잡 진입부 주석 참고).
@@ -4043,8 +4063,8 @@ ${function:Invoke-GissueEngine}
                 if ($OutputEncoding.WebName -ne 'utf-8') { $OutputEncoding = [System.Text.Encoding]::UTF8 }
                 Invoke-GissueEngine -PromptText $promptText -ForceClaude:$forceClaudeInner -IssueContextLine $issueContextLineInner -ForceReason $forceReasonInner `
                     -Root $rootInner -Model $modelInner -MinimaxApiKey $minimaxApiKeyInner -MinimaxModel $minimaxModelInner -MinimaxBaseUrl $minimaxBaseUrlInner -MinimaxContextTokens $minimaxContextTokensInner `
-                    -GairBaseUrl $gairBaseUrlInner -GairApiKey $gairApiKeyInner
-            } -ArgumentList $workdir, $issuePrompt, $forceClaude, $issueContextLine, $forceReason, $agentRepo, $model, $minimaxApiKey, $minimaxModel, $minimaxBaseUrl, $minimaxContextTokens, $issueGairBaseUrl, $issueGairApiKey
+                    -GairBaseUrl $gairBaseUrlInner -GairApiKey $gairApiKeyInner -GairRequired:$gairRequiredInner
+            } -ArgumentList $workdir, $issuePrompt, $forceClaude, $issueContextLine, $forceReason, $agentRepo, $model, $minimaxApiKey, $minimaxModel, $minimaxBaseUrl, $minimaxContextTokens, $issueGairBaseUrl, $issueGairApiKey, $issueGairRequired
             $issueElapsedMin = 0
             while ($innerJob.State -eq 'Running' -and $issueElapsedMin -lt $effectiveDeadlineMin) {
                 Wait-Job $innerJob -Timeout ($issueEnginePollMin * 60) | Out-Null
