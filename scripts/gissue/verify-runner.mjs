@@ -77,7 +77,12 @@ function resolveAccountsFile() {
 }
 const ACCOUNTS = resolveAccountsFile();
 const MAX_OUTPUT = 1200; // 코멘트에 넣을 명령별 출력 상한
-const CMD_TIMEOUT_MS = 5 * 60 * 1000;
+/*
+ * 블록당 명령 제한시간.
+ * 긴 완료조건 블록(같은 명령을 여러 회 연속 실행하는 등)을 지원하기 위해 기본 15분으로 둔다.
+ * 되돌리려면 `GISSUE_VERIFY_TIMEOUT_MS` 환경변수에 밀리초를 지정한다(예: 300000 = 5분). 미지정/0 이면 15분.
+ */
+const CMD_TIMEOUT_MS = Number(process.env.GISSUE_VERIFY_TIMEOUT_MS || 15 * 60 * 1000);
 
 /**
  * 종료 요청 신호(giip #2586). `process.exit()` 를 즉시 호출하면 undici 핸들이 닫히는 중에
