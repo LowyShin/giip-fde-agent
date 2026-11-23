@@ -1308,18 +1308,42 @@ Test-Path scripts\gissue\lib\liveness-ops-issue.js
 없음 = **미이식 상태**. 반영은 운영 사본 소관 영역이므로 정본 세션이 대신 쓰지 않는다(타 CSN 쓰기 금지) — 반영
 여부는 위 확인 명령으로 언제든 다시 확인한다.
 
-## 미매핑 CSN 가드(Phase -2.5)의 응답 cSn 대조 (giip 4116 / 4139)
+## 미매핑 CSN 가드(Phase -2.5) — 정본 기준 판정 + 응답 cSn 대조 (giip 4116 / 4139)
 
-- 용도: `csn-projects.json` 에 없는 csn 에 열린 이슈가 방치돼 있는지 감시한다(`run-gissue-claude.ps1` 의 `Invoke-GissueUnmappedCsnGuard`).
-- 처리: 후보 csn 을 `list-issues.js --json` 으로 조회하되, **응답 행의 실제 `cSn` 이 요청 csn 과 같은 행만** 신뢰한다
-  (`lib/csn-guard.ps1` 의 `Select-GissueRowsMatchingCsn`). 서버는 멤버가 아닌 csn 요청을 홈 csn 으로 조용히 클램프하므로,
-  요청값을 그대로 붙이면 다른 csn 의 이슈가 "미매핑 csn 의 방치 이슈"로 오인된다.
-  - `cSn != 요청 csn` -> `SKIP-CLAMP`, `cSn` 없음 -> `SKIP-NOCSN`: 행을 버리고 로그만 남긴다(기본은 침묵).
-  - 원래 이슈들에는 코멘트를 남기지 않는다. 운영 이슈 1건(`[OPS] csn <N> 담당 배포 없음 — 이슈 <건수>건 방치`)은 환경변수
-    `GISSUE_CSNGUARD_OPS_CSN` 이 지정된 때만 해당 csn 에 등록하고, 미지정이면 `SKIP-NOOPSCSN` 로그만 남긴다.
+- 용도: `csn-projects.json` 에 없는 csn 에 열린 이슈가 방치돼 있는지 감시한다.
+- 판정 로직은 `lib/unmapped-csn-guard.ps1` 로 분리했다(러너와 회귀 테스트가 **같은 함수**를 쓴다 —
+  러너 안의 top-level 함수였다가 "실제 호출 경로"를 회귀 테스트가 건드릴 수 없었다).
+- 처리 2단계:
+  1. **정본 기준 판정** — 판정 재료는 **정본** `tGissueCsnMapping` 이다(로컬 `csn-projects.json` 만 믿지 않는다).
+     조회: `lib/get-csn-mapping.js`(`/api/giipGissueCsnMapping?csn=<N>`), 3값 판정(`Get-GissueCanonicalMappingStatus`).
+     - `MAPPED`(정본에 등록+활성) -> `SKIP-MAPPED-CANONICAL` — **담당 배포가 있으므로 아무것도 하지 않는다**.
+     - `UNMAPPED`(정본에 없음이 **확인**됨: 404/빈 결과, 또는 비활성 행) -> 게시 대상.
+     - `UNKNOWN`(정본 조회 불가: 403 스코프/전송 오류/파싱 실패/행 이상) -> `SKIP-CANONICAL-UNKNOWN` —
+       **아무것도 쓰지 않는다**(fail-closed). 로컬 파일로 되돌아가지 않는다. `UNKNOWN` 을 `UNMAPPED` 로
+       취급하면 "정본에 등록된 csn 을 담당 없음" 으로 오판하는 거짓 양성이 되살아난다.
+  2. **응답 cSn 대조** — 후보 csn 을 `list-issues.js --json` 으로 조회하되, **응답 행의 실제 `cSn` 이 요청 csn 과
+     같은 행만** 신뢰한다(`lib/csn-guard.ps1` 의 `Select-GissueRowsMatchingCsn`). 서버는 멤버가 아닌 csn 요청을
+     홈 csn 으로 조용히 클램프할 수 있으므로, 요청값을 그대로 붙이면 다른 csn 의 이슈가 "미매핑 csn 의 방치
+     이슈"로 오인된다.
+     - `cSn != 요청 csn` -> `SKIP-CLAMP`, `cSn` 없음 -> `SKIP-NOCSN`: 행을 버리고 로그만 남긴다(기본은 침묵).
+- 게시: 원래 이슈들에는 **코멘트를 남기지 않는다**(2026-10-22 거짓 양성 코멘트 사고의 직접 원인).
+  게시 단위는 **csn 1건**이며, 운영 이슈 1건(`[OPS] csn <N> 담당 배포 없음 — 이슈 <건수>건 방치`)은 환경변수
+  `GISSUE_CSNGUARD_OPS_CSN` 이 지정된 때만 해당 csn 에 등록하고, 미지정이면 `SKIP-NOOPSCSN` 로그만 남긴다.
+- 정본 조회 응답 형식 주의(giip 4116 의 거짓 양성 원인): `/api/giipGissueCsnMapping` 은 행을 **배열**로 돌려준다
+  (`{"message":"OK","ok":true,"count":1,"mapping":[{"gcmCsn":…,"gcmEnabled":…,"gcmProjectName":…,"gcmWorkdir":…}]}`).
+  한 행 객체로 가정하면 전부 `scope_mismatch` 로 오판되어 **정본에 등록된 csn 을 "미매핑"** 으로 봤다.
+  `lib/get-csn-mapping.js` 가 배열 컨테이너와 래핑(`mapping`/`rows`/`data`/`row`)을 모두 정규화하고,
+  요청 csn 과 일치하는 행만 채택한다.
+- Phase -2.5 **사전 패스(로컬 맵에 없는 csn 을 정본으로 결정해 로컬 맵에 채택)는 제거**했다(2026-11-23, giip 4116):
+  정본 응답 해석이 고쳐지며 그 채택이 **처음으로 실제로 동작**하게 되고, 그 결과 이 배포(CSN 70424)가
+  csn 47/70335/70428 같은 **타 CSN 을 통째로 떠안게** 된다(= CSN 경계 위반). 정본 판정은 위 가드가
+  **읽기 전용**으로 하므로, 채택은 Phase -3(1-b2)의 "이미 이 배포가 주장한 csn" 채우기만 남긴다.
 - 저장: `logs/gissue_csnguard.log` 에 `POSTED` / `SKIP-*` / `OK` 를 매 실행 기록한다. `list-issues.js --json`(및 `--queue --json`)은 각 행에 `cSn` 을 포함한다.
-- 소비처: 이 로그를 운영자가 읽는다. 회귀 테스트: `scripts/gissue/tests/test-csn-guard-clamp.ps1`.
-- 미반영(후속): 판정 재료를 DB 정본 매핑으로 바꾸는 항목은 이 레포에 DB 접근이 없고 `csn-projects.json` 이 이 배포의 정본이라(§13) 적용하지 않았다.
+- 소비처: 이 로그를 운영자가 읽는다.
+- 회귀 테스트: `scripts/gissue/tests/test-unmapped-csn-guard.ps1`(오프라인 — 정본 3값 판정·cSn 대조·게시 단위),
+  `scripts/gissue/tests/test-csn-guard-clamp.ps1`(응답 cSn 대조), `scripts/gissue/tests/test-csn-mapping.mjs`(배열 응답 계약).
+  라이브 실측(실서버·실 SK 필요, CI 게이트 대상 아님): `scripts/gissue/tests/live/test-unmapped-csn-guard-live.ps1`
+  — 게이트 기대 건수(`run-repo-gates.ps1` 의 `$ExpectedPs1TestCount`)에는 넣지 않는다(SK·네트워크가 없으면 SKIP=종료코드 3).
 
 ## slack-bot 의 PR 없는 조사/답변형 완료 보고 (giip 4231)
 
@@ -1464,10 +1488,15 @@ powershell.exe -File "<REPO_ROOT>/scripts/gissue/run-gissue-claude.ps1" -DryRun 
 - `csn-projects.json`의 지위: 수기 편집 파일이 아니라 **로컬 우선 + GIIP 폴백으로 채워지는 캐시**다. 사람이 손으로 넣은 충분한 항목은 조회 대상이 아니며, 폴백 병합은 로컬에만 있는 선택 필드(`restBranch`·`note` 등)를 지우지 않는다.
 - 판정의 단일 출처: 항목 충분 여부는 러너의 `Test-GissueCsnEntryValid`를 주입받아 쓰고, LOCAL/REMOTE/UNMAPPED 결정은 `scripts/gissue/lib/csn-mapping.ps1`의 `Resolve-GissueCsnMapEntry` 한 곳에서만 한다.
 
-### 19-2. 배선 (2곳)
+### 19-2. 배선 (1곳)
 
-1. **Phase -3 직후 패스**: 매핑 파싱이 끝나면 전 항목을 대상으로 부족분을 조회·보완한다. placeholder 검사(1-c)와 "유효 항목 0건이면 치명" 판정보다 **먼저** 돌므로, 로컬이 전부 낡아도 GIIP 매핑으로 복구되면 실행이 계속된다. 이 패스의 결정은 이번 실행의 Phase 1부터 적용된다.
-2. **Phase -2.5 사전 패스**: 매핑 파일에 아예 없는 후보 CSN(감시와 같은 두 출처 — slack-bot/project-csn.json + giip-accounts.json)도 경고보다 먼저 조회를 시도한다. 결정되면 캐시에 들어가 감시 대상에서 빠지고, 처리 대상으로는 다음 실행부터 들어간다(Phase 1의 맵 스냅샷이 이 패스보다 앞에 있기 때문). 결정이 안 되면 감시가 기존대로 `[UNMAPPED-CSN-WARN]`으로 보고한다.
+1. **Phase -3 직후 패스**: 매핑 파싱이 끝나면 전 항목을 대상으로 부족분을 조회·보완한다. placeholder 검사(1-c)와 "유효 항목 0건이면 치명" 판정보다 **먼저** 돌므로, 로컬이 전부 낡아도 GIIP 매핑으로 복구되면 실행이 계속된다. 이 패스의 결정은 이번 실행의 Phase 1부터 적용된다. **이 배포가 이미 주장한 csn** 만 대상이다.
+
+> **[제거] Phase -2.5 사전 패스(2026-11-23, giip 4116)** — "매핑 파일에 아예 없는 후보 CSN" 을 정본으로 결정해
+> 캐시에 넣던 패스는 제거했다. 정본 응답 해석(배열 컨테이너)이 고쳐지며 이 채택이 **처음으로 실제로 동작**하게 되고,
+> 그 결과 이 배포(CSN 70424)가 csn 47/70335/70428 같은 **타 CSN 을 통째로 떠안게** 된다(= CSN 경계 위반).
+> "미매핑" 판정은 이제 읽기 전용 가드(`lib/unmapped-csn-guard.ps1`)가 정본 기준으로 내리므로, 감시 결과는
+> 사라지지 않고 **판정 근거만** 바뀐다(로컬 맵 → 정본).
 
 - `-DryRun`에서는 캐시 파일을 쓰지 않는다(판정·로그만). 캐시 기록은 임시 파일에 써서 교체하므로 중간에 죽어도 원본이 깨지지 않는다.
 
