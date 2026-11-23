@@ -233,6 +233,52 @@ function Write-GissueAlert($msg) {
     } catch {}
 }
 
+# ── [giip #6214] 자동 반영(자기 갱신) — 러너 기동 초입 ─────────────────────────────────
+# 배경: 사양서 §17-5 는 "러너는 시작 시 self-pull 로 에이전트 레포를 최신화한다"고 적어 있고,
+#   §11 은 "PR 머지 ≠ 스케줄러가 새 코드로 도는 것"을 운영 함정으로 못박았다. 그런데 **정본 러너에는
+#   실제 pull 이 없었다** — `git pull` 이 나오는 곳은 `Invoke-GissueSelfPullNotOnMainCheck` 뿐이고,
+#   그 함수는 HEAD 가 main 이면 아무 것도 하지 않고 return 한다(= NOT-ON-MAIN 복귀 전용).
+#   즉 정상 경로(main 체크아웃)에서는 머지된 코드가 반영되지 않았다. 호스트마다 사람이 pull 하는
+#   구조를 없애는 것이 이 단계의 목적이다.
+#
+# 위치가 중요한 이유(세 가지 순서를 지켜야 한다):
+#   1) `worktree-safety.ps1` 닷소싱 **보다 앞** — pull 로 내려받은 새 정리 엔진을 메모리에 적재해야 한다.
+#   2) `code-freshness.ps1` 기준 해시 스냅샷 **보다 앞** — 스냅샷 뒤에 pull 이 일어나면 그 실행은
+#      즉시 "낡은 코드"로 latch 되어 파괴적 작업을 통째로 건너뛴다(오탐). pull 이 먼저 끝나면
+#      새 코드가 적재되고 스냅샷도 새 코드 기준이 되어 오탐이 없다.
+#   3) `-FunctionsOnly`(회귀 테스트 진입점) **보다 앞** — 테스트가 저장소를 pull 하면 안 된다.
+#      그래서 아래는 `-FunctionsOnly` 일 때 아예 건너뛴다(테스트 전용 파라미터는 위 param 블록에 있다).
+#
+# 안전 계약: 파괴적 동작을 하지 않는다(reset/stash/clean 금지)·로컬 변경이 있으면 pull 하지 않는다·
+#   실패해도 옛 코드로 계속한다(fail-open)·전후 HEAD 와 사유는 실행 기록에 남긴다.
+# 판정·복사 로직 정본: lib/code-sync.ps1 / lib/run-summary.ps1 (순수 로직, 회귀 테스트 대상).
+$script:GissueCodeSync = $null
+$script:GissueCodeSyncLibReady = $false
+$script:GissueRunSummaryLibReady = $false
+$script:GissueCodeSyncSummary = '없음'
+try {
+    $codeSyncLib = Join-Path $Root 'lib/code-sync.ps1'
+    if (Test-Path -LiteralPath $codeSyncLib) { . $codeSyncLib; $script:GissueCodeSyncLibReady = $true }
+    $runSummaryLib = Join-Path $Root 'lib/run-summary.ps1'
+    if (Test-Path -LiteralPath $runSummaryLib) { . $runSummaryLib; $script:GissueRunSummaryLibReady = $true }
+} catch {
+    Write-Output "[WARN][CODE-SYNC] 라이브러리 로드 실패(무시하고 계속 — 자동 반영·기록 확장은 이번 실행에서 건너뜀): $($_.Exception.Message)"
+}
+if (-not $FunctionsOnly -and $script:GissueCodeSyncLibReady) {
+    try {
+        $syncRepoRoot = Resolve-GissueSyncRepoRoot -RunnerRepoRoot $AgentRepo
+        $script:GissueCodeSync = Sync-GissueAgentRepo -RepoRoot $syncRepoRoot -ExecRoot $Root -Log { param($m) Write-Output $m }
+    } catch {
+        $script:GissueCodeSync = [pscustomobject]@{
+            Status = 'failed'; Reason = "예외: $($_.Exception.Message)"; RepoRoot = ''; Branch = ''
+            ShaBefore = ''; ShaAfter = ''; ExecRoot = $Root; CopyResult = $null; FetchError = ''; MergeError = ''
+        }
+        Write-Output "[WARN][CODE-SYNC] 자동 반영 예외(옛 코드로 계속): $($_.Exception.Message)"
+    }
+}
+# 자동 반영 요약은 여기서 한 번만 만들어 시작 기록·종료 기록이 **같은 값**을 싣게 한다.
+try { if ($script:GissueCodeSyncLibReady) { $script:GissueCodeSyncSummary = Format-GissueCodeSyncSummary -Sync $script:GissueCodeSync } } catch { $script:GissueCodeSyncSummary = '없음' }
+
 # 설정에서 온 경로 문자열은 사람이 손으로 채우는 값이라, 채우지 않은 placeholder(`<...절대경로>`)나
 # 금지문자가 들어올 수 있다. 그런 값을 그대로 Test-Path 에 넘기면 PowerShell 이
 # "Illegal characters in path." **예외**를 던진다(신규 clone 검증에서 실측, giip #2645).
@@ -2086,9 +2132,18 @@ try {
             if ($candSk) { $startSk = $candSk; break }
         }
         if ($startSk) {
+            # [giip #6214] agentCommit 은 **자동 반영 후**의 HEAD 여야 한다 — 반영 전 해시를 적으면
+            #   "이번 실행이 어느 코드로 돌았는가"를 대조할 수 없다(§17-3 의 대조 기준이 깨진다).
             $agentCommit = ''
-            try { $agentCommit = (& git -C $AgentRepo rev-parse --short HEAD 2>$null) } catch { $agentCommit = '' }
-            $null = Send-GissueSchedulerStartRecord -Lssn $HeartbeatCfg.Lssn -Sk $startSk -RunId $script:GissueSchedulerRunId -CsnList @($map.PSObject.Properties.Name) -Commit "$agentCommit"
+            if ($script:GissueCodeSync -and $script:GissueCodeSync.ShaAfter) {
+                $agentCommit = "$($script:GissueCodeSync.ShaAfter)".Substring(0, [Math]::Min(7, "$($script:GissueCodeSync.ShaAfter)".Length))
+            }
+            if (-not $agentCommit) {
+                try { $agentCommit = (& git -C $AgentRepo rev-parse --short HEAD 2>$null) } catch { $agentCommit = '' }
+            }
+            # [giip #6214] 자동 반영 결과(전후 HEAD·사유)도 시작 기록에 싣는다 — 이 실행이 도중에 죽어도
+            #   "이번 실행이 어느 코드로 시작했고 자동 반영이 됐는지"가 남는다(종료 기록만으론 부족).
+            $null = Send-GissueSchedulerStartRecord -Lssn $HeartbeatCfg.Lssn -Sk $startSk -RunId $script:GissueSchedulerRunId -CsnList @($map.PSObject.Properties.Name) -Commit "$agentCommit" -CodeSync "$($script:GissueCodeSyncSummary)"
         } else {
             Write-Output "[WARN][KVS-START] SKIP: 어떤 CSN 의 SK 도 없어 시작 기록을 남기지 못함"
         }
@@ -2948,7 +3003,12 @@ foreach ($csn in $map.PSObject.Properties.Name) {
         . (Join-Path $root 'lib/soft-budget.ps1')   # giip 3615: 소프트 예산 판정(잡 스코프는 메인 함수를 상속하지 않는다)
         . (Join-Path $root 'lib/capped-wait.ps1')    # giip 4431 항목 2: REPO-MAINT 세션 시간 캡 판정(잡 스코프 전용)
         function Record-SchedulerState([string]$Action, [string]$Sk, [string]$ApiUrl, [string]$Csn, [string]$AgentKey, [string]$RunIdKey, [string]$ExecutionMode, [string]$Status, [int]$Processed, [int]$Skipped, [int]$Failed, [string]$Phase, [string]$IssueNum, [string]$Summary) {
-            if (-not $Sk) { return }
+            # [giip #6214] SK 가 없으면 기록 자체가 불가능하다 — 조용히 넘어가지 않고 **실패로 드러낸다.**
+            #   (조용히 return 하면 "기록이 없다"와 "기록을 못 했다"가 구분되지 않는다 — 사양서의 근본 원인.)
+            if (-not $Sk) {
+                Write-Output "[WARN][SchedulerState-$Action] 실패: SK 없음 — 스케줄러 상태를 기록하지 못함(csn=$Csn)"
+                return
+            }
             try {
                 switch ($Action) {
                     'upsert' {
@@ -4047,8 +4107,14 @@ ${function:Invoke-GissueEngine}
             # 파일은 잡이 죽어도 남으므로 Complete-Run 이 이 값을 읽는다.
             try { Set-Content -LiteralPath (Join-Path $logDir "run-counts_$runIdKey.txt") -Value $runProcessed -Encoding ASCII } catch {}
             try {
-                Record-SchedulerState -Action heartbeat -Sk $csnSk -ApiUrl $apiSk2Url -Csn $csn -AgentKey "gissue_csn$csn" -RunIdKey $runIdKey -ExecutionMode '' -Status '' -Processed $qi -Skipped 0 -Failed 0 -Phase "isn=$($issue.Isn)" -IssueNum $issue.Isn -Summary ''
-            } catch {}
+                # [giip #6214] heartbeat 정정 — 처리 건수는 **큐 인덱스($qi)** 가 아니라 실제 처리 건수($runProcessed)다.
+                #   $qi 는 큐에서의 위치(스킵된 이슈도 자리를 차지)라 값이 "처리 건수"와 어긋났다.
+                #   skipped 는 이 잡이 지금까지 건너뛴 건수, phase 는 단계 이름(기존 isn 표기는 괄호에 유지 — 소비처 호환).
+                Record-SchedulerState -Action heartbeat -Sk $csnSk -ApiUrl $apiSk2Url -Csn $csn -AgentKey "gissue_csn$csn" -RunIdKey $runIdKey -ExecutionMode '' -Status '' -Processed $runProcessed -Skipped $statusSkippedReview -Failed 0 -Phase "issue(isn=$($issue.Isn))" -IssueNum $issue.Isn -Summary ''
+            } catch {
+                # [giip #6214] 실패를 삼키지 않는다 — 같은 표식으로 남겨야 집계(=실행 기록)가 이 실패를 잡는다.
+                Write-Output "[WARN][SchedulerState-heartbeat] 실패: $($_.Exception.Message)"
+            }
             # [giip #1565] 이슈 1건 시간박스: Invoke-GissueEngine 호출을 내부 Start-Job 으로 한 번 더 감싸
             # ${issueEnginePollMin}분 간격으로 Wait-Job -Timeout 폴링, 최대 ${issueEngineDeadlineMin}분까지만
             # 기다린다. Start-Job 은 부모 스코프의 함수를 상속하지 않으므로 엔진 함수 본문을
@@ -4163,6 +4229,10 @@ ${function:Invoke-GissueEngine}
         RunIdKey = $runIdKey; ProcessedCount = 0; SkippedCount = 0; FailedCount = 0
         OvertimeHandled = $false; OvertimeNextCheck = [datetime]::MinValue   # [giip 4429] 과시간 검사 상태
         OutLogWritten = 0      # [giip 4431 항목 3] 이미 gissue_csn<N>.out.log 에 증분 기록한 잡 출력 줄 수
+        # [giip #6214] 실행 기록 확장용 누적기 — 잡 출력의 새 줄에서만 먹어서 이중 계수가 없다.
+        # 라이브러리(run-summary.ps1)가 없는 배포에서는 그냥 비워 둔다(기록 내용이 줄어들 뿐 실행은 계속).
+        EnginePath = $(if ($script:GissueRunSummaryLibReady) { New-GissueEnginePathMarker } else { $null })
+        RecordFailures = @()                       # 스케줄러 상태 기록 호출 실패 목록
     }
 }
 
@@ -4215,6 +4285,28 @@ function Write-GissueJobOutIncremental($r, [switch]$Final) {
         try { $tail.NewLines | Out-File -FilePath (Join-Path $LogDir "gissue_csn$($r.Csn).out.log") -Append -Encoding UTF8 } catch {
             Write-Log $r.Csn "[OUT-LOG-INCR][WARN] out.log append 실패: $($_.Exception.Message)"
         }
+        # [giip #6214] 실행 기록 확장 — **새로 추가된 줄만** 집계한다.
+        #   Receive-Job -Keep 은 매번 전체 버퍼를 돌려주므로 전체를 먹으면 같은 줄이 N 번 세어진다.
+        #   여기서 "아직 처리하지 않은 꼬리"만 먹으면 각 줄이 정확히 한 번만 집계된다.
+        #   (a) 엔진 경로 마커([GAIR]/[ENGINE]) — 실행 기록의 "엔진 경로 요약" 원천
+        #   (b) 스케줄러 상태 기록 호출 실패([SchedulerState-*]) — 조용한 실패를 실행 기록에 드러낸다
+        try {
+            if ($script:GissueRunSummaryLibReady -and $r.EnginePath) {
+                $null = Add-GissueEnginePathMarker -Marker $r.EnginePath -Lines @($tail.NewLines)
+            }
+        } catch {
+            Write-Log $r.Csn "[ENGINE-PATH][WARN] 엔진 경로 집계 실패(무시하고 계속): $($_.Exception.Message)"
+        }
+        try {
+            $newFailures = @()
+            if ($script:GissueRunSummaryLibReady) { $newFailures = @(Get-GissueSchedulerStateFailures -Lines @($tail.NewLines)) }
+            if ($newFailures.Count -gt 0) {
+                $r.RecordFailures = @($r.RecordFailures) + $newFailures
+                foreach ($f in $newFailures) { Write-Log $r.Csn "[SchedulerState][FAIL] 기록 호출 실패: $f" }
+            }
+        } catch {
+            Write-Log $r.Csn "[SchedulerState][WARN] 기록 실패 추출 오류(무시하고 계속): $($_.Exception.Message)"
+        }
     }
     $r.OutLogWritten = $tail.WrittenCount
     return $all
@@ -4243,10 +4335,41 @@ function Complete-Run($r, $status) {
             # @exitCode 는 INT 라 NULL 을 넘기면 디스패처가 문자열로 전달해 변환 오류가 난다(실측) — 숫자로 채운다.
             $runStatus = ConvertTo-SchedulerRunStatus $status
             $exitCode = if ($runStatus -eq 'SUCCEEDED') { '0' } else { '1' }
-            $null = Invoke-SchedulerAgentSp -ApiUrl $ApiSk2Url -Sk $r.Sk -Name 'SchedulerAgentRunEnd' -Values @($r.RunIdKey, "gissue_csn$($r.Csn)", $runStatus, [string]$r.ProcessedCount, [string]$r.SkippedCount, [string]$r.FailedCount, $exitCode, $status)
+            # [giip #6214] 실행 기록 확장 — summary 에 (a) 실행 코드 버전 (b) 엔진 경로 요약
+            #   (c) 자동 반영 결과 (d) 기록 호출 실패를 싣는다. 전부 **기록에 남기는 사실**이고,
+            #   추정·재구성이 아니다(없는 값은 '알수없음'/'기록없음'으로 명시한다).
+            $codeVersion = '알수없음'
+            try {
+                if ($script:GissueCodeSyncLibReady) {
+                    $headInfo = Get-GissueRepoHeadInfo -RepoRoot $AgentRepo
+                    if ($headInfo.IsRepo) {
+                        $dirtyMark = if ($headInfo.Dirty) { '+변경있음' } else { '' }
+                        $branchMark = if ($headInfo.Branch) { $headInfo.Branch } else { 'HEAD' }
+                        $codeVersion = "$($headInfo.ShortSha)($branchMark$dirtyMark)"
+                    }
+                }
+            } catch { $codeVersion = '알수없음' }
+            $engineSummary = '엔진경로 기록없음'
+            try { if ($script:GissueRunSummaryLibReady) { $engineSummary = Format-GissueEnginePathSummary -Marker $r.EnginePath } } catch { }
+            $syncSummary = "$($script:GissueCodeSyncSummary)"
+            if (-not $syncSummary) { $syncSummary = '없음' }
+            $recordFailures = @()
+            try { $recordFailures = @($r.RecordFailures) } catch { }
+            $runEndSummary = $status
+            try {
+                if ($script:GissueRunSummaryLibReady) {
+                    $runEndSummary = Format-GissueRunEndSummary -Status $status -CodeVersion $codeVersion `
+                        -EnginePath $engineSummary -SyncInfo $syncSummary -RecordFailures $recordFailures
+                }
+            } catch { $runEndSummary = $status }
+            Write-Log $r.Csn "[RUN-END-SUMMARY] $runEndSummary"
+            $null = Invoke-SchedulerAgentSp -ApiUrl $ApiSk2Url -Sk $r.Sk -Name 'SchedulerAgentRunEnd' -Values @($r.RunIdKey, "gissue_csn$($r.Csn)", $runStatus, [string]$r.ProcessedCount, [string]$r.SkippedCount, [string]$r.FailedCount, $exitCode, $runEndSummary)
         } catch {
             Write-Log $r.Csn "[SchedulerState-runEnd] 실패: $($_.Exception.Message)"
         }
+    } else {
+        # [giip #6214] SK 가 없어 종료 기록을 못 남기는 경우도 **사실로 드러낸다**(조용히 넘어가지 않는다).
+        Write-Log $r.Csn "[SchedulerState-runEnd] 실패: SK 없음 — 실행 종료 기록을 남기지 못함"
     }
     # [giip #5345] tKVS CSN별 종료 리포트 + 비정상 알람 — 스케줄러 본체가 직접 기록한다(AI 경유 금지).
     # limit 으로 엔진이 죽은 경우에도 이 경로는 순수 코드라 전송할 수 있다. 실패해도 종료 처리는 계속한다.

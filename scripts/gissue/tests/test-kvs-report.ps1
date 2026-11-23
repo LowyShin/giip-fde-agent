@@ -50,6 +50,16 @@ Assert-True ($script:captured -match '"kFactor":"scheduler_run_start"') 'kFactor
 Assert-True ($script:captured -match '"event":"start"') 'event=start'
 Assert-True ($script:captured -match '"agentCommit":"abc1234"') 'agentCommit 포함'
 
+# [giip #6214] 자동 반영 결과가 시작 기록에 실린다 — 실행이 도중에 죽어도 남아야 하는 사실이다.
+$script:captured = $null
+$ok = Send-GissueSchedulerStartRecord -Lssn '99999' -Sk 'SKTEST' -RunId 'run-3' -CsnList @('47') -Commit 'abc1234' -CodeSync 'updated(abc1234->def5678)'
+Assert-True $ok '시작 기록 전송 성공(포트, codeSync 포함)'
+Assert-True ($script:captured -match '"codeSync":"updated') 'codeSync 포함(자동 반영 결과)'
+# 지정하지 않으면 키 자체를 넣지 않는다(기존 기록 형태를 깨지 않기 위해)
+$script:captured = $null
+$ok = Send-GissueSchedulerStartRecord -Lssn '99999' -Sk 'SKTEST' -RunId 'run-4' -CsnList @('47') -Commit 'abc1234'
+Assert-False ($script:captured -match '"codeSync"') 'codeSync 미지정 시 키 없음'
+
 $script:captured = $null
 $ok = Send-GissueSchedulerRunReport -Lssn '99999' -Sk 'SKTEST' -Csn '47' -Status 'DONE' -Processed 3 -Skipped 1 -Failed 0 -RunId 'run-2'
 Assert-True $ok '리포트 전송 성공(포트)'

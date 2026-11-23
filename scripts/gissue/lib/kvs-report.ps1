@@ -137,13 +137,17 @@ function Send-GissueKvsPut {
 }
 
 # 실행 시작 기록 — 어떤 엔진(AI) 호출보다 먼저 호출할 것.
+# [giip #6214] -CodeSync: 러너 기동 초입의 자동 반영(자기 갱신) 결과(전후 HEAD·사유).
+#   이 실행이 **죽더라도** 남아야 하는 사실이므로 종료 기록(RunEnd)뿐 아니라 시작 기록에도 싣는다.
+#   비어 있으면 키 자체를 넣지 않는다(기존 기록 형태를 깨지 않기 위해).
 function Send-GissueSchedulerStartRecord {
     param(
         [Parameter(Mandatory)][string]$Lssn,
         [Parameter(Mandatory)][string]$Sk,
         [Parameter(Mandatory)][string]$RunId,
         [Parameter(Mandatory)]$CsnList,
-        [string]$Commit = ''
+        [string]$Commit = '',
+        [string]$CodeSync = ''
     )
     $hostId = Get-GissueHostIdentity
     $value = [ordered]@{
@@ -156,6 +160,7 @@ function Send-GissueSchedulerStartRecord {
         agentCommit = $Commit
         pid         = $PID
     }
+    if ($CodeSync) { $value['codeSync'] = $CodeSync }
     $ok = Send-GissueKvsPut -Lssn $Lssn -Factor 'scheduler_run_start' -Value $value -Sk $Sk
     Write-Host "[KVS-START] $(if ($ok) { 'OK' } else { 'FAIL' }) runId=$RunId host=$($hostId.hostname) ips=$(@($hostId.ips) -join ',')"
     return $ok
