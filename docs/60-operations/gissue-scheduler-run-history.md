@@ -26,7 +26,109 @@
 ## 기록되는 흐름
 1. 잡 시작: `SchedulerAgentUpsert`(에이전트 등록, `gissue_csn<CSN>`) → `SchedulerAgentRunStart`
 2. 이슈마다: `SchedulerAgentHeartbeatPut`(처리 건수, 현재 단계, 현재 이슈)
-3. 종료(`Complete-Run`): `SchedulerAgentRunEnd` — 상태는 `DONE`→`SUCCEEDED`, `TIMEOUT*`→`TIMED_OUT`, 그 외 `FAILED`. 처리 건수는 잡이 마지막에 출력하는 `[RUN-COUNTS] processed=N` 에서 읽는다
+   - 처리 건수 = **지금까지 처리를 시작한 이슈 수**(`$runProcessed`) — 큐 인덱스가 아니다(git 6214 정정).
+   - 현재 단계 = `issue(isn=<번호>)`, 현재 이슈 = `@currentIssueNum`.
+   - 건너뜀 건수 = 이 잡이 지금까지 스킵한 건수(REVIEW 쿨다운 등).
+3. 종료(`Complete-Run`): `SchedulerAgentRunEnd` — 상태는 `DONE`→`SUCCEEDED`, `TIMEOUT*`→`TIMED_OUT`, 그 외 `FAILED`. 처리 건수는 잡이 마지막에 출력하는 `[RUN-COUNTS] processed=N` 에서 읽는다.
+   - summary 는 **종료 상태만이 아니라** 실행 코드 버전·엔진 경로·자동 반영 결과·기록 호출 실패까지 담는다(아래 §"실행 기록 확장").
+
+## 실행 기록 확장 (giip #6214)
+
+`SchedulerAgentRunEnd` 의 `@summary` 에 다음이 함께 들어간다(순서 = 중요도, 길이 제한 500자):
+
+| 순서 | 항목 | 값 | 정본 |
+|---|---|---|---|
+| 1 | 종료 상태 | `DONE` / `TIMEOUT (105분) — 중단` … | 기존 값 |
+| 2 | **기록 호출 실패** | `기록호출실패 N건(예: heartbeat: …)` | `lib/run-summary.ps1` 의 `Get-GissueSchedulerStateFailures` |
+| 3 | 실행 코드 버전 | 실행 체크아웃의 HEAD 7자 + 브랜치(+로컬 변경 표시) | `lib/code-sync.ps1` 의 `Get-GissueRepoHeadInfo` |
+| 4 | 엔진 경로 요약 | `엔진경로 gair=N(실패=M) 종전=K claude강제=J \| 프로브 정비=성공,일반=성공 \| 폴백사유 …` | `lib/run-summary.ps1` 의 `Format-GissueEnginePathSummary` |
+| 5 | 자동 반영 결과 | `자동반영 updated(abc1234→def5678) …` | `lib/code-sync.ps1` 의 `Format-GissueCodeSyncSummary` |
+
+- **"기록 호출 실패"가 2번째인 이유** — 전체를 한꺼번에 자르면 뒤쪽 항목이 통째로 사라진다. 그 신호가
+  잘려 나가면 "기록 실패"가 조용히 사라져 요구(기록 실패는 예외로 드러나야 한다)가 깨진다. 2번째에 두면
+  어떤 길이 제한에서도 살아남는다. 각 항목에도 개별 길이 상한이 붙어 있어(상태 60 · 실패 예시 90 ·
+  코드 버전 48 · 엔진 경로 130 · 자동 반영 130) 앞 항목이 길어도 뒤 항목이 밀려나지 않는다.
+- 엔진 경로 요약은 엔진이 **이미 남기는** `[GAIR]`·`[ENGINE]` 로그 줄을 집계해서 만든다(새로운 계측 지점을 만들지 않는다).
+  집계는 잡 출력의 **새로 추가된 줄만** 먹으므로 같은 줄이 두 번 세어지지 않는다.
+- 실행 기록에 **없는 값**은 추정하지 않는다 — 코드 버전은 `알수없음`, 엔진 경로는 `엔진경로 기록없음`,
+  자동 반영은 `없음` 으로 명시한다. "0"과 "없음"을 구분하는 것이 이 확장의 목적이다.
+- 요약 전문은 세션 로그의 `[RUN-END-SUMMARY]` 줄에도 그대로 남는다(요약이 잘려도 전체는 로그에서 확인 가능).
+- **시작 기록에도 자동 반영 결과가 실린다** — `Send-GissueSchedulerStartRecord` 의 `codeSync` 키
+  (`updated(abc1234→def5678) …`). 이 실행이 도중에 죽어도 "어느 코드로 시작했고 자동 반영이 됐는지"가
+  남는다(종료 기록만으론 죽은 실행의 사실이 사라진다).
+
+## 기록 호출 실패는 조용히 삼키지 않는다 (giip #6214)
+
+기록 호출이 실패하면 예전에는 세션 로그의 `[WARN][SchedulerState-<동작>] 실패: …` 한 줄로만 남았다.
+그래서 **"기록이 없다"와 "기록을 못 했다"가 구분되지 않았다** — 서버 측 경로가 멀쩡한데 기록이 없는
+상태(호스트 러너가 옛 버전인 경우)가 정확히 그랬다.
+
+지금은 실패가 세 군데에 남는다.
+1. 잡 출력의 `[WARN][SchedulerState-<동작>] 실패: <사유>` (기존)
+2. 잡 로그의 `[SchedulerState][FAIL] 기록 호출 실패: <동작>: <사유>` (신규)
+3. 실행 기록(RunEnd summary)의 `기록호출실패 N건(예: …)` (신규)
+
+추가로, **애초에 기록을 시도할 수 없었던 경우**도 실패로 드러낸다(조용히 넘어가지 않는다).
+- SK 가 없음 → 잡 출력에 `[WARN][SchedulerState-<동작>] 실패: SK 없음 — 스케줄러 상태를 기록하지 못함(csn=<N>)`
+  (upsert·runStart·heartbeat 각각), 종료 시 `[SchedulerState-runEnd] 실패: SK 없음 — 실행 종료 기록을 남기지 못함`.
+- heartbeat 호출 자체가 예외로 죽은 경우 → `[WARN][SchedulerState-heartbeat] 실패: <사유>` (빈 catch 로 삼키지 않는다).
+
+## 자동 반영(자기 갱신) — 러너가 스스로 최신 코드를 받는다 (giip #6214)
+
+### 왜 필요한가 (실측)
+
+사양서 §11 은 "PR 머지 ≠ 스케줄러가 새 코드로 도는 것"을 운영 함정으로 못박았고 §17-5 는 "러너는
+시작 시 self-pull 로 에이전트 레포를 최신화한다"고 적어 있었다. **그런데 정본 러너에는 실제 pull 이
+없었다.** `git pull` 이 등장하는 곳은 `Invoke-GissueSelfPullNotOnMainCheck` 뿐인데, 그 함수는 HEAD 가
+`main` 이면 아무 것도 하지 않고 return 한다(= NOT-ON-MAIN 복귀 전용). 즉 **정상 경로에서는 머지된
+코드가 반영되지 않았다.** 호스트마다 사람이 `git pull` 하는 구조가 남아 있던 이유다.
+
+### 무슨 일이 일어나는가
+
+러너 기동 초입(어떤 CSN 잡도 시작하기 전)에 아래 순서로 돈다.
+
+1. **대상 결정** — `GIIP_FDE_REPO_ROOT` 환경변수가 가리키는 체크아웃, 없으면 러너 자신으로부터 유도한
+   저장소 루트(러너가 체크아웃 밖의 복사본이면 여기로는 닿지 않는다).
+2. **상태 조회** — HEAD·브랜치·로컬 변경 여부.
+3. **fetch → fast-forward merge** — `git fetch origin main` 후 `git merge --ff-only origin/main`.
+4. **실행 위치 동기화** — 실행 위치(`scripts/gissue`)가 체크아웃과 다르면, 체크아웃의 **git 이 추적하는
+   파일만** 복사한다. 삭제하지 않고, 내용이 다를 때만 쓴다(운영자가 채운 로컬 전용 설정은 untracked 이므로
+   그대로 남는다).
+
+### 안전 계약
+
+| 상황 | 동작 |
+|---|---|
+| 이미 최신 | `already-current` — 아무것도 안 바꾼다 |
+| 원격이 앞섬 | `updated` — fast-forward 로 반영(HEAD 전후를 기록에 남김) |
+| **추적(tracked) 파일**의 로컬 변경이 있음 | `skipped-dirty` — **pull 하지 않는다**(사람의 작업 보존). 상세가 기록에 남는다 |
+| untracked 파일만 있음(로그·로컬 설정 등) | 정상 처리 — pull 을 **막지 않는다** |
+| HEAD 가 `main` 이 아님 | `skipped-not-main` — pull 하지 않는다. 브랜치 복귀는 기존 NOT-ON-MAIN 경로가 담당한다 |
+| fetch/merge 실패 | `failed` — **옛 코드로 계속**한다(fail-open). 사유를 기록에 남긴다 |
+| 대상 체크아웃 없음 | `skipped-no-target` — 사유를 기록에 남기고 계속 |
+
+- `reset --hard`·`checkout --force`·`stash`·`clean` 을 **쓰지 않는다**. 되돌릴 수 없는 동작을 하지 않는다.
+- **추적 파일만 "변경"으로 센다**(`git status --porcelain --untracked-files=no`). 운영 호스트에는 로그
+  디렉터리·운영자가 채운 로컬 설정(`csn-projects.json`) 같은 untracked 항목이 항상 남아 있다 — 이것까지
+  변경으로 보면 pull 이 영영 보류되어 자동 반영이 아예 동작하지 않게 된다.
+- **실행 순서 계약** — 자동 반영은 `worktree-safety.ps1` 닷소싱과 `code-freshness.ps1` 기준 해시
+  스냅샷보다 **앞**에 온다.
+  - 앞이어야 새 정리 엔진이 메모리에 적재된다(새 코드가 실제로 돈다).
+  - 앞이어야 낡은 코드 가드가 즉시 "낡음"으로 latch 되지 않는다(스냅샷 뒤에 pull 이 일어나면 그 실행은
+    파괴적 작업을 통째로 건너뛴다 — 안전하지만 의도와 다르고, 새 코드가 적재되지 않는다).
+- 회귀 테스트 진입점(`-FunctionsOnly`)에서는 **실행되지 않는다**(테스트가 저장소를 pull 하면 안 된다).
+- **이번 회차 vs 다음 회차** — 러너 본체(`run-gissue-claude.ps1`)는 프로세스 기동 시점에 이미 파싱되어
+  메모리에 올라가므로, **그 실행 중에 pull 로 내려받은 본체 코드는 이번 회차에 반영되지 않는다**(다음 회차부터
+  반영). 반면 기동 시점에 닷소싱되는 부분(정리 엔진·작업 라이브러리·잡이 읽는 `lib/*`)은 이번 회차에 새
+  코드로 돈다. 그래서 "실행 기록의 코드 버전"은 **이번 회차가 실제로 도는 코드**의 기준이 된다.
+
+### lowyworkenv 이식 시 주의점
+
+- 이식 대상이 `lowyworkenv` 이면 러너 복사본을 **정본 체크아웃에서** 돌리거나, 정본 체크아웃 경로를
+  `GIIP_FDE_REPO_ROOT` 로 지정해야 자동 반영이 산다. 복사본 위치에서 돌면 대상 해석이 실패해
+  `skipped-no-target` 로 기록된다(정상 동작은 계속된다).
+- 이식본에 `lib/code-sync.ps1`·`lib/run-summary.ps1` 이 없으면 러너는 그(lib 미적재) 상태를 감지해
+  **자동 반영과 기록 확장을 건너뛰고** 나머지 흐름을 정상 수행한다(없다고 죽지 않는다).
 
 ## 검증 방법
 ```sql
@@ -36,8 +138,20 @@ WHERE a.agentKey = 'gissue_csn47' ORDER BY r.startTime DESC;
 ```
 화면: `admin/catquest/schedulers` 에서 `gissue_csn47` 의 History. 호출이 실패하면 `gissue_csn<CSN>.log`/잡 출력에 `[WARN][SchedulerState-...]` 또는 `[SchedulerState-runEnd]` 줄이 남는다.
 
+기록이 아예 없을 때(호스트 러너가 옛 버전인 경우)의 판정 순서:
+1. 잡 로그에 `[SchedulerState]` 줄이 **없으면** → 그 호스트의 러너가 `lib/scheduler-state.ps1` 을 쓰지 않는
+   옛 버전이다(자동 반영이 해결 대상).
+2. 잡 로그에 `[WARN][SchedulerState-…] 실패` 가 **있으면** → 서버 기록 경로가 실패한 것이므로 사유를 본다.
+
 ## 한계
-- 건너뜀/실패 건수는 아직 집계하지 않아 0 으로 기록된다. 처리 건수는 "엔진 처리를 시작한 이슈 수"다.
+- 실패 건수(`@failedCount`)는 아직 집계하지 않아 0 으로 기록된다. 처리 건수는 "엔진 처리를 시작한 이슈 수"다.
+- heartbeat 의 건너뜀 건수는 잡 안에서 센 REVIEW 쿨다운 스킵만 반영되고, 예산 소진으로 남은 이슈 수는
+  잡이 끝날 때만 확정된다(heartbeat 시점에는 아직 결정되지 않는다).
+- 자동 반영이 `skipped-not-main` 으로 끝난 회차는 **이번 실행이 옛 코드로 돈다**. 다음 회차부터 새 코드로
+  돈다(브랜치 복귀는 그 회차의 NOT-ON-MAIN 경로가 수행).
+- 자동 반영으로 내려받은 **러너 본체** 코드는 다음 회차부터 반영된다(위 §"이번 회차 vs 다음 회차").
+  실행 기록의 코드 버전은 "그 회차가 도는 코드"이므로, 머지 직후 회차의 버전이 옛 것이어도 **오류가 아니다**.
+
 
 ## 틱 20분 vs 실행 길이 — 소프트 예산을 도입한 이유 (giip 3615)
 

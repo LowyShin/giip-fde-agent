@@ -78,12 +78,12 @@ try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } 
 # 2026-11-16: 고정 임시 파일명 충돌(거짓 FAIL) 회귀 테스트 1건(test-temp-filename-collision.ps1) 추가 → 42 → 43.
 # 2026-11-16: 토큰 사용량 합산 회귀 테스트 1건(test-token-usage.ps1, giip 5398) 추가 → 43 → 44.
 # 2026-11-20: 저장소 정비 세션 사전 체크 게이트 회귀 테스트 1건(test-repomaint-gate.ps1, giip 5671) 추가 → 48 → 49.
-# 2026-11-23: 미매핑 CSN 가드 오프라인 회귀 테스트 1건(test-unmapped-csn-guard.ps1, giip 4116) 추가 → 49 → 50.
-#   (main 에 기대값 상향 없이 들어와 실제 50건이었던 상태(기대 49 와 1건 슬랙)에서
-#    신규 1건을 더해 실측 51건 — 정확히 고정.)
+# 2026-11-23: 미매핑 CSN 가드 오프라인 회귀 테스트 1건(test-unmapped-csn-guard.ps1, giip 4116) 추가 → 실측 51건에 고정.
 #   ※ 라이브 실측 스크립트(tests/live/test-unmapped-csn-guard-live.ps1)는 SK·네트워크가 있어야만
 #     돌 수 있어 CI 게이트가 돌지 않는 하위 디렉터리에 둔다 — 기대 건수에 넣지 않는다.
-$ExpectedPs1TestCount = 51
+# 2026-11-23: 자동 반영(자기 갱신) 회귀 테스트 1건(test-code-sync.ps1) + 실행 기록 summary 조립 회귀 테스트 1건(test-run-summary.ps1)
+#   추가(giip 6214) → 51 → 53. (병합 시점에 실재 ps1 테스트 53건으로 실측해 정확히 고정 — 슬랙 0)
+$ExpectedPs1TestCount = 53
 $ExpectedMjsTestCount = 11
 
 function Write-Gate([string]$Message) {
