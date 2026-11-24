@@ -226,7 +226,7 @@ CSN 마다 매시간 기동하는 **저장소 정비(REPO-MAINT) 세션**은 아
 |---|---|---|
 | `GISSUE_REPO_MAINT_GATE` | 켜짐(`0` 이 아니면) | `0` 이면 사전 체크 게이트를 끈다(종전 동작 — 매 회차 세션 기동) |
 | `GISSUE_REPO_MAINT_GAIR` | 켜짐(`0` 이 아니면) | `0` 이면 정비 세션의 gair 경유를 끄고 기존 MiniMax → Claude 경로를 쓴다 |
-| `GISSUE_GAIR_CSNS` | gair 설정이 등록된 플랫폼 CSN | 일반 이슈 세션의 gair 경유 허용 CSN 목록(쉼표 구분). gair 설정을 등록한 CSN만 넣는다. 목록에 `*` 가 포함되면 **전 CSN 허용**이다(플랫폼 측 gair 허용 등록이 전 CSN으로 확장된 호스트에서 사용). 목록 해석의 정본은 `scripts/gissue/lib/gair-gate.ps1` 이고, 게이트 판정(`gissue-audit-lib.ps1` 의 `Invoke-GissueJudge`)도 같은 목록으로 gair 경유를 정한다 — 허용 CSN의 판정은 gair 경유(모델 미고정), AK 파생 실패 시 직접 폴백 없이 판정 실패로 표면화한다 |
+| `GISSUE_GAIR_CSNS` | gair 설정이 등록된 플랫폼 CSN | 일반 이슈 세션의 gair 경유 허용 CSN 목록(쉼표 구분). gair 설정을 등록한 CSN만 넣는다. 목록에 `*` 가 포함되면 **전 CSN 허용**이다(플랫폼 측 gair 허용 등록이 전 CSN으로 확장된 호스트에서 사용). 목록 해석의 정본은 `scripts/gissue/lib/gair-gate.ps1` 이고, 게이트 판정(`gissue-audit-lib.ps1` 의 `Invoke-GissueJudge`)도 같은 목록으로 gair 경유를 정한다 — 허용 CSN의 판정은 gair 경유(모델 미고정), AK 파생 실패 시 직접 폴백 없이 판정 실패로 표면화한다. 같은 원칙이 러너 안의 판정 2곳(CJK-QA 2차 판정, 엔진 무처리(NO_ACTION) 판정 — 둘 다 세션 계획을 넘겨받아 따른다)과 페이지 피드백 판정(`page-feedback-analyze.ps1`, CSN 고정이라 같은 판정 계획을 재사용)에도 적용된다 |
 | `GISSUE_GAIR` | 켜짐(`0` 이 아니면) | `0` 이면 일반 이슈 세션의 gair 경유를 전부 끈다 |
 
 ### 5-2) 8단계 — 각 단계가 무엇을 판단하는가

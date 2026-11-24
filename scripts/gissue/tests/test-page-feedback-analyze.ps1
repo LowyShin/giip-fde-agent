@@ -75,6 +75,7 @@ Check 'c4 제거' ((Remove-PfaForeign "좋은 $HAN 기능") -eq '좋은 기능')
 $script:apiCalls = New-Object System.Collections.ArrayList
 $script:claudeQueue = New-Object System.Collections.ArrayList
 $script:claudeCount = 0
+$script:claudePlan = $null
 $script:comments = New-Object System.Collections.ArrayList
 $script:setStatus = New-Object System.Collections.ArrayList
 $script:issueStatus = 'NEEDS_DECISION'
@@ -88,8 +89,9 @@ function Invoke-PfaApi([string]$Sk, [string]$Name, [hashtable]$Json) {
         default { return , @([pscustomobject]@{ RstVal = 200 }) }
     }
 }
-function Invoke-PfaClaude([string]$SystemPrompt, [string]$UserPrompt, [string]$MiniMaxKey, [int]$TimeoutSec = 150) {
+function Invoke-PfaClaude([string]$SystemPrompt, [string]$UserPrompt, [string]$MiniMaxKey, [int]$TimeoutSec = 150, [hashtable]$GairPlan = $null) {
     $script:claudeCount++
+    $script:claudePlan = $GairPlan
     if ($script:claudeQueue.Count -eq 0) { throw 'no mock response' }
     $r = $script:claudeQueue[0]; $script:claudeQueue.RemoveAt(0)
     if ($r -is [scriptblock]) { return (& $r) }
@@ -98,7 +100,7 @@ function Invoke-PfaClaude([string]$SystemPrompt, [string]$UserPrompt, [string]$M
 function Invoke-PfaPostComment([string]$Isn, [string]$Content) { [void]$script:comments.Add(@{ Isn = $Isn; Content = $Content }) }
 function Invoke-PfaGetIssueStatus([string]$Sk, [string]$Isn) { return $script:issueStatus }
 function Invoke-PfaSetIssueStatus([string]$Isn, [string]$Status) { [void]$script:setStatus.Add($Status); $script:issueStatus = $Status }
-function Reset-Mocks { $script:apiCalls.Clear(); $script:claudeQueue.Clear(); $script:claudeCount = 0; $script:comments.Clear(); $script:setStatus.Clear(); $script:issueStatus = 'NEEDS_DECISION'; $script:registerStatus = 200 }
+function Reset-Mocks { $script:apiCalls.Clear(); $script:claudeQueue.Clear(); $script:claudeCount = 0; $script:claudePlan = $null; $script:comments.Clear(); $script:setStatus.Clear(); $script:issueStatus = 'NEEDS_DECISION'; $script:registerStatus = 200 }
 function Names { return @($script:apiCalls | ForEach-Object { $_.Name }) }
 function Get-Call([string]$n) { return ($script:apiCalls | Where-Object { $_.Name -eq $n } | Select-Object -First 1) }
 
@@ -268,6 +270,28 @@ try {
 Check 'g8 비활성 실행은 "[SKIP] 비활성" 한 줄만 출력하고 종료 코드 0' (($LASTEXITCODE -eq 0) -and (@($out).Count -eq 1) -and ("$($out | Select-Object -First 1)" -eq '[SKIP] 비활성')) ("$LASTEXITCODE | $out")
 Remove-Item -LiteralPath $tmp -Recurse -Force
 
+# ---- gair 판정 경로 ----
+$routeDirect = Resolve-PfaJudgeRoute $null
+Check 'h1 계획 없으면 direct(종전 MiniMax)' ($routeDirect.Route -eq 'direct') $routeDirect.Route
+$planActive = @{ Active = $true; Required = $true; Csn = '47'; BaseUrl = 'https://example.invalid/api/gair'; Ak = 'AK-TEST-9999'; CustomHeaders = 'x-functions-key: FK-TEST' }
+$routeGair = Resolve-PfaJudgeRoute $planActive
+Check 'h2 계획 Active 면 gair(계획의 베이스 URL·AK, 모델 미고정)' ($routeGair.Route -eq 'gair' -and $routeGair.BaseUrl -eq $planActive.BaseUrl -and $routeGair.ApiKey -eq 'AK-TEST-9999' -and $routeGair.Model -eq '') ($routeGair | Out-String)
+$routeBlocked = Resolve-PfaJudgeRoute @{ Active = $false; Required = $true; Csn = '47'; BaseUrl = ''; Ak = ''; CustomHeaders = '' }
+Check 'h3 계획 Required 인데 비활성이면 blocked(직접 폴백 없음)' ($routeBlocked.Route -eq 'blocked') $routeBlocked.Route
+$routeOff = Resolve-PfaJudgeRoute @{ Active = $false; Required = $false; Csn = '47'; BaseUrl = ''; Ak = ''; CustomHeaders = '' }
+Check 'h4 계획 비활성·비필수면 direct' ($routeOff.Route -eq 'direct') $routeOff.Route
+# 계획 래퍼: 정본 함수가 보는 호스트 스코프 $Csn 이 이 도구의 고정 CSN 으로 세워지는지 확인한다.
+function Get-GissueJudgeGairPlan { $v = ''; try { $v = "$(Get-Variable -Name 'Csn' -ValueOnly -ErrorAction Stop)" } catch { $v = '' }; return @{ Active = $false; Required = $false; Csn = $v; BaseUrl = ''; Ak = ''; CustomHeaders = '' } }
+$wrapped = Get-PfaGairPlan
+Check 'h5 계획 래퍼가 고정 CSN 을 $Csn 으로 전달' ($wrapped -and $wrapped.Csn -eq '47') ($wrapped | Out-String)
+function Get-GissueJudgeGairPlan { throw 'plan boom' }
+Check 'h6 계획 해석이 실패하면 래퍼는 $null(종전 경로 유지)' ($null -eq (Get-PfaGairPlan)) ''
+# 흐름: Ctx 의 계획이 판정 호출까지 그대로 전달되는지 확인한다.
+Reset-Mocks; [void]$script:claudeQueue.Add((New-Json))
+$ctxGair = @{ Sk = 'SK-TEST-1234'; MiniMaxKey = 'MM-TEST-1234'; DryRun = $false; GairPlan = $planActive }
+$resG = Invoke-PfaItem -Ctx $ctxGair -Row $row
+Check 'h7 계획 Active 인 Ctx 면 판정 호출에 계획이 전달됨' ($resG -eq 'Registered' -and $script:claudePlan -and $script:claudePlan.Ak -eq 'AK-TEST-9999') "$resG"
+
 # ---- 스케줄러 에이전트 등록 ----
 $script:spCalls = New-Object System.Collections.ArrayList
 function Invoke-SchedulerAgentSp([string]$ApiUrl, [string]$Sk, [string]$Name, [object[]]$Values = @()) { [void]$script:spCalls.Add(@{ Name = $Name; Values = $Values }); return @{ RstVal = 200 } }
@@ -279,6 +303,12 @@ Check 'a2 agentKey=feedback_analyzer_csn47, 스케줄 설명 cron :12/:32/:52' (
 Check 'a3 RunEnd 에 처리 건수/요약/종료코드 0' ($script:spCalls[2].Values[3] -eq '2' -and $script:spCalls[2].Values[7] -match 'REPORT_ONLY' -and $script:spCalls[2].Values[6] -eq '0') ($script:spCalls[2].Values -join '|')
 function Invoke-SchedulerAgentSp([string]$ApiUrl, [string]$Sk, [string]$Name, [object[]]$Values = @()) { throw 'boom' }
 Check 'a4 등록 호출이 실패해도 예외가 새지 않는다' (-not (Throws { Write-PfaSchedulerState -Action runEnd -Sk 'S' -RunIdKey 'r' -Counts @{ Processed = 0; Skipped = 0; Failed = 0 } -Status 'DONE' -Summary '' }))
+
+# ---- gair 차단 표면화 (실함수) ----
+# 모킹을 걷어내고(스크립트 재적재) 실제 Invoke-PfaClaude 가 blocked 계획에서 프로세스를 띄우기 전에
+# 예외로 표면화하는지 확인한다 — 직접 폴백이 없어야 한다.
+. $ScriptPath
+Check 'h8 blocked 계획이면 실제 판정 호출이 예외로 표면화(직접 폴백 없음)' (Throws { Invoke-PfaClaude -SystemPrompt 's' -UserPrompt 'u' -MiniMaxKey 'MM-TEST-1234' -GairPlan @{ Active = $false; Required = $true; Csn = '47'; BaseUrl = ''; Ak = ''; CustomHeaders = '' } })
 
 # ---- 소스 점검: 도구 차단, 권한 우회 금지 ----
 $src = Get-Content -LiteralPath $ScriptPath -Raw -Encoding UTF8
