@@ -3745,6 +3745,9 @@ ${function:Invoke-GissueEngine}
         #   대상으로 한다. gair는 호출자 CSN의 tSystemParameter를 읽으므로, 설정이 없는 CSN이 시도하면
         #   이슈마다 실패 호출만 쌓인다 — 그래서 허용 목록으로 게이트한다. 허용 목록은 env
         #   GISSUE_GAIR_CSNS(쉼표 구분), 미설정 시 기본값은 gair 설정이 등록된 플랫폼 CSN이다.
+        #   목록 해석의 정본은 lib/gair-gate.ps1 이다(게이트 판정 gissue-audit-lib.ps1 와 공유) —
+        #   목록에 '*' 가 포함되면 전 CSN 허용이다(플랫폼 측 gair 허용 등록이 전 CSN 으로 확장된
+        #   호스트에서 쓰는 값).
         #   GISSUE_GAIR=0 이면 일반 경로의 gair 경유를 전부 끈다. AK는 CSN 실행당 1회만 파생해
         #   이슈 루프 전체에서 재사용한다. [giip #6229] 허용 목록에 든 CSN 의 세션은 gair 단일
         #   경로다 — AK 파생 실패·gair 호출 실패 시 직접 폴백을 하지 않고 엔진이 오류로 표면화한다.
@@ -3753,11 +3756,11 @@ ${function:Invoke-GissueEngine}
         $issueGairBaseUrl = 'https://giipfaw.azurewebsites.net/api/gair'
         $issueGairApiKey = ''
         $issueGairRequired = $false
-        $gairCsnListRaw = if ($null -eq $env:GISSUE_GAIR_CSNS) { '47' } else { $env:GISSUE_GAIR_CSNS }
-        $gairCsnList = @($gairCsnListRaw -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+        . (Join-Path $root 'lib/gair-gate.ps1')
+        $gairCsnList = @(Get-GissueGairCsnList)
         if ($env:GISSUE_GAIR -eq '0') {
             Write-Output "[GAIR] GISSUE_GAIR=0 — 일반 이슈 경로 gair 경유 끔(기존 MiniMax→Claude 경로)"
-        } elseif ($gairCsnList -contains "$csn") {
+        } elseif (Test-GissueGairCsnAllowed -Csn "$csn" -List $gairCsnList) {
             $issueGairRequired = $true
             try { $issueGairApiKey = Get-GissueGairApiKey -BashExePath $bashExe -Csn $csn -RootPath $root } catch { $issueGairApiKey = '' }
             if ($issueGairApiKey) {
