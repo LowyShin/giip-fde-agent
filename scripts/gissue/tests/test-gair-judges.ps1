@@ -28,6 +28,9 @@ Check 'B2 CJK-QA gair 경유 로그가 있다' ($runner -match '\[GAIR\] CJK-QA 
 Check 'B3 CJK-QA gair 필수·AK 없음이면 판정 생략으로 표면화한다' ($runner -match '\[GAIR\] CJK-QA 판정 gair 필수') ''
 Check 'B4 CJK-QA 호출부가 이슈 세션 계획을 넘긴다' ($runner -match 'Test-GissueCjkContamination .*?-GairApiKey \$issueGairApiKey -GairRequired \$issueGairRequired') ''
 Check 'B5 CJK-QA 코멘트 모델 표기가 경로 표기($qaModelNote)를 쓴다' ($runner -match '사용 모델: \$qaModelNote') ''
+# 손상 가드 — 편집 전송 과정에서 키 대입문이 깨져 들어간 사고(2026-11-24, PR #557 사후 정정)의 재발 방지
+Check 'B6 러너에 손상 토큰(<redacted>)이 없다' (-not $runner.Contains('<redacted>')) ''
+Check 'B7 판정 2곳의 AK env 설정이 SetEnvironmentVariable 형태다' (([regex]::Matches($runner, [regex]::Escape("[Environment]::SetEnvironmentVariable('ANTHROPIC_API_KEY'"))).Count -ge 2) ''
 
 # ── C. 페이지 피드백 판정 경로 결정 (순수 함수) ──────────────────────────────
 . (Join-Path $gissueDir 'page-feedback-analyze.ps1')

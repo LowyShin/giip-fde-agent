@@ -2890,7 +2890,7 @@ foreach ($csn in $map.PSObject.Properties.Name) {
                     Write-Output "[GAIR] CJK-QA 판정 gair 경유 (CSN $Csn, 모델 미고정 — gair 라우터가 선택)"
                     $qaPrevBase = $env:ANTHROPIC_BASE_URL; $qaPrevKey = $env:ANTHROPIC_API_KEY; $qaPrevHeaders = $env:ANTHROPIC_CUSTOM_HEADERS
                     $env:ANTHROPIC_BASE_URL = $GairBaseUrl
-$env:ANTHROPIC_API_KEY=<redacted>
+                    [Environment]::SetEnvironmentVariable('ANTHROPIC_API_KEY', $GairApiKey)
                     $env:ANTHROPIC_CUSTOM_HEADERS = if ($env:GAIR_FUNCTION_KEY) { "x-functions-key: $($env:GAIR_FUNCTION_KEY)" } else { $null }
                     try {
                         $qaOutput = ($qaPrompt | & claude -p --allowedTools Read --add-dir $Workdir 2>&1 | Out-String).Trim()
@@ -3202,7 +3202,7 @@ $env:ANTHROPIC_API_KEY=<redacted>
                         Write-Output "[GAIR] 무처리 판정 gair 경유 (모델 미고정 — gair 라우터가 선택)"
                         $judgePrevBase = $env:ANTHROPIC_BASE_URL; $judgePrevKey = $env:ANTHROPIC_API_KEY; $judgePrevHeaders = $env:ANTHROPIC_CUSTOM_HEADERS
                         $env:ANTHROPIC_BASE_URL = $judgeGairBase
-$env:ANTHROPIC_API_KEY=<redacted>
+                        [Environment]::SetEnvironmentVariable('ANTHROPIC_API_KEY', $judgeGairKey)
                         $env:ANTHROPIC_CUSTOM_HEADERS = if ($env:GAIR_FUNCTION_KEY) { "x-functions-key: $($env:GAIR_FUNCTION_KEY)" } else { $null }
                         try {
                             $judgeOutput = $judgePrompt | & claude -p --tools="" --setting-sources="" 2>&1
