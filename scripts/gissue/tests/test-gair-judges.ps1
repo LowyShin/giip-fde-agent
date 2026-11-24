@@ -31,6 +31,12 @@ Check 'B5 CJK-QA 코멘트 모델 표기가 경로 표기($qaModelNote)를 쓴�
 # 손상 가드 — 편집 전송 과정에서 키 대입문이 깨져 들어간 사고(2026-11-24, PR #557 사후 정정)의 재발 방지
 Check 'B6 러너에 손상 토큰(<redacted>)이 없다' (-not $runner.Contains('<redacted>')) ''
 Check 'B7 판정 2곳의 AK env 설정이 SetEnvironmentVariable 형태다' (([regex]::Matches($runner, [regex]::Escape("[Environment]::SetEnvironmentVariable('ANTHROPIC_API_KEY'"))).Count -ge 2) ''
+# EAP 가드 — 호출자가 전역 EAP=Stop 인 PS 5.1 에서는 git 의 무해한 stderr 경고가 NativeCommandError
+# 종료 오류가 되어 CJK-QA 게이트가 무동작이 된다(giip #6229 후속, 호스트 실측). diff 수집 구간 가드 확인.
+$cjkFnStart = $runner.IndexOf('function Test-GissueCjkContamination')
+$cjkFnEnd = if ($cjkFnStart -ge 0) { $runner.IndexOf('# [giip #1558]', $cjkFnStart) } else { -1 }
+$cjkFn = if ($cjkFnStart -ge 0 -and $cjkFnEnd -gt $cjkFnStart) { $runner.Substring($cjkFnStart, $cjkFnEnd - $cjkFnStart) } else { '' }
+Check 'B8 CJK-QA diff 수집 구간이 EAP 가드(Continue + finally 복원)로 감싸져 있다' ($cjkFn -match [regex]::Escape("`$ErrorActionPreference = 'Continue'") -and $cjkFn -match [regex]::Escape('finally { $ErrorActionPreference = $prevEap }')) ''
 
 # ── C. 페이지 피드백 판정 경로 결정 (순수 함수) ──────────────────────────────
 . (Join-Path $gissueDir 'page-feedback-analyze.ps1')

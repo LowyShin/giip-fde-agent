@@ -2856,16 +2856,26 @@ foreach ($csn in $map.PSObject.Properties.Name) {
         function Test-GissueCjkContamination($Workdir, $BeforeSha, $Isn, $ProjectLang, $Root, $AccountsFile, $ApiBase, $Csn, $GairBaseUrl = '', $GairApiKey = '', $GairRequired = $false) {
             if ($ProjectLang -ne 'ja') { return }
             if (-not $BeforeSha) { return }
+            # [giip #6229 후속] diff 수집 구간의 git 2곳은 EAP 가드로 감싼다 — 호출자(러너 본체)가
+            # 전역 $ErrorActionPreference='Stop' 인 PS 5.1 환경에서는 git 의 무해한 stderr 경고
+            # (LF→CRLF 경고 등)가 NativeCommandError 종료 오류가 됨을 호스트 실측으로 확인했다:
+            # 첫 번째 diff 는 아래 catch 가 조용히 return 해 게이트가 무동작이 되고, 두 번째
+            # diff(--name-only)는 가드가 없으면 함수 밖으로 throw 한다. 러너 본체의 기존 가드
+            # (#5102 등)와 같은 방식 — 수집 구간만 'Continue' 로 내리고 finally 에서 복원한다.
+            $prevEap = $ErrorActionPreference
             try {
-                $diffOut = (git -C $Workdir diff $BeforeSha -- '*.md' '*.txt' 2>&1 | Out-String)
-            } catch { return }
-            if (-not $diffOut -or -not $diffOut.Trim()) { return }
-            $addedLines = ($diffOut -split "`r?`n") | Where-Object { $_ -match '^\+[^+]' }
-            if (-not $addedLines) { return }
-            $addedText = ($addedLines -join "`n")
-            if ($addedText -notmatch $script:GissueCjkTriggerChars) { return }
-            Write-Output "[CJK-QA] isn=$Isn 1차 필터(간체자 후보 문자) 검출 — 2차 claude 판정 시작"
-            $changedFiles = @((git -C $Workdir diff --name-only $BeforeSha -- '*.md' '*.txt' 2>&1 | Out-String) -split "`r?`n" | Where-Object { $_ -and $_.Trim() })
+                $ErrorActionPreference = 'Continue'
+                try {
+                    $diffOut = (git -C $Workdir diff $BeforeSha -- '*.md' '*.txt' 2>&1 | Out-String)
+                } catch { return }
+                if (-not $diffOut -or -not $diffOut.Trim()) { return }
+                $addedLines = ($diffOut -split "`r?`n") | Where-Object { $_ -match '^\+[^+]' }
+                if (-not $addedLines) { return }
+                $addedText = ($addedLines -join "`n")
+                if ($addedText -notmatch $script:GissueCjkTriggerChars) { return }
+                Write-Output "[CJK-QA] isn=$Isn 1차 필터(간체자 후보 문자) 검출 — 2차 claude 판정 시작"
+                $changedFiles = @((git -C $Workdir diff --name-only $BeforeSha -- '*.md' '*.txt' 2>&1 | Out-String) -split "`r?`n" | Where-Object { $_ -and $_.Trim() })
+            } finally { $ErrorActionPreference = $prevEap }
             if (-not $changedFiles) { return }
             $fileListText = ($changedFiles | ForEach-Object { Join-Path $Workdir $_ }) -join "`n"
             $qaPrompt = "아래 [대상 파일] 목록을 각각 Read 도구로 읽어라. 이 프로젝트의 산출물 언어 규칙은 '일본어 전용'이다. 각 파일에서 그 규칙에 맞지 않는 언어(특히 중국어 간체 어휘·문법, 또는 일본어 상용한자가 아닌 한자)가 섞여 있는지 판정하라. 다른 설명 없이 파일마다 정확히 한 줄로만, 다음 형식 중 하나로 답하라: ``<파일경로>: CONTAMINATED(<발견 위치·문구를 짧게>)`` 또는 ``<파일경로>: CLEAN``.`n`n[대상 파일]`n$fileListText"
