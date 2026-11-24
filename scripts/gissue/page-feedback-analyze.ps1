@@ -25,6 +25,10 @@
 #   MiniMax 키와 SK 는 로그와 오류 문구에 출력하지 않는다.
 # 키: MiniMax = 환경변수 MINIMAX_API_KEY 또는 slack-bot/.env(MINIMAX_ENV_FILE 로 경로 변경). SK = 환경변수 GIIP_SK 또는
 #   slack-bot/.secrets/giip-accounts.json 의 CSN 47 항목.
+# 판정 경로: 이 도구의 CSN 은 47 로 고정이라, 게이트 판정과 같은 gair 계획(gissue-audit-lib.ps1 의
+#   Get-GissueJudgeGairPlan — 허용 목록·GISSUE_GAIR=0 긴급 차단 공유)이 Active 면 판정은 gair(giip AI API
+#   라우터) 경유(모델 미고정)가 되고, Required 인데 AK 파생이 실패하면 MiniMax 직접으로 새지 않고
+#   건별 실패로 표면화한다. 계획이 없거나 비활성·비필수면 종전 MiniMax 직접 판정을 유지한다.
 # DB 경로: giipApi 디스패처(function key + SK) - 사양 14.9 3. 이슈 등록은 래퍼 SP pApiPageFeedbackRegisterIssuebyAK 가 필요하다.
 # ------------------------------------------------------------------
 [CmdletBinding()]
@@ -51,6 +55,12 @@ function Resolve-PfaFunctionCode {
 }
 $script:PfaSecrets = New-Object System.Collections.ArrayList
 . (Join-Path $PSScriptRoot 'lib/scheduler-state.ps1')   # Invoke-SchedulerAgentSp, ConvertTo-SchedulerRunStatus (러너와 같은 경로)
+# 판정 gair 계획의 정본(gissue-audit-lib.ps1 의 Get-GissueJudgeGairPlan — 게이트 판정과 공유)을 적재한다.
+# 이미 적재돼 있거나 파일이 없으면 건너뛴다(계획 없이 종전 MiniMax 직접 경로로 동작).
+if (-not (Get-Command Get-GissueJudgeGairPlan -ErrorAction SilentlyContinue)) {
+    $pfaAuditLib = Join-Path $PSScriptRoot 'gissue-audit-lib.ps1'
+    if (Test-Path -LiteralPath $pfaAuditLib) { . $pfaAuditLib }
+}
 $script:PfaAgentKey = 'feedback_analyzer_csn47'
 $script:PfaApiSk2Url = 'https://giipfaw.azurewebsites.net/api/giipApiSk2'
 
@@ -144,8 +154,34 @@ function Invoke-PfaApi([string]$Sk, [string]$Name, [hashtable]$Json) {
     return , @($rows)
 }
 
+# 판정 gair 계획 — 게이트 판정과 같은 정본(Get-GissueJudgeGairPlan)을 재사용한다. 그 함수는 호스트
+# 스코프의 $Csn 을 읽으므로, 이 도구의 고정 CSN($script:PfaCsn)을 로컬 $Csn 으로 세워 호출한다.
+# 계획 해석 자체가 실패하면(라이브러리 부재 포함) $null — 종전 MiniMax 직접 경로를 유지한다.
+function Get-PfaGairPlan {
+    if (-not (Get-Command Get-GissueJudgeGairPlan -ErrorAction SilentlyContinue)) { return $null }
+    try {
+        $Csn = "$script:PfaCsn"
+        return (Get-GissueJudgeGairPlan)
+    } catch { return $null }
+}
+
+# 판정 호출의 경로 결정(순수 함수 — 테스트 대상). 반환: @{ Route; BaseUrl; ApiKey; Model; CustomHeaders }
+#   - 계획 없음/비활성·비필수 → 'direct' (종전 MiniMax 직접 — 베이스 URL·모델 해석은 호출부가 맡는다)
+#   - 계획 Active → 'gair' (베이스 URL·AK·헤더는 계획 값, Model 은 '' = 미고정)
+#   - 계획 Required 인데 비활성 → 'blocked' (호출부가 직접 폴백 없이 예외로 표면화한다)
+# AK 는 반환값으로만 쓰고 어떤 출력·로그에도 남기지 않는다.
+function Resolve-PfaJudgeRoute([hashtable]$GairPlan) {
+    if ($GairPlan -and $GairPlan.Required -and -not $GairPlan.Active) { return @{ Route = 'blocked'; BaseUrl = ''; ApiKey = ''; Model = ''; CustomHeaders = '' } }
+    if ($GairPlan -and $GairPlan.Active) { return @{ Route = 'gair'; BaseUrl = [string]$GairPlan.BaseUrl; ApiKey = [string]$GairPlan.Ak; Model = ''; CustomHeaders = [string]$GairPlan.CustomHeaders } }
+    return @{ Route = 'direct'; BaseUrl = ''; ApiKey = ''; Model = ''; CustomHeaders = '' }
+}
+
 # claude -p 를 도구 전부 차단 상태로 실행해 텍스트 응답을 돌려준다. 실패/시간 초과는 예외.
-function Invoke-PfaClaude([string]$SystemPrompt, [string]$UserPrompt, [string]$MiniMaxKey, [int]$TimeoutSec = 150) {
+# $GairPlan 이 Active 면 gair(giip AI API 라우터) 경유 — 베이스 URL·AK 만 바꿔 걸고 모델은 고정하지
+# 않는다. Required 인데 비활성이면 직접 폴백 없이 예외로 표면화한다(호출부의 건별 실패 기록 계약 유지).
+function Invoke-PfaClaude([string]$SystemPrompt, [string]$UserPrompt, [string]$MiniMaxKey, [int]$TimeoutSec = 150, [hashtable]$GairPlan = $null) {
+    $route = Resolve-PfaJudgeRoute $GairPlan
+    if ($route.Route -eq 'blocked') { throw '[GAIR] 판정 gair 필수이나 AK 파생 실패 — 직접 폴백 없이 판정 실패로 표면화' }
     $work = Join-Path ([System.IO.Path]::GetTempPath()) ("pfa-" + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $work | Out-Null
     try {
@@ -158,11 +194,22 @@ function Invoke-PfaClaude([string]$SystemPrompt, [string]$UserPrompt, [string]$M
         $psi.UseShellExecute = $false
         $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
         # 도구 전부 차단: --tools "" 는 내장 도구를 모두 끈다. MCP/설정/스킬/세션 저장도 끈다. 권한 우회 옵션은 쓰지 않는다.
-        foreach ($a in @('-p', '--bare', '--tools', '', '--strict-mcp-config', '--setting-sources', '', '--disable-slash-commands',
-                '--no-session-persistence', '--output-format', 'text', '--model', $(if ($env:MINIMAX_MODEL) { $env:MINIMAX_MODEL } else { 'MiniMax-M3' }),
-                '--system-prompt', $SystemPrompt)) { $psi.ArgumentList.Add($a) }
-        $psi.Environment['ANTHROPIC_BASE_URL'] = if ($env:MINIMAX_BASE_URL) { $env:MINIMAX_BASE_URL } else { 'https://api.minimax.io/anthropic' }
-        $psi.Environment['ANTHROPIC_API_KEY'] = $MiniMaxKey
+        $pfaArgs = @('-p', '--bare', '--tools', '', '--strict-mcp-config', '--setting-sources', '', '--disable-slash-commands',
+            '--no-session-persistence', '--output-format', 'text')
+        if ($route.Route -eq 'gair') {
+            # gair 경유: 모델을 고정하지 않는다(gair 라우터가 선택). 베이스 URL·AK·함수 키 헤더만 바꾼다.
+            Write-PfaLog "[GAIR] 판정 gair 경유 (CSN $script:PfaCsn, 모델 미고정 — gair 라우터가 선택)"
+            $psi.Environment['ANTHROPIC_BASE_URL'] = $route.BaseUrl
+            $psi.Environment['ANTHROPIC_API_KEY'] = $route.ApiKey
+            if ($route.CustomHeaders) { $psi.Environment['ANTHROPIC_CUSTOM_HEADERS'] = $route.CustomHeaders }
+            else { [void]$psi.Environment.Remove('ANTHROPIC_CUSTOM_HEADERS') }
+        } else {
+            $pfaArgs += @('--model', $(if ($env:MINIMAX_MODEL) { $env:MINIMAX_MODEL } else { 'MiniMax-M3' }))
+            $psi.Environment['ANTHROPIC_BASE_URL'] = if ($env:MINIMAX_BASE_URL) { $env:MINIMAX_BASE_URL } else { 'https://api.minimax.io/anthropic' }
+            $psi.Environment['ANTHROPIC_API_KEY'] = $MiniMaxKey
+        }
+        $pfaArgs += @('--system-prompt', $SystemPrompt)
+        foreach ($a in $pfaArgs) { $psi.ArgumentList.Add($a) }
         $psi.Environment['CLAUDE_CODE_MAX_CONTEXT_TOKENS'] = '204800'
         foreach ($drop in 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN') { [void]$psi.Environment.Remove($drop) }
         $proc = [System.Diagnostics.Process]::Start($psi)
@@ -317,11 +364,11 @@ function Get-PfaDraftText($Draft) {
 
 # 최대 2번 생성한다. 한자/가나/키릴이 섞이면 다시 생성하고, 2번 다 섞이면 문자를 제거한다.
 # 제거로 내용이 심하게 상하면(제거 비율 10퍼센트 초과) 예외로 넘겨 재시도 기록이 되게 한다. 제거 후 최종 판정을 다시 한다.
-function Get-PfaDraft([hashtable]$Row, [string]$MiniMaxKey) {
+function Get-PfaDraft([hashtable]$Row, [string]$MiniMaxKey, [hashtable]$GairPlan = $null) {
     $p = New-PfaPrompt $Row
     $draft = $null
     for ($i = 1; $i -le 2; $i++) {
-        $text = Invoke-PfaClaude -SystemPrompt $p.System -UserPrompt $p.User -MiniMaxKey $MiniMaxKey
+        $text = Invoke-PfaClaude -SystemPrompt $p.System -UserPrompt $p.User -MiniMaxKey $MiniMaxKey -GairPlan $GairPlan
         $draft = ConvertFrom-PfaAiText $text
         if (-not (Test-PfaForeign (Get-PfaDraftText $draft))) { break }
         if ($i -eq 2) {
@@ -558,7 +605,7 @@ function Confirm-PfaIssueHeld([string]$Sk, [string]$Isn) {
 function Invoke-PfaItemCore([hashtable]$Ctx, [hashtable]$Row) {
     $id = $Row['feedback_id']
     $source = if ([string]$Row['queue_source'] -eq 'MANUAL') { 'MANUAL' } else { 'AUTO' }
-    $draft = Get-PfaDraft -Row $Row -MiniMaxKey $Ctx.MiniMaxKey
+    $draft = Get-PfaDraft -Row $Row -MiniMaxKey $Ctx.MiniMaxKey -GairPlan $Ctx.GairPlan
     # 관리자 승인 건은 판정과 무관하게 작업 지시서. 자동 건은 코드가 재판정한 결과(ACTIONABLE 아니면 레포트 전용)를 따른다.
     $isReport = ($source -eq 'AUTO') -and ($draft.Verdict -ne 'ACTIONABLE')
 
@@ -696,6 +743,15 @@ function Invoke-PfaMain {
         Add-PfaSecret $sk
         $key = Get-PfaMiniMaxKey
         Add-PfaSecret $key
+        # 판정 gair 계획(게이트 판정과 같은 정본, 고정 CSN 기준). Active 면 판정은 gair 경유,
+        # Required 인데 비활성이면 판정 호출이 직접 폴백 없이 건별 실패로 표면화한다.
+        $gairPlan = Get-PfaGairPlan
+        if ($gairPlan -and $gairPlan.Active) {
+            Add-PfaSecret ([string]$gairPlan.Ak)
+            Write-PfaLog "[GAIR] 판정 gair 경유 계획 활성 (CSN $script:PfaCsn, 모델 미고정 — gair 라우터가 선택)"
+        } elseif ($gairPlan -and $gairPlan.Required) {
+            Write-PfaLog "[GAIR] 판정 gair 필수(CSN $script:PfaCsn)이나 AK 파생 실패 — 판정은 직접 폴백 없이 실패로 표면화"
+        }
         Write-PfaLog "시작 (드라이런=$dry, 배치=$($settings.Batch), 시간상한=$($settings.MaxMinutes)분)"
         $runId = "feedback_analyzer_csn$($script:PfaCsn)_run_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
         if (-not $dry) {
@@ -704,7 +760,7 @@ function Invoke-PfaMain {
         }
         $r = $null
         try {
-            $r = Invoke-PfaRun -Ctx @{ Sk = $sk; MiniMaxKey = $key; DryRun = $dry } -Batch $settings.Batch -MaxMinutes $settings.MaxMinutes
+            $r = Invoke-PfaRun -Ctx @{ Sk = $sk; MiniMaxKey = $key; DryRun = $dry; GairPlan = $gairPlan } -Batch $settings.Batch -MaxMinutes $settings.MaxMinutes
         }
         catch {
             if (-not $dry) {
