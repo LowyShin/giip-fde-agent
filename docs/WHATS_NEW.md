@@ -6,9 +6,12 @@
 >
 > *(EN/JP 독자는 각 항목을 AI 에이전트에 번역 요청하세요. / Ask your AI assistant to translate entries.)*
 
-**기준일 (as of): 2026-11-25**
+**기준일 (as of): 2026-11-26**
 
 ---
+
+## 2026-11-26
+- **gissue 스케줄러: 잡 시작 스크립트 존재 확인 가드 — Get-Command 금지** — 호스트 실측(2026-11-25/26): 매시 회차가 시작 단계에서 5분 만에 `State=Failed` 로 죽고 이슈를 0건 처리했다. 원인은 잡의 `InitializationScript` 에서 닷소싱한 라이브러리의 최상위 적재 가드가 `Get-Command <없는 함수> -ErrorAction SilentlyContinue` 로 존재를 확인한 것 — `SilentlyContinue` 는 표시만 억제할 뿐 오류는 `$Error` 에 남고, 잡 인프라는 시작 스크립트가 오류를 남기면 잡 전체를 시작 단계 실패로 만든다(`Running startup script threw an error`). `gissue-audit-lib.ps1` 최상위 가드(`Test-GissueGairCsnAllowed` 존재 확인)를 오류를 남기지 않는 `Test-Path function:` 으로 교체했다. 함수 안의 호출 시점 `Get-Command` 확인은 정상 실행 중이라 잡을 죽이지 않으므로 그대로 둔다. 회귀 테스트 신규 `tests/test-job-init-audit-lib-guard.ps1`(3건: 잡 init 닷소싱 완료+함수 적재, 구 패턴 실패 음성 대조군, 최상위 코드 줄 `Get-Command` 부재) — 구 코드에서는 A1·C1이 실패함을 확인했다. → [사양](./60-operations/hourly-issue-scheduler-runtime.md), [감사 라이브러리](../scripts/gissue/gissue-audit-lib.ps1), [회귀 테스트](../scripts/gissue/tests/test-job-init-audit-lib-guard.ps1)
 
 ## 2026-11-25
 - **gissue 스케줄러: 외부 호출 타임아웃(gh-call-timeout) — 정리 단계 hang 방지** — 2026-11-25 실측(17:07 회차 CSN 33)이 [WORKTREE-CLEANUP]에서 18:21:25 이후 31분간 침묵하다 예산 종료로 강제종료되고 종료 기록·슬롯 기록이 남지 않았다. 원인은 시간 한도(기본 180초, PR #560)가 레포·항목 경계에서만 검사되고 항목 안의 동기 호출은 중간에 끊을 수 없다는 점이다. 신규 `scripts/gissue/lib/bounded-process.ps1` 이 외부 호출 1회를 Start-Process + 유한 대기(`WaitForExit`)로 실행해 한도를 넘기면 자식을 죽이고 `TimedOut=$true` 로 돌려준다 — `worktree-safety.ps1` 의 `Invoke-GissueExternalCall` 경유로 WORKTREE-CLEANUP 경로의 외부 호출 전부(gh `pr list --state merged --limit 1000`·`git worktree list`·`rev-parse`·`cat-file`·`merge-base`·`git status`·prune·remove·`branch -D`·`ls-remote`/`push --delete`)에 한도를 건다(gh 기본 60초·git 기본 30초, env `GISSUE_GH_CALL_TIMEOUT_SEC`/`GISSUE_GIT_CALL_TIMEOUT_SEC` 재정의, PS 5.1 호환). 타임아웃은 전부 fail-closed — `시간 초과` 로그를 남기고 해당 레포·항목만 건너뛰고 다음으로 진행하며, 타임아웃으로는 삭제 판정을 내리지 않는다(MANUAL-REVIEW 보류, #6228 게이트 유지). `worktree remove` 타임아웃 뒤 `--force` 재시도는 하지 않는다. 회귀 테스트 신규 `tests/test-bounded-process.ps1`(44건: 멈춘 명령의 한도 내 절단·공백 인자·한도 해석·멈추는 가짜 gh 에서의 머지판정 fail-closed·종단 정리 정상 반환+삭제 0건+MANUAL-REVIEW 보류·바로 실패하는 gh의 실패 경로·머지+idle worktree 실제 삭제 성공 경로·출력 배수(drain) 회귀 A-15), `tests/test-gh-cache.ps1` E 섹션은 Start-Process 경유에 맞춰 `function gh` 스텁에서 래퍼 스텁으로 교체(21건). 출력 배수 결함(2026-11-25 실측): 유한 `WaitForExit` 만으로는 리다이렉트 출력이 파일에 다 쓰이기 전에 반환될 수 있어 `git` 호출이 ExitCode=0 인데 stdout 이 비어 읽히는 간헐적 가짜 실패가 났다 — 파일을 읽기 전 인자 없는 `WaitForExit()` 로 펌프를 비우도록 수정했다(A-15는 구 코드에서 실패, 수정 코드에서 6회 연속 44/44). → [사양](./60-operations/hourly-issue-scheduler-runtime.md), [타임아웃 라이브러리](../scripts/gissue/lib/bounded-process.ps1), [정리 엔진](../scripts/gissue/worktree-safety.ps1), [회귀 테스트](../scripts/gissue/tests/test-bounded-process.ps1)
