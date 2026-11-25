@@ -109,6 +109,17 @@ try {
     Assert-True ($spaced.ExitCode -eq 0) 'A-13 공백 포함 경로 인자도 정상 실행된다' "$($spaced.StdErr)".Trim()
     Assert-True ("$($spaced.StdOut)".Trim() -eq $repoSpace) 'A-14 공백 포함 경로가 1개 인자로 전달된다' "$($spaced.StdOut)".Trim()
 
+    # 출력 배수(drain) 회귀 — WaitForExit(타임아웃)만으로는 리다이렉트 출력이
+    # 파일에 다 쓰이기 전에 반환될 수 있어(특히 Unix 파이프+펌프) stdout 이
+    # 비어 읽히는 경우가 있다. 20회 반복 호출이 매번 온전한 stdout 을 돌려줘야 한다.
+    Invoke-Git @('-C', $repoSpace, 'remote', 'add', 'origin', 'https://example.invalid/someowner/repo-space.git')
+    $drainFails = 0
+    for ($d = 1; $d -le 20; $d++) {
+        $drainCall = Invoke-GissueBoundedProcess -FilePath 'git' -ArgumentList @('-C', $repoSpace, 'remote', 'get-url', 'origin') -TimeoutSec 30
+        if ($drainCall.ExitCode -ne 0 -or "$($drainCall.StdOut)".Trim() -ne 'https://example.invalid/someowner/repo-space.git') { $drainFails++ }
+    }
+    Assert-Eq $drainFails 0 'A-15 반복 git 호출 20회 모두 온전한 stdout 을 돌려준다' "실패 $drainFails/20회"
+
     # ──────────────────────────────────────────────────────────────────────────
     Write-Output ''
     Write-Output 'B. Resolve-GissueBoundedCallTimeoutSec'
