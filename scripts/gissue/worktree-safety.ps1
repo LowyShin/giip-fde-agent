@@ -1201,12 +1201,41 @@ function Get-GissueWorktreeDirtyPaths {
 #   - 삭제 직전 링크 선검사 → 링크 있으면 rule 55 §2-예외 3조건 판정 → 불충족이면 ManualReview
 #   - 예외 충족 시: 대상 사전 건전성 확인 → 정션만 제거 → 대상 사후 건전성 재확인 → worktree 제거
 #   - 항목별 삭제 직후 인접 nested repo 무결성 재검증, 이상 시 즉시 전체 중단
+#   - 시간 한도(타임박스): 이 레포 1건당 Resolve-GissueWorktreeCleanupBudgetSec(기본 180초,
+#     env GISSUE_WORKTREE_CLEANUP_BUDGET_SEC 으로 덮어쓰기). 항목 사이에서 경과를 확인해
+#     한도에 걸리면 멈추고 "시간 한도 도달 — 나머지는 다음 실행" 한 줄과 함께 정상 반환한다
+#     (throw 하지 않는다 — 호출자는 다음 단계/잡으로 진행한다). 남은 항목은 다음 실행이
+#     처리한다. 한 항목 안의 작업(링크 스캔·git 호출·삭제)은 동기라 중간에 끊을 수 없어
+#     한도는 항목 경계에서만 확인된다. `gh pr list` 조회 1회도 마찬가지라, 조회 자체가
+#     길어지면 그 시간은 한도로 막지 못한다(한도 확인은 조회 뒤 첫 항목부터 시작한다).
+#     기본값 180초의 근거: 항목 1건당 수십 ms~1초 수준이면 100건 규모도 100초 안팎에
+#     끝나고, 병목 시에도 한 단계가 러너를 3분 넘게 붙잡지 못하게 한다(RunTimeoutMin
+#     105분·사후 스윕 반복당 예산 90초와 견줘도 한 단계의 최악 블로킹이 작게 묶인다).
 #
 # ★ 결과는 **`-ResultRef ([ref]$var)` 로만** 돌려준다 — 이 함수 자체는 반환값을 파이프라인에 내보내지
 #   않는다. 이유: 로그 콜백(`-Log`)이 `Write-Output` 으로 찍는 구현(이 레포의 Write-Log/
 #   Write-CleanupLog 가 그렇다)이면 그 로그가 함수의 성공 스트림에 섞여, 호출자가
 #   `$r = Invoke-...` 로 받는 순간 **로그가 통째로 사라지고 $r 이 배열이 된다**(2026-09-14 실측).
 #   결과를 [ref] 로 빼면 로그는 호출자 스트림으로 그대로 흘러가고 rule 55 §5(과정 로그)가 지켜진다.
+#
+# 시간 한도 해석: 양의 정수 초. 명시값이 있으면 그 값, 없으면 환경변수
+# GISSUE_WORKTREE_CLEANUP_BUDGET_SEC, 둘 다 없거나 양의 정수가 아니면 기본값.
+# $DefaultSec 으로 기본값을 바꿀 수 있다(하루 1회 전체 스윕은 호출자가 더 크게 준다).
+function Resolve-GissueWorktreeCleanupBudgetSec($Value, [int]$DefaultSec = 180) {
+    if ($null -ne $Value) {
+        $s = "$Value".Trim()
+        $n = 0
+        if ([int]::TryParse($s, [ref]$n) -and $n -gt 0) { return $n }
+    }
+    $envValue = $env:GISSUE_WORKTREE_CLEANUP_BUDGET_SEC
+    if ($null -ne $envValue) {
+        $s = "$envValue".Trim()
+        $n = 0
+        if ([int]::TryParse($s, [ref]$n) -and $n -gt 0) { return $n }
+    }
+    if ($DefaultSec -gt 0) { return $DefaultSec }
+    return 180
+}
 function Invoke-GissueWorktreeCleanupForRepo {
     param(
         [Parameter(Mandatory = $true)][string]$RepoPath,
@@ -1217,6 +1246,7 @@ function Invoke-GissueWorktreeCleanupForRepo {
         [string[]]$SiblingRepos = @(),
         [string]$OnlyPath = $null,
         [int]$MinIdleMinutes = 120,
+        [double]$TimeBudgetSec = -1,
         [ref]$ResultRef = $null
     )
     $say = {
@@ -1227,8 +1257,17 @@ function Invoke-GissueWorktreeCleanupForRepo {
         RepoPath = $RepoPath; Removed = @(); ManualReview = @(); SkippedLocked = @()
         Aborted = $false; AbortReason = $null
         SkippedStaleCode = $false; StaleCodeReason = $null
+        TimeBudgetExpired = $false; TimeBudgetSec = 0
+        ProcessedCount = 0; RemainingCount = 0; TotalEntries = 0
     }
     $publish = { if ($ResultRef) { $ResultRef.Value = $result } }
+    # 시간 한도: -1(기본)이면 환경변수·기본값(180초)으로 해석한다. 스톱워치는 여기서
+    # 시작해 `gh pr list` 조회까지 측정 창에 넣는다 — 다만 한도 확인은 항목 경계에서만
+    # 하므로 조회 자체가 길어지면 그 시간은 막지 못한다(위 정책 주석 참조).
+    $effectiveBudgetSec = if ($TimeBudgetSec -gt 0) { $TimeBudgetSec } else { Resolve-GissueWorktreeCleanupBudgetSec $null }
+    $result.TimeBudgetSec = $effectiveBudgetSec
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $processedCount = 0
 
     # ── 낡은 코드 가드(giip #2471) ──
     # 이 함수 전체가 호출자 프로세스의 메모리에 고정된 판정이다. 그 프로세스가 기동한 뒤 이 판정
@@ -1274,9 +1313,22 @@ function Invoke-GissueWorktreeCleanupForRepo {
     try { git -C $repoFull worktree prune 2>&1 | Out-Null } catch {}
     $merged = Get-GissueMergedBranchSet -RepoPath $repoFull -Log $Log
     $entries = Get-GissueWorktreeEntries -RepoPath $repoFull
+    $result.TotalEntries = @($entries).Count
 
     foreach ($e in $entries) {
         if ($result.Aborted) { break }
+        # ── 시간 한도: 항목 경계에서 확인한다. 한 항목 안의 작업은 동기라 중간에
+        #   끊을 수 없으므로, 여기서 걸리면 이 항목은 건드리지 않고 멈춘다. 남은
+        #   항목은 다음 실행이 처리한다. throw 하지 않고 정상 반환한다 — 호출자
+        #   (사후 스윕 큐)가 다음 단계로 진행할 수 있게 Aborted 는 세우지 않는다.
+        if ($sw.Elapsed.TotalSeconds -ge $effectiveBudgetSec) {
+            $result.TimeBudgetExpired = $true
+            $result.ProcessedCount = $processedCount
+            $result.RemainingCount = @($entries).Count - $processedCount
+            & $say "시간 한도 도달 — 나머지는 다음 실행 (처리 $($processedCount)건, 남음 $($result.RemainingCount)건, 경과 $([int]$sw.Elapsed.TotalSeconds)초, 예산 ${effectiveBudgetSec}초): $repoFull"
+            break
+        }
+        $processedCount++
         $ePath = try { (Resolve-Path -LiteralPath $e.Path -ErrorAction Stop).Path } catch { $e.Path }
         if ($ePath -ieq $repoFull) { continue }                                   # 주 worktree
         # ★ giip 5175(2026-11-14): `.claude/worktrees` 를 **무조건 제외하지 않는다**.
@@ -1529,6 +1581,12 @@ function Invoke-GissueWorktreeCleanupForRepo {
             }
         }
         $result.Removed += [pscustomobject]@{ Path = $ePath; Branch = $e.Branch; Exempt = [bool]$exemption }
+    }
+    # 정상 완료(시간 한도 미도달) — 처리 건수를 확정해 호출자가 마커·로그에 쓸 수 있게 한다.
+    # 시간 한도로 멈춘 경우는 위 break 분기에서 이미 채웠다.
+    if (-not $result.TimeBudgetExpired) {
+        $result.ProcessedCount = $processedCount
+        $result.RemainingCount = 0
     }
     & $publish
 }

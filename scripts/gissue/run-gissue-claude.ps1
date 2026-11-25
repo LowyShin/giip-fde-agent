@@ -1445,6 +1445,16 @@ $OvertimeSettings = Get-GissueOvertimeSettings $OvertimeSplitMode
 # 처리한다(한 스윕이 길어도 다른 잡의 과시간/TIMEOUT 판정을 막지 않게). 정본·사유: lib/run-finalize.ps1.
 . (Join-Path $Root 'lib/run-finalize.ps1')
 $PostProcessBudgetSec = Resolve-GissuePostProcessBudgetSec $env:GISSUE_POSTPROC_BUDGET_SEC
+# [stall-timebox] 시간 한도 도달 기록(stall 마커) — 정본은 lib/stall-marker.ps1.
+# post-process 단계가 시간 한도에 걸리면 마커(JSON)를 남기고, 다음 실행이 시작 시 읽어
+# 종료 기록에 실는다. 로드 실패 시 마커만 건너뛰고 실행은 계속한다(fail-open).
+$script:GissueStallMarkerLibReady = $false
+try {
+    $stallMarkerLib = Join-Path $Root 'lib/stall-marker.ps1'
+    if (Test-Path -LiteralPath $stallMarkerLib) { . $stallMarkerLib; $script:GissueStallMarkerLibReady = $true }
+} catch {
+    Write-Output "[WARN][STALL-MARKER] 라이브러리 로드 실패(무시하고 계속 — stall 마커는 이번 실행에서 건너뜀): $($_.Exception.Message)"
+}
 $script:RunnerStartedAtUtc = (Get-Date).ToUniversalTime()
 try { $script:RunnerStartedAtUtc = (Get-Process -Id $PID).StartTime.ToUniversalTime() } catch { }
 
@@ -2152,7 +2162,43 @@ try {
     Write-Output "[WARN][KVS-START] 시작 기록 실패(무시하고 계속): $($_.Exception.Message)"
 }
 
-function Invoke-GissueWorktreeCleanup($csn, $workdir, [switch]$DryRunSwitch, [int]$MinIdleMinutes = -1) {
+# ── [stall-timebox] 이전 실행의 stall 마커를 이번 실행 기록으로 끌어올린다 ──
+# post-process 단계(WorktreeCleanup 등)가 시간 한도에 걸려 마커를 남기고 죽은 실행은
+# 자기 [RUN-END-SUMMARY] 를 남기지 못한다. 마커는 로그 디렉터리의 JSON 파일로 살아남으므로,
+# 다음 :07 실행 시작 시(긴 단계 전) 여기서 읽어 CSN 로그에 [STALL-PREV] 로 남기고,
+# 이번 실행의 Complete-Run 이 [RUN-END-SUMMARY] 에 실어 tSchedulerAgentRun.summary 로 올린다.
+# 마커 삭제는 Complete-Run 의 종료 기록 시도 뒤에만 한다 — 기록 전에 지우면 강제종료 시
+# stall 사실 자체가 사라진다. 여기는 읽기+로그만 하고 지우지 않으므로 -DryRun 에서도 무해하다.
+$script:GissuePrevStallNotes = @{}
+try {
+    if ($script:GissueStallMarkerLibReady) {
+        foreach ($csnKey in @($map.PSObject.Properties.Name)) {
+            $notes = @(Get-GissuePrevStallNotes -LogDir $LogDir -Csn "$csnKey")
+            foreach ($n in $notes) { Write-Log $csnKey "[STALL-PREV] $n" }
+            if (@($notes).Count -gt 0) { $script:GissuePrevStallNotes["$csnKey"] = @($notes) }
+        }
+    }
+} catch {
+    Write-Output "[WARN][STALL-PREV] 이전 실행 stall 마커 확인 실패(무시하고 계속): $($_.Exception.Message)"
+}
+
+# [stall-timebox] 시간 한도 도달 마커 쓰기(WorktreeCleanup/DailySweep 래퍼 공용).
+# 실패해도 던지지 않는다 — 마커 쓰기 실패는 stall 사실의 기록만 놓치는 것이지 정리
+# 자체의 실패가 아니므로, 래퍼의 fail-open 계약(스케줄러 종료 흐름을 막지 않는다)을 지킨다.
+function Write-GissueWorktreeCleanupStallMarker($csn, $phase, $elapsedSec, $processed, $remaining, $budgetSec, $detail) {
+    try {
+        if (-not $script:GissueStallMarkerLibReady) { return }
+        $runId = ''
+        try { if ($script:GissueSchedulerRunId) { $runId = "$script:GissueSchedulerRunId" } } catch { $runId = '' }
+        $null = Write-GissueStallMarker -LogDir $LogDir -Csn "$csn" -Phase $phase `
+            -ElapsedSec $elapsedSec -Processed $processed -Remaining $remaining `
+            -BudgetSec $budgetSec -RunId $runId -Detail $detail
+    } catch {
+        Write-Log $csn "[$phase][WARN] stall 마커 쓰기 실패(다음 실행 표면화 없음 — 무해): $($_.Exception.Message)"
+    }
+}
+
+function Invoke-GissueWorktreeCleanup($csn, $workdir, [switch]$DryRunSwitch, [int]$MinIdleMinutes = -1, [int]$TimeBudgetSec = -1) {
     if (-not $script:WorktreeEngineLoaded) { return }
     try {
         if (-not (Test-Path $workdir)) { return }
@@ -2163,12 +2209,29 @@ function Invoke-GissueWorktreeCleanup($csn, $workdir, [switch]$DryRunSwitch, [in
         # 여기에 숫자를 복제해두면 "한쪽만 고쳐지는" 바로 그 사고가 재현되므로 상수를 두지 않는다.
         $idleArgs = @{}
         if ($MinIdleMinutes -ge 0) { $idleArgs['MinIdleMinutes'] = $MinIdleMinutes }
+        # [stall-timebox] 이 단계 전체의 시간 한도(기본 180초, env GISSUE_WORKTREE_CLEANUP_BUDGET_SEC).
+        # 레포마다 남은 예산을 나눠 준다 — 엔진은 항목 경계에서 멈추고, 남은 레포는 다음 실행이 처리한다.
+        $budgetSec = if ($TimeBudgetSec -gt 0) { $TimeBudgetSec } else { Resolve-GissueWorktreeCleanupBudgetSec $env:GISSUE_WORKTREE_CLEANUP_BUDGET_SEC }
+        $stepSw = [System.Diagnostics.Stopwatch]::StartNew()
+        $reposDone = 0
         foreach ($repo in $repoPaths) {
+            $remainingSec = $budgetSec - [int]$stepSw.Elapsed.TotalSeconds
+            if ($remainingSec -le 0) {
+                Write-Log $csn "[WORKTREE-CLEANUP] 시간 한도 도달 — 나머지는 다음 실행 (처리 $($reposDone)개 레포, 남음 $(@($repoPaths).Count - $reposDone)개 레포, 경과 $([int]$stepSw.Elapsed.TotalSeconds)초, 예산 ${budgetSec}초)"
+                Write-GissueWorktreeCleanupStallMarker $csn 'WorktreeCleanup' ([int]$stepSw.Elapsed.TotalSeconds) $reposDone (@($repoPaths).Count - $reposDone) $budgetSec '레포 단위'
+                return
+            }
             $r = $null
             Invoke-GissueWorktreeCleanupForRepo -RepoPath $repo -Log $logger -DryRun:$DryRunSwitch @idleArgs `
-                -DeleteRemoteBranch $false -SiblingRepos $repoPaths -ResultRef ([ref]$r)
+                -DeleteRemoteBranch $false -SiblingRepos $repoPaths -TimeBudgetSec $remainingSec -ResultRef ([ref]$r)
+            $reposDone++
             if ($r -and $r.Aborted) {
                 Write-Log $csn "[WORKTREE-CLEANUP] CRITICAL: $($r.AbortReason) — 즉시 중단하고 사람에게 보고 필요. 남은 레포/항목은 처리하지 않음."
+                return
+            }
+            if ($r -and $r.TimeBudgetExpired) {
+                # 엔진이 남은 예산을 다 썼다 — 이 단계는 여기서 끝낸다(다음 레포는 다음 실행).
+                Write-GissueWorktreeCleanupStallMarker $csn 'WorktreeCleanup' ([int]$stepSw.Elapsed.TotalSeconds) $r.ProcessedCount $r.RemainingCount $budgetSec "레포=$repo (worktree 항목 단위)"
                 return
             }
         }
@@ -2181,7 +2244,7 @@ function Invoke-GissueWorktreeCleanup($csn, $workdir, [switch]$DryRunSwitch, [in
 # giip #2440 원인 3(스코프 갭) 대응 — 하루 1회 전체 스윕. 어느 CSN 의 workdir 에도 직계로 들어있지 않은
 # 레포는 위 함수가 영원히 도달하지 못한다(실측: 6건이 22일 방치). 매 종료마다 전체 스윕은 비용이 커
 # 스탬프 파일로 하루 1회만 돈다.
-function Invoke-GissueWorktreeDailySweep($csn, [switch]$DryRunSwitch, [int]$MinIdleMinutes = -1) {
+function Invoke-GissueWorktreeDailySweep($csn, [switch]$DryRunSwitch, [int]$MinIdleMinutes = -1, [int]$TimeBudgetSec = -1) {
     if (-not $script:WorktreeEngineLoaded) { return }
     try {
         $stamp = Join-Path $LogDir 'worktree_daily_sweep.stamp'
@@ -2199,18 +2262,38 @@ function Invoke-GissueWorktreeDailySweep($csn, [switch]$DryRunSwitch, [int]$MinI
             }
         }
         # 먼저 스탬프를 찍는다 — 스윕이 중간에 실패해도 같은 날 반복 재시도로 시간을 태우지 않게.
+        # [stall-timebox] 스탬프는 시간 한도로 멈춘 스윕에도 찍힌다(종전 그대로) — 남은 레포는
+        # 다음 날 스윕이 처리한다. CSN별 정리(매 실행)가 각 CSN 자신의 레포는 매번 처리하므로,
+        # 일일 스윕은 스코프 갭 레포의 백스톱이다.
         Set-Content -LiteralPath $stamp -Value $today -Encoding UTF8
         $repos = @(Get-GissueAllProjectRepoPaths $map -Log { param($m) Write-Log $csn $m })
         Write-Log $csn "[WORKTREE-SWEEP] 하루 1회 전체 스윕 시작 — 대상 $($repos.Count)개 레포"
         $logger = { param($m) Write-Log $csn "[WORKTREE-SWEEP] $m" }
         $idleArgs = @{}
         if ($MinIdleMinutes -ge 0) { $idleArgs['MinIdleMinutes'] = $MinIdleMinutes }
+        # [stall-timebox] 전체 스윕의 시간 한도(기본 600초, env GISSUE_WORKTREE_SWEEP_BUDGET_SEC).
+        # CSN별 정리(기본 180초)보다 크게 잡는다 — 대상이 전 레포라서다. 레포마다 남은 예산을
+        # 나눠 주고, 한도에 걸리면 멈추고 마커를 남긴 뒤 정상 반환한다(다음 날 스윕이 이어받는다).
+        $sweepBudgetSec = if ($TimeBudgetSec -gt 0) { $TimeBudgetSec } else { Resolve-GissueWorktreeCleanupBudgetSec $env:GISSUE_WORKTREE_SWEEP_BUDGET_SEC 600 }
+        $sweepSw = [System.Diagnostics.Stopwatch]::StartNew()
+        $sweepReposDone = 0
         foreach ($repo in $repos) {
+            $sweepRemainingSec = $sweepBudgetSec - [int]$sweepSw.Elapsed.TotalSeconds
+            if ($sweepRemainingSec -le 0) {
+                Write-Log $csn "[WORKTREE-SWEEP] 시간 한도 도달 — 나머지는 다음 실행 (처리 $($sweepReposDone)개 레포, 남음 $(@($repos).Count - $sweepReposDone)개 레포, 경과 $([int]$sweepSw.Elapsed.TotalSeconds)초, 예산 ${sweepBudgetSec}초)"
+                Write-GissueWorktreeCleanupStallMarker $csn 'WorktreeDailySweep' ([int]$sweepSw.Elapsed.TotalSeconds) $sweepReposDone (@($repos).Count - $sweepReposDone) $sweepBudgetSec '레포 단위'
+                return
+            }
             $r = $null
             Invoke-GissueWorktreeCleanupForRepo -RepoPath $repo -Log $logger -DryRun:$DryRunSwitch @idleArgs `
-                -DeleteRemoteBranch $false -SiblingRepos $repos -ResultRef ([ref]$r)
+                -DeleteRemoteBranch $false -SiblingRepos $repos -TimeBudgetSec $sweepRemainingSec -ResultRef ([ref]$r)
+            $sweepReposDone++
             if ($r -and $r.Aborted) {
                 Write-Log $csn "[WORKTREE-SWEEP] CRITICAL: $($r.AbortReason) — 즉시 중단, 남은 레포는 처리하지 않음."
+                return
+            }
+            if ($r -and $r.TimeBudgetExpired) {
+                Write-GissueWorktreeCleanupStallMarker $csn 'WorktreeDailySweep' ([int]$sweepSw.Elapsed.TotalSeconds) $r.ProcessedCount $r.RemainingCount $sweepBudgetSec "레포=$repo (worktree 항목 단위)"
                 return
             }
         }
@@ -4359,12 +4442,31 @@ function Complete-Run($r, $status) {
             $runEndSummary = $status
             try {
                 if ($script:GissueRunSummaryLibReady) {
+                    # [stall-timebox] 실행 시작 시 읽어 둔 이전 실행 stall 요약을 싣는다.
+                    # 마커는 이 종료 기록에 실린 뒤에만(아래) 지운다 — 기록 전에 지우면
+                    # 이 실행이 강제종료될 때 stall 사실 자체가 사라진다.
+                    $stallNotes = @()
+                    try {
+                        if ($script:GissuePrevStallNotes -and $script:GissuePrevStallNotes.ContainsKey("$($r.Csn)")) {
+                            $stallNotes = @($script:GissuePrevStallNotes["$($r.Csn)"])
+                        }
+                    } catch { $stallNotes = @() }
                     $runEndSummary = Format-GissueRunEndSummary -Status $status -CodeVersion $codeVersion `
-                        -EnginePath $engineSummary -SyncInfo $syncSummary -RecordFailures $recordFailures
+                        -EnginePath $engineSummary -SyncInfo $syncSummary -RecordFailures $recordFailures `
+                        -StallNotes $stallNotes
                 }
             } catch { $runEndSummary = $status }
             Write-Log $r.Csn "[RUN-END-SUMMARY] $runEndSummary"
             $null = Invoke-SchedulerAgentSp -ApiUrl $ApiSk2Url -Sk $r.Sk -Name 'SchedulerAgentRunEnd' -Values @($r.RunIdKey, "gissue_csn$($r.Csn)", $runStatus, [string]$r.ProcessedCount, [string]$r.SkippedCount, [string]$r.FailedCount, $exitCode, $runEndSummary)
+            # [stall-timebox] 이전 실행 stall 마커 소비 — 종료 기록에 실은 뒤에만 지운다.
+            # 위 기록 호출이 던지면 이 줄은 건너뛰어 마커가 남아, 다음 실행에 다시 표면화된다.
+            try {
+                if ($script:GissueStallMarkerLibReady) {
+                    $null = Clear-GissueStallMarkers -LogDir $LogDir -Csn "$($r.Csn)"
+                }
+            } catch {
+                Write-Log $r.Csn "[STALL-PREV][WARN] stall 마커 정리 실패(다음 실행에 다시 표면화됨 — 무해): $($_.Exception.Message)"
+            }
         } catch {
             Write-Log $r.Csn "[SchedulerState-runEnd] 실패: $($_.Exception.Message)"
         }

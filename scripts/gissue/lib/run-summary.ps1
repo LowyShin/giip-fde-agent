@@ -161,10 +161,11 @@ function Get-GissueSchedulerStateFailures {
 
 # ── 최종 summary 조립 ────────────────────────────────────────────────────────────
 # 순서(중요도가 높은 것 먼저 — 길이 제한으로 잘릴 때 실행 판정에 필요한 정보가 살아남도록):
-#   1) 종료 상태  2) 기록 호출 실패  3) 실행 코드 버전(HEAD)  4) 엔진 경로 요약  5) 자동 반영 결과
-# "기록 호출 실패"를 2번째에 두는 이유: 전체를 한꺼번에 자르면 **뒤쪽 항목이 통째로 사라진다.**
-# 그 신호가 잘려 나가면 "기록 실패"가 조용히 사라져 요구("기록 호출 실패는 예외로 드러나 … RunEnd
-# summary 에 남는다")가 깨진다. 2번째에 두면 어떤 길이 제한에서도 살아남는다.
+#   1) 종료 상태  2) 이전 실행 stall  3) 기록 호출 실패  4) 실행 코드 버전(HEAD)
+#   5) 엔진 경로 요약  6) 자동 반영 결과
+# "이전 실행 stall"을 2번째에 두는 이유: 전체를 한꺼번에 자르면 **뒤쪽 항목이 통째로 사라진다.**
+# stall 은 앞 실행이 강제종료돼 자기 종료 기록을 못 남긴 신호라, 잘려 나가면 "stall 이 없었다"로
+# 읽히게 된다. 기록 호출 실패와 같은 자리(앞쪽)에 두면 어떤 길이 제한에서도 살아남는다.
 # $MaxLength 를 넘으면 끝을 '…' 로 자른다(사양서의 detail 500자 절단 관례와 같은 취지).
 #
 # 항목별 길이 제한이 붙는 이유: 앞 항목이 길어도 뒤 항목(엔진 경로·자동 반영)이 통째로 잘리지 않게.
@@ -184,12 +185,21 @@ function Format-GissueRunEndSummary {
         [string]$EnginePath = '',
         [string]$SyncInfo = '',
         [string[]]$RecordFailures = @(),
+        [string[]]$StallNotes = @(),
         [int]$MaxLength = 500
     )
     $parts = @()
     $s = Format-GissueSummaryPart -Text $Status -MaxLength 60
     if ($s) { $parts += $s }
-    # 기록 호출 실패 — 두 번째 자리(길이 제한으로 잘려도 살아남는 자리).
+    # 이전 실행 stall — 두 번째 자리(길이 제한으로 잘려도 살아남는 자리).
+    # 마커는 앞 실행의 post-process 단계가 시간 한도에 걸려 남긴 것이다. 그 실행은
+    # 자기 종료 기록을 못 남겼으므로, 이 실행의 summary 가 유일한 실행 이력 통로다.
+    if (@($StallNotes).Count -gt 0) {
+        $n = @($StallNotes).Count
+        $first = Format-GissueSummaryPart -Text (@($StallNotes)[0]) -MaxLength 90
+        $parts += "이전실행 stall ${n}건(예: $first)"
+    }
+    # 기록 호출 실패 — 세 번째 자리(길이 제한으로 잘려도 살아남는 자리).
     if (@($RecordFailures).Count -gt 0) {
         $n = @($RecordFailures).Count
         $first = Format-GissueSummaryPart -Text (@($RecordFailures)[0]) -MaxLength 90
