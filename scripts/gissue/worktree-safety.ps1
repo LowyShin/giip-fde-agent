@@ -36,6 +36,56 @@ if (-not (Get-Command Read-GissueMergedBranchDiskCache -ErrorAction SilentlyCont
     } catch {}
 }
 
+# 외부 호출 타임아웃(lib/bounded-process.ps1) — gh/git 호출 1회에 유한한 한도를 건다.
+# 이미 로드돼 있으면 건너뛴다. 파일이 없어도 이 모듈 전체를 죽이지 않게 감싼다 —
+# 헬퍼 미가동 시 아래 Invoke-GissueExternalCall 이 기존 직접 호출로 떨어진다.
+if (-not (Get-Command Invoke-GissueBoundedProcess -ErrorAction SilentlyContinue)) {
+    try {
+        $boundedLibPath = Join-Path $script:GissueWorktreeSafetyDir 'lib\bounded-process.ps1'
+        if (Test-Path -LiteralPath $boundedLibPath) { . $boundedLibPath }
+    } catch {}
+}
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 외부 명령(gh/git) 1회 실행 — 유한한 타임아웃付き.
+#   lib/bounded-process.ps1 의 Invoke-GissueBoundedProcess 가 로드돼 있으면 그걸 쓰고,
+#   없으면(부분 체크아웃 등) 기존 직접 호출(`&`)로 떨어진다 — 타임아웃은 없지만
+#   정리 자체는 종전대로 돈다. 반환 형태는 양쪽이 같다:
+#   @{ Started; TimedOut; ExitCode; StdOut; StdErr }.
+#   타임아웃은 호출처가 "실패"로 취급해 fail-closed 로 처리한다(삭제 금지·다음 항목 진행).
+#   StdOut/StdErr 분리 규칙: 직접 호출 폴백은 stderr 를 ErrorRecord 로 구분한다.
+#   한도는 -Kind 로 정한다(Gh 60초 / Git 30초, env 재정의는 lib 참조). 명시 -TimeoutSec 우선.
+# ──────────────────────────────────────────────────────────────────────────────
+function Invoke-GissueExternalCall {
+    param(
+        [Parameter(Mandatory = $true)][string]$FilePath,
+        [string[]]$ArgumentList = @(),
+        [int]$TimeoutSec = 0,
+        [ValidateSet('Gh', 'Git')][string]$Kind = 'Git'
+    )
+    # 한도 해석 — lib 의 resolver 가 있으면 그걸 쓰고, 없으면(부분 체크아웃) 기본값을 쓴다.
+    # Gh 60초 / Git 30초. 명시 -TimeoutSec 가 있으면 그 값을 우선한다.
+    if ($TimeoutSec -le 0) {
+        if (Get-Command Resolve-GissueBoundedCallTimeoutSec -ErrorAction SilentlyContinue) {
+            $TimeoutSec = Resolve-GissueBoundedCallTimeoutSec -Kind $Kind
+        } elseif ($Kind -eq 'Gh') { $TimeoutSec = 60 } else { $TimeoutSec = 30 }
+    }
+    if (Get-Command Invoke-GissueBoundedProcess -ErrorAction SilentlyContinue) {
+        return (Invoke-GissueBoundedProcess -FilePath $FilePath -ArgumentList $ArgumentList -TimeoutSec $TimeoutSec)
+    }
+    try {
+        $out = & $FilePath @ArgumentList 2>&1
+        $code = $LASTEXITCODE
+        $std = @(); $err = @()
+        foreach ($line in @($out)) {
+            if ($line -is [System.Management.Automation.ErrorRecord]) { $err += "$line" } else { $std += "$line" }
+        }
+        return [pscustomobject]@{ Started = $true; TimedOut = $false; ExitCode = [int]$code; StdOut = ($std -join "`n"); StdErr = ($err -join "`n") }
+    } catch {
+        return [pscustomobject]@{ Started = $false; TimedOut = $false; ExitCode = -1; StdOut = ''; StdErr = "$($_.Exception.Message)" }
+    }
+}
+
 # ---------------------------------------------------------------------------
 # rule 55 §1-2 — 재귀삭제 전 심볼릭 링크/정션 선검사.
 # 2026-09-09 사고(giip #2232): worktree 안의 `giipv3` 정션을 재귀삭제가 따라 들어가 진짜
@@ -161,8 +211,11 @@ function Get-GissueRepoIntegritySnapshot($paths) {
         $exists = Test-Path -LiteralPath $gitPath
         $head = $null; $remote = $null
         if ($exists) {
-            try { $head = git -C $pFull rev-parse HEAD 2>$null } catch {}
-            try { $remote = (git -C $pFull remote get-url origin 2>$null) } catch {}
+            # 유한한 타임아웃付き — git 이 멈추면 빈 값(판정 불가)으로 떨어진다(종전 실패와 동일).
+            $headCall = Invoke-GissueExternalCall -FilePath 'git' -ArgumentList @('-C', $pFull, 'rev-parse', 'HEAD') -Kind Git
+            if (-not $headCall.TimedOut -and $headCall.ExitCode -eq 0) { $head = "$($headCall.StdOut)".Trim() }
+            $remoteCall = Invoke-GissueExternalCall -FilePath 'git' -ArgumentList @('-C', $pFull, 'remote', 'get-url', 'origin') -Kind Git
+            if (-not $remoteCall.TimedOut -and $remoteCall.ExitCode -eq 0) { $remote = "$($remoteCall.StdOut)".Trim() }
         }
         $snap[$pFull] = @{ Exists = $exists; Head = "$head"; Remote = "$remote" }
     }
@@ -174,11 +227,9 @@ function Get-GissueRepoIntegritySnapshot($paths) {
 # 커밋인가"를 판별하는 가장 값싼 수단이다.
 function Test-GissueGitObjectIsCommit([string]$RepoPath, [string]$Sha) {
     if ([string]::IsNullOrWhiteSpace($Sha)) { return $false }
-    try {
-        $t = git -C $RepoPath cat-file -t $Sha 2>$null
-        if ($LASTEXITCODE -ne 0) { return $false }
-        return ("$t".Trim() -eq 'commit')
-    } catch { return $false }
+    $call = Invoke-GissueExternalCall -FilePath 'git' -ArgumentList @('-C', $RepoPath, 'cat-file', '-t', $Sha) -Kind Git
+    if ($call.TimedOut -or $call.ExitCode -ne 0) { return $false }
+    return ("$($call.StdOut)".Trim() -eq 'commit')
 }
 
 # ---------------------------------------------------------------------------
@@ -858,16 +909,18 @@ function Test-GissueJunctionTargetHealthy {
     if (-not (Test-Path -LiteralPath (Join-Path $TargetRepoRoot '.git'))) {
         return [pscustomobject]@{ Ok = $false; Detail = "대상 레포의 .git 없음: $TargetRepoRoot" }
     }
-    $head = $null
-    try { $head = git -C $TargetRepoRoot rev-parse HEAD 2>$null } catch {}
-    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace("$head")) {
-        return [pscustomobject]@{ Ok = $false; Detail = "대상 레포 rev-parse HEAD 실패: $TargetRepoRoot" }
+    $headCall = Invoke-GissueExternalCall -FilePath 'git' -ArgumentList @('-C', $TargetRepoRoot, 'rev-parse', 'HEAD') -Kind Git
+    if ($headCall.TimedOut -or $headCall.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace("$($headCall.StdOut)")) {
+        $why = if ($headCall.TimedOut) { '시간 초과' } else { '실패' }
+        return [pscustomobject]@{ Ok = $false; Detail = "대상 레포 rev-parse HEAD $why`: $TargetRepoRoot" }
     }
-    $remote = $null
-    try { $remote = git -C $TargetRepoRoot remote get-url origin 2>$null } catch {}
-    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace("$remote")) {
-        return [pscustomobject]@{ Ok = $false; Detail = "대상 레포 remote get-url origin 실패: $TargetRepoRoot" }
+    $head = "$($headCall.StdOut)".Trim()
+    $remoteCall = Invoke-GissueExternalCall -FilePath 'git' -ArgumentList @('-C', $TargetRepoRoot, 'remote', 'get-url', 'origin') -Kind Git
+    if ($remoteCall.TimedOut -or $remoteCall.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace("$($remoteCall.StdOut)")) {
+        $why = if ($remoteCall.TimedOut) { '시간 초과' } else { '실패' }
+        return [pscustomobject]@{ Ok = $false; Detail = "대상 레포 remote get-url origin $why`: $TargetRepoRoot" }
     }
+    $remote = "$($remoteCall.StdOut)".Trim()
     $childCount = -1
     try { $childCount = @([System.IO.Directory]::EnumerateFileSystemEntries($TargetPath) | Select-Object -First 1).Count } catch {}
     return [pscustomobject]@{
@@ -923,7 +976,13 @@ function Get-GissueMergedBranchSet {
     if ($script:GissueMergedBranchCache.ContainsKey($key)) { return $script:GissueMergedBranchCache[$key] }
     $result = [pscustomobject]@{ Ok = $false; OwnerRepo = $null; Branches = (New-Object 'System.Collections.Generic.HashSet[string]') }
     $originUrl = $null
-    try { $originUrl = git -C $repoFull remote get-url origin 2>$null } catch {}
+    $originCall = Invoke-GissueExternalCall -FilePath 'git' -ArgumentList @('-C', $repoFull, 'remote', 'get-url', 'origin') -Kind Git
+    if ($originCall.TimedOut) {
+        if ($Log) { & $Log "머지판정 불가(git remote get-url origin 시간 초과): $repoFull" | Out-Null }
+        $script:GissueMergedBranchCache[$key] = $result
+        return $result
+    }
+    if ($originCall.ExitCode -eq 0) { $originUrl = "$($originCall.StdOut)".Trim() }
     if (-not $originUrl) {
         if ($Log) { & $Log "머지판정 불가(origin remote 없음): $repoFull" | Out-Null }
         $script:GissueMergedBranchCache[$key] = $result
@@ -950,10 +1009,19 @@ function Get-GissueMergedBranchSet {
         }
     }
     # giip #2220: gh 는 cwd 기준으로 owner/repo 를 추론한다 — 반드시 --repo 를 명시한다.
-    try {
-        $ghOut = & gh pr list --repo $ghOwnerRepo --state merged --json headRefName --limit 1000 2>&1
-        if ($LASTEXITCODE -eq 0) {
-            $parsed = $ghOut | ConvertFrom-Json
+    # 유한한 타임아웃付き — gh 가 멈추면(2026-11-25 실측: 정리 단계 31분 침묵) Ok=$false 로
+    # fail-closed 처리하고 다음 레포로 진행한다. 시간 한도(항목 경계 검사)는 호출
+    # 자체가 길어지면 발동하지 않으므로, 호출 자체에 한도를 거는 것이 이 수정의 핵심이다.
+    $ghTimeoutSec = if (Get-Command Resolve-GissueBoundedCallTimeoutSec -ErrorAction SilentlyContinue) { Resolve-GissueBoundedCallTimeoutSec -Kind Gh } else { 60 }
+    $ghCall = Invoke-GissueExternalCall -FilePath 'gh' -ArgumentList @('pr', 'list', '--repo', $ghOwnerRepo, '--state', 'merged', '--json', 'headRefName', '--limit', '1000') -TimeoutSec $ghTimeoutSec -Kind Gh
+    if ($ghCall.TimedOut) {
+        if ($Log) { & $Log "WARN: gh pr list --state merged 시간 초과($ghOwnerRepo, ${ghTimeoutSec}초) — 이 레포는 전부 '미머지'로 보수적 처리" | Out-Null }
+    } elseif ($ghCall.ExitCode -eq 0) {
+        try {
+            # 빈 stdout(머지 PR 0건인데 `[]` 가 아닌 빈 출력)은 빈 집합으로 취급한다.
+            # ConvertFrom-Json 은 빈 문자열에 던지므로 파싱 전에 가드한다.
+            $parsed = @()
+            if ("$($ghCall.StdOut)".Trim()) { $parsed = @("$($ghCall.StdOut)" | ConvertFrom-Json) }
             foreach ($p in @($parsed)) { if ($p.headRefName) { [void]$result.Branches.Add($p.headRefName) } }
             $result.Ok = $true
             $result.OwnerRepo = $ghOwnerRepo
@@ -962,11 +1030,12 @@ function Get-GissueMergedBranchSet {
                 Write-GissueMergedBranchDiskCache -OwnerRepo $ghOwnerRepo -Branches $result.Branches
             }
             if ($Log) { & $Log "머지된 PR 브랜치 $($result.Branches.Count)개 조회 완료($ghOwnerRepo)" | Out-Null }
-        } else {
-            if ($Log) { & $Log "WARN: gh pr list --state merged 실패($ghOwnerRepo) — $ghOut (이 레포는 전부 '미머지'로 보수적 처리)" | Out-Null }
+        } catch {
+            if ($Log) { & $Log "WARN: gh pr list 결과 파싱 예외($ghOwnerRepo) — $($_.Exception.Message)" | Out-Null }
         }
-    } catch {
-        if ($Log) { & $Log "WARN: gh pr list 예외($ghOwnerRepo) — $($_.Exception.Message)" | Out-Null }
+    } else {
+        $ghOut = (@($ghCall.StdOut, $ghCall.StdErr) | Where-Object { $_ }) -join "`n"
+        if ($Log) { & $Log "WARN: gh pr list --state merged 실패($ghOwnerRepo) — $ghOut (이 레포는 전부 '미머지'로 보수적 처리)" | Out-Null }
     }
     $script:GissueMergedBranchCache[$key] = $result
     return $result
@@ -976,8 +1045,16 @@ function Get-GissueMergedBranchSet {
 # 6. worktree 목록 파싱
 # ──────────────────────────────────────────────────────────────────────────────
 function Get-GissueWorktreeEntries {
-    param([Parameter(Mandatory = $true)][string]$RepoPath)
-    $wtOut = @(git -C $RepoPath worktree list --porcelain 2>$null)
+    param([Parameter(Mandatory = $true)][string]$RepoPath, [scriptblock]$Log = $null)
+    # 유한한 타임아웃付き — 목록 조회가 멈추면 빈 목록으로 돌려준다(이번 실행은 이 레포를
+    # 건너뛰고 다음 레포로 진행한다. 다음 실행이 다시 시도한다).
+    $wtCall = Invoke-GissueExternalCall -FilePath 'git' -ArgumentList @('-C', $RepoPath, 'worktree', 'list', '--porcelain') -Kind Git
+    if ($wtCall.TimedOut) {
+        if ($Log) { & $Log "WARN: git worktree list 시간 초과 — 이 레포의 worktree 목록을 못 읽어 이번 실행은 건너뜀: $RepoPath" | Out-Null }
+        return @()
+    }
+    if ($wtCall.ExitCode -ne 0) { return @() }
+    $wtOut = @(("$($wtCall.StdOut)" -split "`r?`n") | Where-Object { $_ -ne '' })
     $entries = @()
     $cur = $null
     foreach ($line in $wtOut) {
@@ -1141,28 +1218,29 @@ function Test-GissueWorktreeContentInMain {
         [Parameter(Mandatory = $true)][string]$WorktreePath,
         [string]$MainRef = 'origin/main'
     )
-    $head = $null
-    try { $head = (git -C $WorktreePath rev-parse HEAD 2>$null | Select-Object -First 1) } catch {}
-    $head = ("$head").Trim()
-    if (-not $head) {
+    $headCall = Invoke-GissueExternalCall -FilePath 'git' -ArgumentList @('-C', $WorktreePath, 'rev-parse', 'HEAD') -Kind Git
+    $head = ("$($headCall.StdOut)".Trim())
+    if ($headCall.TimedOut -or $headCall.ExitCode -ne 0 -or -not $head) {
+        $why = if ($headCall.TimedOut) { '시간 초과' } else { '읽을 수 없음' }
         return [pscustomobject]@{ Determined = $false; InMain = $false; Head = $null
-            Detail = 'worktree HEAD 커밋을 읽을 수 없음 — 판정 불가(fail-closed)' }
+            Detail = "worktree HEAD 커밋을 읽을 수 없음($why) — 판정 불가(fail-closed)" }
     }
     # MainRef 자체가 없으면(미 fetch 등) 판정 불가 — "모르면 지우지 않는다"(rule 55).
     $refExists = $false
-    try {
-        git -C $RepoPath rev-parse --verify --quiet $MainRef 2>$null | Out-Null
-        $refExists = ($LASTEXITCODE -eq 0)
-    } catch { $refExists = $false }
+    $refCall = Invoke-GissueExternalCall -FilePath 'git' -ArgumentList @('-C', $RepoPath, 'rev-parse', '--verify', '--quiet', $MainRef) -Kind Git
+    $refExists = (-not $refCall.TimedOut -and $refCall.ExitCode -eq 0)
     if (-not $refExists) {
+        $why = if ($refCall.TimedOut) { '시간 초과' } else { '없음(미 fetch 등)' }
         return [pscustomobject]@{ Determined = $false; InMain = $false; Head = $head
-            Detail = "$MainRef ref 없음(미 fetch 등) — 판정 불가(fail-closed)" }
+            Detail = "$MainRef ref $why — 판정 불가(fail-closed)" }
     }
     $isAncestor = $false
-    try {
-        git -C $RepoPath merge-base --is-ancestor $head $MainRef 2>$null | Out-Null
-        $isAncestor = ($LASTEXITCODE -eq 0)
-    } catch { $isAncestor = $false }
+    $ancestorCall = Invoke-GissueExternalCall -FilePath 'git' -ArgumentList @('-C', $RepoPath, 'merge-base', '--is-ancestor', $head, $MainRef) -Kind Git
+    if ($ancestorCall.TimedOut) {
+        return [pscustomobject]@{ Determined = $false; InMain = $false; Head = $head
+            Detail = "merge-base --is-ancestor 시간 초과 — 판정 불가(fail-closed)" }
+    }
+    $isAncestor = ($ancestorCall.ExitCode -eq 0)
     if ($isAncestor) {
         return [pscustomobject]@{ Determined = $true; InMain = $true; Head = $head
             Detail = "HEAD $head 가 $MainRef 의 조상 — 이 worktree 에 고유한 커밋 없음(내용 유실 없음)" }
@@ -1190,7 +1268,12 @@ function Get-GissueWorktreeDirtyPaths {
     # `-uall`(untracked-files=all): 미추적 **디렉터리**를 통째로(`?? .claude/`) 접지 않고
     # 개별 파일로 펼친다. 접으면 격리 산출물(`.claude/settings.local.json`) 하나가
     # "디렉터리 1개"로 뭉개져 경로 매칭이 통하지 않는다 → 이 계열이 영영 정리 대상 0건이 된다.
-    try { $out = @(git -C $WorktreePath status --porcelain -uall 2>$null) } catch { $out = @() }
+    # 유한한 타임아웃付き — 멈추면 TimedOut=$true 로 돌려주고 호출자가 판정 불가로 보류한다.
+    $statusCall = Invoke-GissueExternalCall -FilePath 'git' -ArgumentList @('-C', $WorktreePath, 'status', '--porcelain', '-uall') -Kind Git
+    if ($statusCall.TimedOut) {
+        return [pscustomobject]@{ Dirty = @(); Ignored = @(); TimedOut = $true }
+    }
+    if ($statusCall.ExitCode -eq 0) { $out = @(("$($statusCall.StdOut)" -split "`r?`n") | Where-Object { $_ -ne '' }) }
     foreach ($line in $out) {
         $s = [string]$line
         if (-not $s.Trim()) { continue }
@@ -1205,7 +1288,7 @@ function Get-GissueWorktreeDirtyPaths {
             if ($ignore.ContainsKey($norm)) { $ignored += $p } else { $dirty += $p }
         }
     }
-    return [pscustomobject]@{ Dirty = @($dirty); Ignored = @($ignored) }
+    return [pscustomobject]@{ Dirty = @($dirty); Ignored = @($ignored); TimedOut = $false }
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1232,9 +1315,11 @@ function Get-GissueWorktreeDirtyPaths {
 #     env GISSUE_WORKTREE_CLEANUP_BUDGET_SEC 으로 덮어쓰기). 항목 사이에서 경과를 확인해
 #     한도에 걸리면 멈추고 "시간 한도 도달 — 나머지는 다음 실행" 한 줄과 함께 정상 반환한다
 #     (throw 하지 않는다 — 호출자는 다음 단계/잡으로 진행한다). 남은 항목은 다음 실행이
-#     처리한다. 한 항목 안의 작업(링크 스캔·git 호출·삭제)은 동기라 중간에 끊을 수 없어
-#     한도는 항목 경계에서만 확인된다. `gh pr list` 조회 1회도 마찬가지라, 조회 자체가
-#     길어지면 그 시간은 한도로 막지 못한다(한도 확인은 조회 뒤 첫 항목부터 시작한다).
+#     처리한다. 한 항목 안의 작업(링크 스캔·삭제)은 동기라 중간에 끊을 수 없어
+#     한도는 항목 경계에서만 확인된다. 다만 외부 호출(gh/git)은 lib/bounded-process.ps1
+#     경유로 1회마다 유한한 한도가 걸린다(Gh 기본 60초 / Git 기본 30초, env 재정의) —
+#     호출이 멈추면 그 레포·항목만 fail-closed 로 건너뛰고 다음으로 진행하므로,
+#     2026-11-25 실측(17:07 회차, gh 조회 안에서 31분 침묵) 같은 교착은 재발하지 않는다.
 #     기본값 180초의 근거: 항목 1건당 수십 ms~1초 수준이면 100건 규모도 100초 안팎에
 #     끝나고, 병목 시에도 한 단계가 러너를 3분 넘게 붙잡지 못하게 한다(RunTimeoutMin
 #     105분·사후 스윕 반복당 예산 90초와 견줘도 한 단계의 최악 블로킹이 작게 묶인다).
@@ -1337,17 +1422,21 @@ function Invoke-GissueWorktreeCleanupForRepo {
     }
     $protectedAll = @($ProtectedPaths) + $selfPaths | Where-Object { $_ }
 
-    try { git -C $repoFull worktree prune 2>&1 | Out-Null } catch {}
+    # 유한한 타임아웃付き — prune 이 멈추면 건너뛰고(삭제는 prune 없이도 계속된다)
+    # 목록 조회가 멈추면 이 레포는 이번 실행에서 건너뛴다.
+    $pruneCall = Invoke-GissueExternalCall -FilePath 'git' -ArgumentList @('-C', $repoFull, 'worktree', 'prune') -Kind Git
+    if ($pruneCall.TimedOut) { & $say "WARN: git worktree prune 시간 초과 — prune 없이 계속: $repoFull" }
     $merged = Get-GissueMergedBranchSet -RepoPath $repoFull -Log $Log
-    $entries = Get-GissueWorktreeEntries -RepoPath $repoFull
+    $entries = Get-GissueWorktreeEntries -RepoPath $repoFull -Log $Log
     $result.TotalEntries = @($entries).Count
 
     foreach ($e in $entries) {
         if ($result.Aborted) { break }
-        # ── 시간 한도: 항목 경계에서 확인한다. 한 항목 안의 작업은 동기라 중간에
-        #   끊을 수 없으므로, 여기서 걸리면 이 항목은 건드리지 않고 멈춘다. 남은
+        # ── 시간 한도: 항목 경계에서 확인한다. 한 항목 안의 작업(링크 스캔·삭제)은 동기라
+        #   중간에 끊을 수 없으므로, 여기서 걸리면 이 항목은 건드리지 않고 멈춘다. 남은
         #   항목은 다음 실행이 처리한다. throw 하지 않고 정상 반환한다 — 호출자
         #   (사후 스윕 큐)가 다음 단계로 진행할 수 있게 Aborted 는 세우지 않는다.
+        #   외부 호출(gh/git)은 항목 안에서도 lib/bounded-process.ps1 의 한도로 끊긴다.
         if ($sw.Elapsed.TotalSeconds -ge $effectiveBudgetSec) {
             $result.TimeBudgetExpired = $true
             $result.ProcessedCount = $processedCount
@@ -1498,6 +1587,13 @@ function Invoke-GissueWorktreeCleanupForRepo {
         $dirtyNote = ''
         if ($isClaudeSessionWorktree) {
             $dirtyInfo = Get-GissueWorktreeDirtyPaths -WorktreePath $ePath -IgnorePaths $script:GissueClaudeWorktreeInfrastructurePaths
+            if ($dirtyInfo.TimedOut) {
+                # dirty 판정 자체가 안 났다 — "모르면 지우지 않는다". 삭제 없이 보류한다.
+                & $say "MANUAL-REVIEW(git status 시간 초과 — dirty 판정 불가, 삭제 보류): $ePath"
+                $result.ManualReview += [pscustomobject]@{ Path = $ePath; Branch = $e.Branch
+                    Reason = "git status 시간 초과 — dirty 판정 불가, 삭제 보류(rule 57)" }
+                continue
+            }
             if (@($dirtyInfo.Dirty).Count -gt 0) {
                 & $say "MANUAL-REVIEW(미커밋 변경 있음 — 자동삭제 대상 아님): $ePath — $($dirtyInfo.Dirty -join ', ')"
                 $result.ManualReview += [pscustomobject]@{ Path = $ePath; Branch = $e.Branch
@@ -1509,10 +1605,10 @@ function Invoke-GissueWorktreeCleanupForRepo {
                 & $say "NOTE(giip 5175 — 격리 메커니즘 부산물로 보고 미커밋 판정에서 제외): $ePath — $($dirtyInfo.Ignored -join ', ')"
             }
         } else {
-            try {
-                $dirtyStatus = git -C $ePath status --porcelain 2>&1
-                if ("$dirtyStatus".Trim()) { $dirtyNote = ' [dirty 상태였음 — 머지 PR 확인되어 진행]' }
-            } catch {}
+            # 유한한 타임아웃付き — 멈추면 dirty 여부를 알 수 없으므로 비고만 생략하고
+            # 진행한다(참고용 메모라 삭제 판정에 쓰이지 않는다).
+            $dirtyCall = Invoke-GissueExternalCall -FilePath 'git' -ArgumentList @('-C', $ePath, 'status', '--porcelain') -Kind Git
+            if (-not $dirtyCall.TimedOut -and $dirtyCall.ExitCode -eq 0 -and "$($dirtyCall.StdOut)".Trim()) { $dirtyNote = ' [dirty 상태였음 — 머지 PR 확인되어 진행]' }
         }
 
         if ($DryRun) {
@@ -1554,16 +1650,27 @@ function Invoke-GissueWorktreeCleanupForRepo {
         }
 
         # ── rule 55 §4: git worktree remove 우선 ──
+        # 유한한 타임아웃付き — remove 가 멈추면 MANUAL-REVIEW 로 보류하고 다음 항목으로
+        # 간다. --force 재시도는 하지 않는다(멈춘 삭제의 상태를 알 수 없는데 강제하면
+        # 무엇이 지워졌는지 모른다 — "모르면 지우지 않는다").
         $removedOk = $false
         try {
-            $rmOut = git -C $repoFull worktree remove $ePath 2>&1
-            if ($LASTEXITCODE -ne 0) {
+            $rmCall = Invoke-GissueExternalCall -FilePath 'git' -ArgumentList @('-C', $repoFull, 'worktree', 'remove', $ePath) -Kind Git
+            $rmOut = (@($rmCall.StdOut, $rmCall.StdErr) | Where-Object { $_ }) -join "`n"
+            if ($rmCall.TimedOut) {
+                & $say "WARN: worktree remove 시간 초과 — 수동 확인 필요: $ePath"
+                $result.ManualReview += [pscustomobject]@{ Path = $ePath; Branch = $e.Branch; Reason = "$mergeBasisNote, worktree remove 시간 초과 — 수동 확인 필요" }
+            } elseif ($rmCall.ExitCode -ne 0) {
                 if (-not $dirtyNote) {
                     & $say "WARN: worktree remove 실패(clean 인데도, 원인 불명 — 수동 확인 필요): $ePath — $rmOut"
                     $result.ManualReview += [pscustomobject]@{ Path = $ePath; Branch = $e.Branch; Reason = "$mergeBasisNote, clean 인데도 remove 실패: $rmOut" }
                 } else {
-                    $rmOut2 = git -C $repoFull worktree remove --force $ePath 2>&1
-                    if ($LASTEXITCODE -ne 0) {
+                    $rmCall2 = Invoke-GissueExternalCall -FilePath 'git' -ArgumentList @('-C', $repoFull, 'worktree', 'remove', '--force', $ePath) -Kind Git
+                    $rmOut2 = (@($rmCall2.StdOut, $rmCall2.StdErr) | Where-Object { $_ }) -join "`n"
+                    if ($rmCall2.TimedOut) {
+                        & $say "WARN: worktree remove --force 시간 초과 — 수동 확인 필요: $ePath"
+                        $result.ManualReview += [pscustomobject]@{ Path = $ePath; Branch = $e.Branch; Reason = "$mergeBasisNote, worktree remove --force 시간 초과 — 수동 확인 필요" }
+                    } elseif ($rmCall2.ExitCode -ne 0) {
                         & $say "WARN: worktree remove --force 도 실패($mergeBasisNote 인데도): $ePath — $rmOut2"
                         $result.ManualReview += [pscustomobject]@{ Path = $ePath; Branch = $e.Branch; Reason = "$mergeBasisNote, --force 도 remove 실패: $rmOut2" }
                     } else { $removedOk = $true }
@@ -1595,16 +1702,19 @@ function Invoke-GissueWorktreeCleanupForRepo {
         }
         if (-not $removedOk) { continue }
         & $say "삭제됨($mergeBasisNote, $($idleVerdict.Reason), 인접 레포 무결성 재검증 통과)$dirtyNote : $ePath (branch=$($e.Branch))"
-        try { git -C $repoFull branch -D $e.Branch 2>&1 | Out-Null } catch {}
+        # 유한한 타임아웃付き — 로컬 브랜치 삭제는 best-effort(종전과 동일), 원격 삭제는
+        # ls-remote 가 멈추면 건너뛰고 push --delete 가 멈추면 경고만 남긴다.
+        $branchCall = Invoke-GissueExternalCall -FilePath 'git' -ArgumentList @('-C', $repoFull, 'branch', '-D', $e.Branch) -Kind Git
+        if ($branchCall.TimedOut) { & $say "WARN: 로컬 브랜치 삭제 시간 초과 — 다음 실행이 다시 시도: $($e.Branch)" }
         if ($DeleteRemoteBranch) {
-            try {
-                $remoteExists = git -C $repoFull ls-remote --heads origin $e.Branch 2>&1
-                if ("$remoteExists".Trim()) {
-                    git -C $repoFull push origin --delete $e.Branch 2>&1 | Out-Null
-                    & $say "원격 브랜치 삭제: $($e.Branch)"
-                }
-            } catch {
-                & $say "WARN: 원격 브랜치 삭제 실패($($e.Branch)) — $($_.Exception.Message)"
+            $lsCall = Invoke-GissueExternalCall -FilePath 'git' -ArgumentList @('-C', $repoFull, 'ls-remote', '--heads', 'origin', $e.Branch) -Kind Git
+            if ($lsCall.TimedOut) {
+                & $say "WARN: ls-remote 시간 초과 — 원격 브랜치 삭제 건너뜀: $($e.Branch)"
+            } elseif ($lsCall.ExitCode -eq 0 -and "$($lsCall.StdOut)".Trim()) {
+                $pushCall = Invoke-GissueExternalCall -FilePath 'git' -ArgumentList @('-C', $repoFull, 'push', 'origin', '--delete', $e.Branch) -Kind Git
+                if ($pushCall.TimedOut) { & $say "WARN: 원격 브랜치 삭제 시간 초과: $($e.Branch)" }
+                elseif ($pushCall.ExitCode -eq 0) { & $say "원격 브랜치 삭제: $($e.Branch)" }
+                else { & $say "WARN: 원격 브랜치 삭제 실패($($e.Branch)) — $($pushCall.StdErr)" }
             }
         }
         $result.Removed += [pscustomobject]@{ Path = $ePath; Branch = $e.Branch; Exempt = [bool]$exemption }
