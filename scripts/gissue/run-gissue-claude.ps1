@@ -3469,16 +3469,27 @@ foreach ($csn in $map.PSObject.Properties.Name) {
                 # GitHub PR 상태 기반 확인(giip-866): 위 두 로컬 휴리스틱이 다 놓치는 경우가 있었다
                 # (squash 병합이 실제로는 됐는데도 "미확인" 판정 → 성역 레포라 SANCTUARY-SKIP WARN 만
                 # 13시간 동안 매시 반복). GitHub 에 직접 물으면 merge 전략과 무관하게 확정적이다.
-                try {
-                    Push-Location $stillBusy.Repo
-                    $prJson = gh pr list --head $stillBusy.Branch --state merged --json number,mergedAt 2>$null
-                    $ghExit = $LASTEXITCODE
-                    Pop-Location
-                    if ($ghExit -eq 0 -and $prJson) {
-                        $prList = $prJson | ConvertFrom-Json
-                        if (@($prList).Count -gt 0) { $mergedAncestor = $true }
-                    }
-                } catch { try { Pop-Location } catch {} }
+                # 먼저 머지 집합(디스크 캐시 포함, worktree-safety.ps1)으로 긍정 판정을 시도한다 —
+                # 집합에 있으면 gh 개별 호출을 건너뛴다. 집합에 없거나 조회 실패면 기존 per-branch
+                # 호출 그대로다(부정 판정에 집합을 쓰지 않는다 — 정확성 우선).
+                if (Get-Command Get-GissueMergedBranchSet -ErrorAction SilentlyContinue) {
+                    try {
+                        $busyMergedSet = Get-GissueMergedBranchSet -RepoPath $stillBusy.Repo
+                        if ($busyMergedSet -and $busyMergedSet.Ok -and $busyMergedSet.Branches.Contains($stillBusy.Branch)) { $mergedAncestor = $true }
+                    } catch {}
+                }
+                if (-not $mergedAncestor) {
+                    try {
+                        Push-Location $stillBusy.Repo
+                        $prJson = gh pr list --head $stillBusy.Branch --state merged --json number,mergedAt 2>$null
+                        $ghExit = $LASTEXITCODE
+                        Pop-Location
+                        if ($ghExit -eq 0 -and $prJson) {
+                            $prList = $prJson | ConvertFrom-Json
+                            if (@($prList).Count -gt 0) { $mergedAncestor = $true }
+                        }
+                    } catch { try { Pop-Location } catch {} }
+                }
             }
             $isWorktree = Test-GissueIsWorktree $stillBusy.Repo
             if ($mergedAncestor) {

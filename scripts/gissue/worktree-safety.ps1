@@ -26,6 +26,16 @@ if (-not $script:GissueWorktreeSafetyDir) {
 # cleanup-worktrees.ps1 에는 아무 영향이 없다), 그 외 모든 경우 fail-open 이다.
 . (Join-Path $script:GissueWorktreeSafetyDir 'code-freshness.ps1')
 
+# 머지판정 디스크 캐시(lib/gh-cache.ps1) — 프로세스를 넘어 성공한 머지 집합 조회를 공유한다.
+# 이미 로드돼 있으면(호출자가 먼저 닷소싱했으면) 건너뛴다. 파일이 없어도 머지판정 자체는
+# 기존 동작(gh 직접 조회) 그대로여야 하므로, 로드 실패가 이 모듈 전체를 죽이지 않게 감싼다.
+if (-not (Get-Command Read-GissueMergedBranchDiskCache -ErrorAction SilentlyContinue)) {
+    try {
+        $ghCacheLibPath = Join-Path $script:GissueWorktreeSafetyDir 'lib\gh-cache.ps1'
+        if (Test-Path -LiteralPath $ghCacheLibPath) { . $ghCacheLibPath }
+    } catch {}
+}
+
 # ---------------------------------------------------------------------------
 # rule 55 §1-2 — 재귀삭제 전 심볼릭 링크/정션 선검사.
 # 2026-09-09 사고(giip #2232): worktree 안의 `giipv3` 정션을 재귀삭제가 따라 들어가 진짜
@@ -926,6 +936,19 @@ function Get-GissueMergedBranchSet {
         $script:GissueMergedBranchCache[$key] = $result
         return $result
     }
+    # 디스크 캐시(lib/gh-cache.ps1) — TTL 안의 성공 조회가 있으면 gh 를 다시 부르지 않는다.
+    # 캐시는 성공 결과만 담으므로 히트는 곧 Ok=$true 다. 미스·만료·손상은 조용히 gh 조회로 떨어진다.
+    if (Get-Command Read-GissueMergedBranchDiskCache -ErrorAction SilentlyContinue) {
+        $diskHit = Read-GissueMergedBranchDiskCache -OwnerRepo $ghOwnerRepo
+        if ($diskHit) {
+            foreach ($b in $diskHit.Branches) { [void]$result.Branches.Add($b) }
+            $result.Ok = $true
+            $result.OwnerRepo = $ghOwnerRepo
+            if ($Log) { & $Log "[GH-CACHE] HIT $ghOwnerRepo ($($result.Branches.Count) branches, age $($diskHit.AgeMinutes)m)" | Out-Null }
+            $script:GissueMergedBranchCache[$key] = $result
+            return $result
+        }
+    }
     # giip #2220: gh 는 cwd 기준으로 owner/repo 를 추론한다 — 반드시 --repo 를 명시한다.
     try {
         $ghOut = & gh pr list --repo $ghOwnerRepo --state merged --json headRefName --limit 1000 2>&1
@@ -934,6 +957,10 @@ function Get-GissueMergedBranchSet {
             foreach ($p in @($parsed)) { if ($p.headRefName) { [void]$result.Branches.Add($p.headRefName) } }
             $result.Ok = $true
             $result.OwnerRepo = $ghOwnerRepo
+            # 성공한 조회만 디스크 캐시에 남긴다(실패를 캐시하면 fail-closed 가 fail-open 으로 뒤집힌다).
+            if (Get-Command Write-GissueMergedBranchDiskCache -ErrorAction SilentlyContinue) {
+                Write-GissueMergedBranchDiskCache -OwnerRepo $ghOwnerRepo -Branches $result.Branches
+            }
             if ($Log) { & $Log "머지된 PR 브랜치 $($result.Branches.Count)개 조회 완료($ghOwnerRepo)" | Out-Null }
         } else {
             if ($Log) { & $Log "WARN: gh pr list --state merged 실패($ghOwnerRepo) — $ghOut (이 레포는 전부 '미머지'로 보수적 처리)" | Out-Null }
