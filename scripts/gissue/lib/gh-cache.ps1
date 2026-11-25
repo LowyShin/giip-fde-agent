@@ -59,8 +59,17 @@ function Read-GissueMergedBranchDiskCache {
         $raw = [System.IO.File]::ReadAllText($path)
         $obj = $raw | ConvertFrom-Json
         if (-not $obj -or -not $obj.fetchedAt) { return $null }
-        $fetched = [datetime]::Parse("$($obj.fetchedAt)", [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind)
-        $age = (Get-Date).ToUniversalTime() - $fetched.ToUniversalTime()
+        # fetchedAt 의 형은 실행 환경마다 다르다: PS 7 의 ConvertFrom-Json 은 ISO 문자열을
+        # [datetime] 으로 자동 변환하고, PS 5.1 은 문자열 그대로 돌려준다. 문자열로 왕복시키면
+        # 문화권 형식으로 찍히면서 UTC 표식이 사라져 나이 계산이 호스트 시간대만큼 어긋난다
+        # (JST 호스트에서 방금 쓴 캐시가 540분 지난 것으로 판정돼 영원히 미스한 실측 버그).
+        # 그래서 형을 보고 각각 UTC 로 정규화한다.
+        if ($obj.fetchedAt -is [datetime]) {
+            $fetched = $obj.fetchedAt.ToUniversalTime()
+        } else {
+            $fetched = [datetime]::Parse("$($obj.fetchedAt)", [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
+        }
+        $age = [datetime]::UtcNow - $fetched
         if ($age.TotalMinutes -lt 0 -or $age.TotalMinutes -gt $MaxAgeMinutes) { return $null }
         $set = New-Object 'System.Collections.Generic.HashSet[string]'
         foreach ($b in @($obj.branches)) { if ($b) { [void]$set.Add("$b") } }
