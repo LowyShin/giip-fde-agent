@@ -23,14 +23,14 @@ giip issue 상태머신(PENDING→READY→IN_PROGRESS→REVIEW/DONE, +REVIEW→T
      ├─ ① 저장소 정비 세션 — 그 CSN 저장소 전체 스코프로 **1회만** 기동
      │      ([0] PR conflict / [E] PR CI 수정 / [F] orphan stash 구조 / [H] 최근 코멘트 재검증)
      └─ ② 이슈별 세션 — 아래 단일 우선순위 큐를 돌며 **이슈 1건마다 별도 프로세스를 개별 기동**
-            PENDING / READY(≥1h) / STALE_IN_PROGRESS(≥1h) / REVIEW  ← 하나의 큐, 오래 대기한 순
+            READY / STALE_IN_PROGRESS(≥1h) / PENDING / REVIEW  ← 하나의 큐, READY 먼저 · 그룹 안에서는 오래 대기한 순
 ```
 
 바뀐 것은 **실행 구조**이고, 각 단계가 "무엇을 판단하는가"는 §5-2 표 그대로 유효합니다.
 
 - **단일 우선순위 큐**: 상태별로 따로 순회하지 않습니다. `Get-GissueIssueQueue`
   (`run-gissue-claude.ps1`)가 네 상태를 한 큐로 합쳐 대기시간 내림차순으로 정렬합니다.
-  READY / STALE_IN_PROGRESS 는 **1시간 이상 경과분만** 큐에 들어갑니다.
+  STALE_IN_PROGRESS 만 **1시간 이상 경과분만** 큐에 들어갑니다. READY 는 시간 조건 없이 바로 들어갑니다(Lowy님 지시 2026-11-25, giip #6328).
 - **이슈마다 별도 프로세스**: 한 세션이 여러 이슈를 이어서 처리하지 않습니다. 이슈 1건 =
   엔진 프로세스 1개이고, 그 이슈의 상태에 맞는 프롬프트 템플릿 1벌만 주입됩니다
   (§5-3). 한 이슈가 망가져도 다음 이슈가 같은 컨텍스트를 물려받지 않습니다.
@@ -96,7 +96,7 @@ powershell.exe -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass `
   lowyworkenv).
 - 단일 CSN만 즉시 실행/드라이런하려면 `-OnlyCsn <csn>` 인자를 추가합니다(`-DryRun`과 조합 가능).
 - **이슈 번호 지정 실행 `-OnlyIsn <isn>`** (giip 5544): 외부 감지기(예: 5분 간격 폴링)가 "지금 이 이슈"를 지정해 즉시 처리시키는 용도입니다. 지정된 이슈가 보이는 CSN의 잡만 기동되고, 그 잡의 큐는 지정 1건으로 교체됩니다.
-  - **우회하는 것**: 큐 우선순위 정렬과 READY 경과 조건(기본 60분 — 방금 READY가 된 이슈도 즉시 처리).
+  - **우회하는 것**: 큐 우선순위 정렬. (READY 경과 조건은 2026-11-25에 폐지돼 우회할 조건 자체가 없습니다 — giip #6328.)
   - **우회하지 않는 것(안전 게이트)**: CSN 소속 검증(응답 cSn 불일치 시 미실행, giip #1053), NEEDS_DECISION 제외, 신선한 IN_PROGRESS 중복 실행 금지(60분 이상 정체한 IN_PROGRESS는 기존 회수 경로 STALE_IN_PROGRESS로 처리), [OPS] 자동 감지 이슈 제외, REVIEW/TESTED 재검증 쿨다운·회차 상한(잡 루프의 기존 게이트가 그대로 판정).
   - **대상이 아니면 조용히 끝나지 않습니다**: 실행 로그에 `[ONLYISN-SKIP] isn=<n> reason=<코드>`를 남기고, 이슈가 대상 CSN에서 확인된 경우 그 이슈에 사유 운영 코멘트(`[ONLYISN-SKIP] …`)도 남깁니다. 사유 코드: `CSN_MISMATCH` / `AUTO_OPS` / `NEEDS_DECISION` / `IN_PROGRESS_ACTIVE` / `REVIEW_NO_NEW_SIGNAL` / `STATUS_NOT_PROCESSABLE` / `NOT_FOUND` / `LOOKUP_ERROR`.
   - **실행 이력**: 종료 시 tKVS `scheduler_run_history` 값에 `trigger='onlyisn'`, `onlyIsn=<n>`이 함께 기록됩니다(정기 실행은 `trigger='schedule'`, `onlyIsn=0`).
@@ -143,11 +143,11 @@ powershell.exe -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass `
   `scripts/gissue/list-issues.js`(CSN+상태별 이슈 목록 조회, giipfaw API 경유)와
   `scripts/gissue/get-issue.sh --comment-file`/`--status`(단건 조회/코멘트/상태전이)를 그대로 쓰면
   됩니다. 러너 자신이 쓰는 **우선순위 큐**는 `list-issues.js --csn <N> --queue --json` 한 번으로
-  얻습니다(giip #2645) — PENDING / READY≥60분 / IN_PROGRESS≥60분(라벨 `STALE_IN_PROGRESS`) /
+  얻습니다(giip #2645) — READY(시간 조건 없음) / IN_PROGRESS≥60분(라벨 `STALE_IN_PROGRESS`) / PENDING /
   REVIEW·TESTED(최신 코멘트가 `[ACTIONFLOW-TEST]`로 시작하면 제외)를 합쳐
   `qprio → is_user_req DESC → has_comment ASC → elapsedMin DESC` 순으로 정렬해 돌려줍니다.
-  qprio 는 STALE_IN_PROGRESS(0) → PENDING(1) → READY(2) → REVIEW·TESTED(3) 이며, REVIEW·TESTED 재확인은
-  READY 실작업이 모두 끝난 뒤에 처리됩니다.
+  qprio 는 READY(0) → STALE_IN_PROGRESS(1) → PENDING(2) → REVIEW·TESTED(3) 이며, REVIEW·TESTED 재확인은
+  실작업이 모두 끝난 뒤에 처리됩니다.
   **자동 감지 이슈는 작업 큐의 대상이 아니다**(giip #4907). `[OPS] gissue 처리 무소식 감지` 는
   자동 등록되는 **감지 기록**이지 "작업"이 아니므로, `--queue` 결과에서 제외된다(제목 접두사 기준 —
   제목에 `[OPS]` 가 *포함*된 후속 이슈는 정상 작업 항목이라 빠지지 않는다). 제외는
@@ -178,7 +178,7 @@ powershell.exe -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass `
 | [0] | 저장소 정비 | PR conflict 우선 해결 | 이슈 처리 착수 전, 담당 프로젝트(+nested repo)의 열려있고 conflict 난 PR을 먼저 해소 |
 | [A] | 이슈별 | 슬래시 커맨드 즉시 실행 | 제목/본문/최신 코멘트가 `/`로 시작하면 상태·나이 무관하게 즉시 해당 워크플로우 기동 |
 | [B] | 이슈별 | PENDING 정제 | 내용을 분석해 작업 지시서 코멘트를 남기고 READY로 전이(실행까지는 안 함) |
-| [C] | 이슈별 | READY 실행 | READY로 1시간 이상 경과한 것만, IN_PROGRESS로 선점 후 실제 처리(PR 완료 게이트 + Actionflow 테스트 게이트 통과 시 DONE) |
+| [C] | 이슈별 | READY 실행 | READY인 것 전부(시간 조건 없음), IN_PROGRESS로 선점 후 실제 처리(PR 완료 게이트 + Actionflow 테스트 게이트 통과 시 DONE) |
 | [D] | 이슈별 | IN_PROGRESS 회수(reclaim) | 1시간 이상 활동 없는 IN_PROGRESS를 원인 분석 후 이어받아 완수 — 죽은/멈춘 세션 복구 |
 | [E] | 저장소 정비 | PR CI 실패 점검 | 이슈 유무와 무관하게 매번, 열린 PR 중 CI/검증 실패한 것을 원인 규명 후 로컬 재검증 통과 시에만 수정 push |
 | [F] | 저장소 정비 | Orphan stash 구조 | 이전 실행이 안전하게 stash해둔 "죽은 세션 잔해"를 이슈와 매칭시켜 구조(확신 없으면 사람에게 위임) |
@@ -194,7 +194,7 @@ powershell.exe -WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass `
 |---|---|---|
 | `$RepoMaintenancePromptTemplate` | `[0]` `[E]` `[F]` `[H]` | 저장소 정비 세션(CSN 당 1회) |
 | `$PendingIssuePromptTemplate` | `[A]` `[B]` | 큐 항목이 PENDING |
-| `$ReadyIssuePromptTemplate` | `[A]` `[C]` | 큐 항목이 READY(≥1h) |
+| `$ReadyIssuePromptTemplate` | `[A]` `[C]` | 큐 항목이 READY |
 | `$StaleIssuePromptTemplate` | `[D]` `[C]` `[B]` | 큐 항목이 STALE_IN_PROGRESS(≥1h) |
 | `$ReviewIssuePromptTemplate` | `[G]` | 큐 항목이 REVIEW |
 | `$TestedIssuePromptTemplate` | TESTED 전용 블록 | 큐 항목이 TESTED |
@@ -267,7 +267,7 @@ Task Scheduler 등록 스크립트, 이 문서의 §2~§3 스펙을 그대로 �
 
 권장값: 틱 주기의 약 3/4. 20분 틱이면 15분(docker 기본값), 60분 틱(Windows)이면 비활성 유지(기존 인스턴스에 영향 없음).
 
-**기아 점검(제안만, 미구현)**: 큐 정렬이 `STALE_IN_PROGRESS → PENDING → READY → REVIEW/TESTED` 라서 예산이 짧으면 큐 뒤쪽 REVIEW 재검증이 계속 뒤로 밀릴 수 있다.
+**기아 점검(제안만, 미구현)**: 큐 정렬이 `READY → STALE_IN_PROGRESS → PENDING → REVIEW/TESTED` 라서 예산이 짧으면 큐 뒤쪽 REVIEW 재검증이 계속 뒤로 밀릴 수 있다.
 실측 근거와 제안은 `gissue-scheduler-run-history.md` "틱 20분 vs 실행 길이" 참고.
 
 **사후 점검과 다음 틱의 동시 실행**: 락은 `Complete-Run` 첫머리에서 풀리고 그 뒤에 사후 점검(`pr-gate-sweep`, `review-done-audit`, `pr-attribution-sweep`, worktree 정리, 로그 전송)이 돈다.
