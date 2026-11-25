@@ -1729,6 +1729,11 @@ function Get-GissueIsnStatusMap($csn, $sk, $isnList) {
 # READY/PENDING/IN_PROGRESS/REVIEW/TESTED 는 대상에서 완전히 제외한다(사람이 작업 중일 수 있음).
 # 어떤 예외가 나도 삼켜서 경고 로그만 남기고 호출부(CSN 처리 루프)를 절대 막지 않는다.
 function Remove-GissueOrphanWorktrees($csn, $workdir) {
+    # 시간 예산 (giip #6331 — READY 기아 분석): 이 정리는 Phase 1 에서 CSN 잡 기동 전에 동기로 수행된다.
+    # 여기서 오래 걸리면 그 회차의 이슈 처리 전체가 밀리므로, 정비 잡 timebox(giip #1565/#4431)와 같은
+    # 방식으로 상한을 둔다 — 예산을 넘기면 나머지는 다음 회차로 이월하고 즉시 반환한다.
+    $ocBudgetSec = 120
+    $ocWatch = [System.Diagnostics.Stopwatch]::StartNew()
     try {
         $repoPaths = @(@($workdir) + (Get-GissueGitRepoPaths $workdir -Log { param($m) Write-Log $csn $m }) | Select-Object -Unique)
         $wtreeRoots = @()
@@ -1776,12 +1781,27 @@ function Remove-GissueOrphanWorktrees($csn, $workdir) {
             try {
                 $rlRoots = @($repoPaths | Where-Object { Test-Path -LiteralPath (Join-Path $_ '.git') })
                 if ($rlRoots.Count -gt 0) {
-                    Write-Log $csn "[ORPHAN-CLEANUP] 레포 루트 직계 스캔 시작 (roots=$($rlRoots.Count)개, DryRun=$($DryRun.IsPresent))"
-                    $rlOut = & $script:GissuePsExe -NoProfile -ExecutionPolicy Bypass -File $cleanupScript `
-                        -RootLevelScan -RepoRoots $rlRoots -Csn:$csn `
-                        -ProtectRecentMinutes 60 -DryRun:$DryRun 2>&1
-                    foreach ($line in @($rlOut)) {
-                        if ("$line".Trim()) { Write-Log $csn "[ORPHAN-CLEANUP][ROOT-LEVEL] $line" }
+                    $ocRemainSec = $ocBudgetSec - [int]$ocWatch.Elapsed.TotalSeconds
+                    if ($ocRemainSec -le 0) {
+                        Write-Log $csn "[ORPHAN-CLEANUP] 시간 예산(${ocBudgetSec}s) 초과 — 레포 루트 직계 스캔은 다음 회차로 이월"
+                    } else {
+                        Write-Log $csn "[ORPHAN-CLEANUP] 레포 루트 직계 스캔 시작 (roots=$($rlRoots.Count)개, DryRun=$($DryRun.IsPresent), 남은 예산 ${ocRemainSec}s)"
+                        $rlJob = Start-Job -ScriptBlock {
+                            param($exe, $scriptPath, $roots, $csnVal, $dryFlag)
+                            & $exe -NoProfile -ExecutionPolicy Bypass -File $scriptPath `
+                                -RootLevelScan -RepoRoots $roots -Csn:$csnVal `
+                                -ProtectRecentMinutes 60 -DryRun:$dryFlag 2>&1
+                        } -ArgumentList $script:GissuePsExe, $cleanupScript, $rlRoots, $csn, $DryRun.IsPresent
+                        if (Wait-Job $rlJob -Timeout $ocRemainSec) {
+                            $rlOut = Receive-Job $rlJob
+                            foreach ($line in @($rlOut)) {
+                                if ("$line".Trim()) { Write-Log $csn "[ORPHAN-CLEANUP][ROOT-LEVEL] $line" }
+                            }
+                        } else {
+                            Stop-Job $rlJob -ErrorAction SilentlyContinue
+                            Write-Log $csn "[ORPHAN-CLEANUP] 시간 예산(${ocBudgetSec}s) 초과 — 레포 루트 직계 스캔 중단, 다음 회차로 이월 (이슈 처리는 계속 진행)"
+                        }
+                        Remove-Job $rlJob -Force -ErrorAction SilentlyContinue
                     }
                 }
             } catch {
@@ -1801,6 +1821,10 @@ function Remove-GissueOrphanWorktrees($csn, $workdir) {
         if ($statusMap.Count -eq 0) { return }  # 조회 자체가 실패 — 위 함수가 이미 로그를 남겼다
 
         foreach ($c in $candidates) {
+            if ($ocWatch.Elapsed.TotalSeconds -gt $ocBudgetSec) {
+                Write-Log $csn "[ORPHAN-CLEANUP] 시간 예산(${ocBudgetSec}s) 초과 — 남은 삭제 후보는 다음 회차로 이월"
+                break
+            }
             $status = $statusMap[$c.Isn]
             $isDoneOrMissing = (-not $status) -or ($status -eq 'DONE')
             if (-not $isDoneOrMissing) { continue }
