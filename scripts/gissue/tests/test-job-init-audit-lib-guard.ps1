@@ -1,4 +1,4 @@
-# 잡 InitializationScript 에서 gissue-audit-lib.ps1 을 닷소싱해도 잡이 시작 단계에서 죽지 않는지 검증.
+﻿# 잡 InitializationScript 에서 gissue-audit-lib.ps1 을 닷소싱해도 잡이 시작 단계에서 죽지 않는지 검증.
 # 실행: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gissue/tests/test-job-init-audit-lib-guard.ps1
 # 배경: 최상위 적재 가드가 Get-Command <없는 명령> -ErrorAction SilentlyContinue 로 존재를 확인하면,
 #   없는 명령의 오류가 $Error 에 남고 잡 인프라가 시작 스크립트 오류로 잡 전체를 State=Failed 로 만든다

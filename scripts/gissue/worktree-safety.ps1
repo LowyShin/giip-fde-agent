@@ -996,7 +996,8 @@ function Get-GissueMergedBranchSet {
         return $result
     }
     # 디스크 캐시(lib/gh-cache.ps1) — TTL 안의 성공 조회가 있으면 gh 를 다시 부르지 않는다.
-    # 캐시는 성공 결과만 담으므로 히트는 곧 Ok=$true 다. 미스·만료·손상은 조용히 gh 조회로 떨어진다.
+    # 캐시는 성공 결과만 담으므로 히트는 곧 Ok=$true 다. 미스·만료·손상·빈 집합 파일은
+    # 조용히 gh 조회로 떨어진다(Read 가 빈 집합 파일을 $null 로 거른다).
     if (Get-Command Read-GissueMergedBranchDiskCache -ErrorAction SilentlyContinue) {
         $diskHit = Read-GissueMergedBranchDiskCache -OwnerRepo $ghOwnerRepo
         if ($diskHit) {
@@ -1018,24 +1019,47 @@ function Get-GissueMergedBranchSet {
         if ($Log) { & $Log "WARN: gh pr list --state merged 시간 초과($ghOwnerRepo, ${ghTimeoutSec}초) — 이 레포는 전부 '미머지'로 보수적 처리" | Out-Null }
     } elseif ($ghCall.ExitCode -eq 0) {
         try {
-            # 빈 stdout(머지 PR 0건인데 `[]` 가 아닌 빈 출력)은 빈 집합으로 취급한다.
+            # 빈 stdout(`[]` 포함)은 빈 집합이 아니라 조회 실패로 취급한다 — 성공으로 보고
+            # 캐시하면 빈 집합이 디스크에 남아 다음 조회부터 전부 '미머지'가 된다(2026-11-26 실측).
             # ConvertFrom-Json 은 빈 문자열에 던지므로 파싱 전에 가드한다.
             $parsed = @()
             if ("$($ghCall.StdOut)".Trim()) { $parsed = @("$($ghCall.StdOut)" | ConvertFrom-Json) }
             foreach ($p in @($parsed)) { if ($p.headRefName) { [void]$result.Branches.Add($p.headRefName) } }
-            $result.Ok = $true
-            $result.OwnerRepo = $ghOwnerRepo
-            # 성공한 조회만 디스크 캐시에 남긴다(실패를 캐시하면 fail-closed 가 fail-open 으로 뒤집힌다).
-            if (Get-Command Write-GissueMergedBranchDiskCache -ErrorAction SilentlyContinue) {
-                Write-GissueMergedBranchDiskCache -OwnerRepo $ghOwnerRepo -Branches $result.Branches
+            if ($result.Branches.Count -eq 0) {
+                if ($Log) { & $Log "WARN: gh pr list --state merged 결과가 비어 있음($ghOwnerRepo) — 빈 집합은 캐시하지 않고 '미머지'로 보수적 처리" | Out-Null }
+            } else {
+                $result.Ok = $true
+                $result.OwnerRepo = $ghOwnerRepo
+                # 성공한 조회만 디스크 캐시에 남긴다(실패를 캐시하면 fail-closed 가 fail-open 으로 뒤집힌다).
+                # Write-GissueMergedBranchDiskCache 도 빈 집합 쓰기를 거부한다(이중 방어).
+                if (Get-Command Write-GissueMergedBranchDiskCache -ErrorAction SilentlyContinue) {
+                    Write-GissueMergedBranchDiskCache -OwnerRepo $ghOwnerRepo -Branches $result.Branches | Out-Null
+                }
+                if ($Log) { & $Log "머지된 PR 브랜치 $($result.Branches.Count)개 조회 완료($ghOwnerRepo)" | Out-Null }
             }
-            if ($Log) { & $Log "머지된 PR 브랜치 $($result.Branches.Count)개 조회 완료($ghOwnerRepo)" | Out-Null }
         } catch {
             if ($Log) { & $Log "WARN: gh pr list 결과 파싱 예외($ghOwnerRepo) — $($_.Exception.Message)" | Out-Null }
         }
     } else {
         $ghOut = (@($ghCall.StdOut, $ghCall.StdErr) | Where-Object { $_ }) -join "`n"
-        if ($Log) { & $Log "WARN: gh pr list --state merged 실패($ghOwnerRepo) — $ghOut (이 레포는 전부 '미머지'로 보수적 처리)" | Out-Null }
+        if ($ghOut -match 'rate limit') {
+            # 한도 초과는 별도 표식으로 남긴다 — 실측(2026-11-26): 종료코드 1, 빈 stdout,
+            # stderr "GraphQL: API rate limit already exceeded for user ID ...".
+            if ($Log) { & $Log "[GH-RATE-LIMIT] gh pr list --state merged 한도 초과($ghOwnerRepo) — $ghOut (이 레포는 전부 '미머지'로 보수적 처리)" | Out-Null }
+        } else {
+            if ($Log) { & $Log "WARN: gh pr list --state merged 실패($ghOwnerRepo) — $ghOut (이 레포는 전부 '미머지'로 보수적 처리)" | Out-Null }
+        }
+    }
+    # 조회 실패 시 최후 수단: TTL이 지났어도 비어 있지 않은 마지막 유효 캐시를 임시로 쓴다.
+    # 빈 캐시 파일은 Read 가 $null 로 거르므로 오염된 파일이 살아나지 않는다.
+    if (-not $result.Ok -and (Get-Command Read-GissueMergedBranchDiskCache -ErrorAction SilentlyContinue)) {
+        $staleHit = Read-GissueMergedBranchDiskCache -OwnerRepo $ghOwnerRepo -AllowStale
+        if ($staleHit) {
+            foreach ($b in $staleHit.Branches) { [void]$result.Branches.Add($b) }
+            $result.Ok = $true
+            $result.OwnerRepo = $ghOwnerRepo
+            if ($Log) { & $Log "[GH-CACHE] STALE $ghOwnerRepo ($($result.Branches.Count) branches, age $($staleHit.AgeMinutes)m) — 조회 실패로 만료된 캐시를 임시 사용" | Out-Null }
+        }
     }
     $script:GissueMergedBranchCache[$key] = $result
     return $result

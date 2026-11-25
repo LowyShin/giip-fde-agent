@@ -22,6 +22,13 @@
 #      단, 캐시 히트 경로도 owner/repo 를 알아내기 위해 `git remote get-url origin`
 #      1회는 한다(로컬 호출, 타임아웃付き) — 그래서 스텁은 git 호출은 실제 헬퍼로
 #      위임하고 gh 호출만 막는다. E-4 는 gh 미호출, E-5 는 외부 호출이 그 1회뿐임을 고정한다.
+#   F. 빈 집합 오염 방지 — Write 는 빈 집합을 거부하고($false, 파일 미생성·미덮어씀),
+#      Read 는 손으로 쓴 빈 집합 파일도 $null 로 거른다. -AllowStale 은 TTL 상한만
+#      풀고 빈 집합은 여전히 거른다.
+#   G. Get-GissueMergedBranchSet — gh 가 종료코드 0 + 빈 stdout 을 돌려줘도 Ok=$false 이고
+#      캐시 파일을 쓰지 않는다. 조회 실패 시 만료됐지만 비어 있지 않은 캐시는 STALE 로
+#      임시 사용하고, 빈 만료 캐시는 살리지 않는다. 한도 초과 실패는 [GH-RATE-LIMIT] 로
+#      구분해 로그에 남긴다.
 #
 # 실행:
 #   powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gissue/tests/test-gh-cache.ps1
@@ -158,6 +165,97 @@ try {
     Assert-Eq $script:GhCalls 0 'E-4 gh 가 한 번도 불리지 않았다'
     Assert-Eq $script:ExternalCalls 1 'E-5 외부 호출은 git remote get-url origin 1회뿐이다' "ExternalCalls=$($script:ExternalCalls)"
     Assert-True (@($logE | Where-Object { $_ -match '\[GH-CACHE\] HIT someowner/somerepo' }).Count -ge 1) 'E-6 [GH-CACHE] HIT 로그가 남는다' ($logE -join ' | ')
+
+    # ──────────────────────────────────────────────────────────────────────────
+    Write-Output ''
+    Write-Output 'F. 빈 집합 오염 방지 — 빈 집합은 쓰지도 읽지도 않는다'
+    # E 구간에서 쓴 파일이 남아 있으므로, F-2 는 파일 부재 상태에서 시작해야 한다.
+    if (Test-Path -LiteralPath $cacheFile) { Remove-Item -LiteralPath $cacheFile -Force }
+    $wEmpty = Write-GissueMergedBranchDiskCache -OwnerRepo $ownerRepo -Branches @()
+    Assert-True ($wEmpty -eq $false) 'F-1 빈 집합 Write 는 $false 를 돌려준다'
+    Assert-True (-not (Test-Path -LiteralPath $cacheFile)) 'F-2 빈 집합 Write 는 파일을 만들지 않는다' $cacheFile
+    $wGood = Write-GissueMergedBranchDiskCache -OwnerRepo $ownerRepo -Branches @('feat/keep-a', 'feat/keep-b')
+    Assert-True ($wGood -eq $true) 'F-3 정상 집합 Write 는 $true 를 돌려준다'
+    $wEmpty2 = Write-GissueMergedBranchDiskCache -OwnerRepo $ownerRepo -Branches @()
+    Assert-True ($wEmpty2 -eq $false) 'F-4 빈 집합 Write 는 $false 를 돌려준다(기존 파일 있음)'
+    $kept = Read-GissueMergedBranchDiskCache -OwnerRepo $ownerRepo
+    Assert-True ($null -ne $kept -and $kept.Branches.Contains('feat/keep-a') -and $kept.Branches.Contains('feat/keep-b')) 'F-5 빈 집합 Write 가 기존 좋은 캐시를 덮지 않는다'
+    $emptyObj = [pscustomobject]@{ ownerRepo = $ownerRepo; fetchedAt = (Get-Date).ToUniversalTime().ToString('o'); branches = @() }
+    [System.IO.File]::WriteAllText($cacheFile, ($emptyObj | ConvertTo-Json -Depth 3), (New-Object System.Text.UTF8Encoding($false)))
+    Assert-True ($null -eq (Read-GissueMergedBranchDiskCache -OwnerRepo $ownerRepo)) 'F-6 손으로 쓴 빈 집합 파일은 Read 가 $null 로 거른다(오염 치유)'
+    $staleObj2 = [pscustomobject]@{
+        ownerRepo = $ownerRepo
+        fetchedAt = (Get-Date).ToUniversalTime().AddHours(-3).ToString('o')
+        branches  = @('feat/stale-x')
+    }
+    [System.IO.File]::WriteAllText($cacheFile, ($staleObj2 | ConvertTo-Json -Depth 3), (New-Object System.Text.UTF8Encoding($false)))
+    Assert-True ($null -eq (Read-GissueMergedBranchDiskCache -OwnerRepo $ownerRepo)) 'F-7 3시간 전 캐시는 기본 TTL 에서 $null'
+    $readStaleOk = Read-GissueMergedBranchDiskCache -OwnerRepo $ownerRepo -AllowStale
+    Assert-True ($null -ne $readStaleOk -and $readStaleOk.Branches.Contains('feat/stale-x')) 'F-8 -AllowStale 이면 3시간 전 비어 있지 않은 캐시가 읽힌다'
+    $staleEmptyObj = [pscustomobject]@{
+        ownerRepo = $ownerRepo
+        fetchedAt = (Get-Date).ToUniversalTime().AddHours(-3).ToString('o')
+        branches  = @()
+    }
+    [System.IO.File]::WriteAllText($cacheFile, ($staleEmptyObj | ConvertTo-Json -Depth 3), (New-Object System.Text.UTF8Encoding($false)))
+    Assert-True ($null -eq (Read-GissueMergedBranchDiskCache -OwnerRepo $ownerRepo -AllowStale)) 'F-9 -AllowStale 이어도 빈 집합 파일은 $null 이다'
+
+    # ──────────────────────────────────────────────────────────────────────────
+    Write-Output ''
+    Write-Output 'G. Get-GissueMergedBranchSet — 빈 결과는 실패, 만료 캐시는 임시 사용'
+    # 외부 호출 래퍼 스텁: gh 응답은 스크립트 변수로 갈아끼우고 git 은 실제 헬퍼로 위임한다.
+    $origExternalCallG = (Get-Command Invoke-GissueExternalCall -ErrorAction Stop).ScriptBlock
+    $script:GhStubCode = 0
+    $script:GhStubOut = ''
+    $script:GhStubErr = ''
+    $script:GhCallsG = 0
+    function Invoke-GissueExternalCall {
+        param([string]$FilePath, [string[]]$ArgumentList = @(), [int]$TimeoutSec = 0, [string]$Kind = 'Git')
+        if ($FilePath -eq 'gh') {
+            $script:GhCallsG++
+            return [pscustomobject]@{ Started = $true; TimedOut = $false; ExitCode = $script:GhStubCode; StdOut = $script:GhStubOut; StdErr = $script:GhStubErr }
+        }
+        return (Invoke-GissueBoundedProcess -FilePath $FilePath -ArgumentList $ArgumentList -TimeoutSec $TimeoutSec)
+    }
+    try {
+        # G-1: gh 가 종료코드 0 + 빈 stdout — 빈 집합을 성공으로 취급해 캐시하던 구 코드 결함.
+        if (Test-Path -LiteralPath $cacheFile) { Remove-Item -LiteralPath $cacheFile -Force }
+        $script:GissueMergedBranchCache.Clear()
+        $script:GhStubCode = 0; $script:GhStubOut = ''; $script:GhStubErr = ''; $script:GhCallsG = 0
+        $logG1 = New-Object System.Collections.ArrayList
+        $setG1 = Get-GissueMergedBranchSet -RepoPath $repoE -Log { param($m) [void]$logG1.Add([string]$m) }
+        Assert-True ($setG1.Ok -eq $false) 'G-1 빈 stdout 결과는 Ok=$false 이다'
+        Assert-Eq $setG1.Branches.Count 0 'G-2 빈 stdout 결과의 집합은 비어 있다'
+        Assert-True (-not (Test-Path -LiteralPath $cacheFile)) 'G-3 빈 stdout 결과가 캐시 파일로 쓰이지 않는다'
+        Assert-True (@($logG1 | Where-Object { $_ -match '결과가 비어 있음' }).Count -ge 1) 'G-4 빈 결과 WARN 로그가 남는다' ($logG1 -join ' | ')
+        # G-2: 같은 실패 + 만료됐지만 비어 있지 않은 캐시 — STALE 로 임시 사용한다.
+        [System.IO.File]::WriteAllText($cacheFile, ($staleObj2 | ConvertTo-Json -Depth 3), (New-Object System.Text.UTF8Encoding($false)))
+        $script:GissueMergedBranchCache.Clear()
+        $script:GhCallsG = 0
+        $logG2 = New-Object System.Collections.ArrayList
+        $setG2 = Get-GissueMergedBranchSet -RepoPath $repoE -Log { param($m) [void]$logG2.Add([string]$m) }
+        Assert-True ($setG2.Ok -eq $true) 'G-5 조회 실패 + 만료 캐시 있음 → STALE 로 Ok=$true'
+        Assert-True ($setG2.Branches.Contains('feat/stale-x')) 'G-6 STALE 집합이 그대로 돌아온다'
+        Assert-True (@($logG2 | Where-Object { $_ -match '\[GH-CACHE\] STALE someowner/somerepo' }).Count -ge 1) 'G-7 [GH-CACHE] STALE 로그가 남는다' ($logG2 -join ' | ')
+        # G-3: 만료 캐시가 빈 집합이면 STALE 로 살리지 않는다(오염 치유).
+        [System.IO.File]::WriteAllText($cacheFile, ($staleEmptyObj | ConvertTo-Json -Depth 3), (New-Object System.Text.UTF8Encoding($false)))
+        $script:GissueMergedBranchCache.Clear()
+        $logG3 = New-Object System.Collections.ArrayList
+        $setG3 = Get-GissueMergedBranchSet -RepoPath $repoE -Log { param($m) [void]$logG3.Add([string]$m) }
+        Assert-True ($setG3.Ok -eq $false) 'G-8 만료 캐시가 빈 집합이면 STALE 없이 Ok=$false'
+        Assert-True (@($logG3 | Where-Object { $_ -match '\[GH-CACHE\] STALE' }).Count -eq 0) 'G-9 빈 만료 캐시에서는 STALE 로그가 없다'
+        # G-4: 한도 초과 실패(종료코드 1 + stderr 문구) — [GH-RATE-LIMIT] 로 구분해 남긴다.
+        if (Test-Path -LiteralPath $cacheFile) { Remove-Item -LiteralPath $cacheFile -Force }
+        $script:GissueMergedBranchCache.Clear()
+        $script:GhStubCode = 1; $script:GhStubOut = ''; $script:GhStubErr = 'GraphQL: API rate limit already exceeded for user ID 20239203.'
+        $logG4 = New-Object System.Collections.ArrayList
+        $setG4 = Get-GissueMergedBranchSet -RepoPath $repoE -Log { param($m) [void]$logG4.Add([string]$m) }
+        Assert-True ($setG4.Ok -eq $false) 'G-10 한도 초과 실패는 Ok=$false'
+        Assert-True (-not (Test-Path -LiteralPath $cacheFile)) 'G-11 한도 초과 실패가 캐시 파일을 만들지 않는다'
+        Assert-True (@($logG4 | Where-Object { $_ -match '\[GH-RATE-LIMIT\]' }).Count -ge 1) 'G-12 [GH-RATE-LIMIT] 로그가 남는다' ($logG4 -join ' | ')
+    } finally {
+        Set-Item -Path 'Function:\Invoke-GissueExternalCall' -Value $origExternalCallG -ErrorAction SilentlyContinue
+    }
 } finally {
     $env:GISSUE_GH_CACHE_DIR = $script:SavedCacheDir
     $env:GISSUE_GH_CACHE_TTL_MIN = $script:SavedTtl

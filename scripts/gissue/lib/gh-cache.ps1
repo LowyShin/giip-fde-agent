@@ -8,6 +8,13 @@
 #   머지판정이 fail-closed 로 닫히고 MANUAL-REVIEW 가 폭증한다(실측).
 #   이 디스크 캐시는 **성공한 조회 결과만** 프로세스 너머로 공유한다 — 실패는 절대
 #   캐시하지 않으므로 fail-closed 동작은 그대로다.
+#   **빈 집합은 절대 쓰지 않는다** — gh 조회가 빈 stdout/빈 배열로 끝나면 그건 조회
+#   실패이지 "머지 PR 0건"이 아니다. 빈 집합을 쓰면 다음 조회부터 TTL(50분) 동안
+#   전부 '미머지'로 처리되는 오염이 된다(2026-11-26 실측: 0개 캐시 파일이 쓰이고
+#   `[GH-CACHE] HIT ... (0 branches)` 가 그 뒤를 이었다). 이미 디스크에 있는
+#   빈 집합 파일도 Read 가 $null 로 거른다.
+#   조회 실패 시에는 TTL이 지났어도 비어 있지 않은 마지막 유효 캐시를 임시로 쓴다
+#   (Read -AllowStale, 호출자 Get-GissueMergedBranchSet 의 STALE 폴백).
 #
 # 파일: 레포당 1개 `<owner>__<repo>.merged.json`
 #   { "ownerRepo": "owner/repo", "fetchedAt": "<ISO 8601 UTC>", "branches": [...] }
@@ -46,11 +53,13 @@ function Get-GissueGhCacheTtlMinutes {
 }
 
 # 캐시를 읽어 { Branches(HashSet), FetchedAt, AgeMinutes } 를 돌려준다.
-# 파일 없음·TTL 만료·JSON 손상·형식 이상이면 **예외 없이 $null** — 호출자는 gh 재조회로 떨어진다.
+# 파일 없음·TTL 만료·JSON 손상·형식 이상·**빈 집합**이면 **예외 없이 $null** — 호출자는 gh 재조회로 떨어진다.
+# -AllowStale: 조회 실패 시 최후 수단으로 TTL 상한을 보지 않고 읽는다(비어 있지 않은 경우만).
 function Read-GissueMergedBranchDiskCache {
     param(
         [Parameter(Mandatory = $true)][string]$OwnerRepo,
-        [int]$MaxAgeMinutes = 0
+        [int]$MaxAgeMinutes = 0,
+        [switch]$AllowStale
     )
     try {
         if ($MaxAgeMinutes -le 0) { $MaxAgeMinutes = Get-GissueGhCacheTtlMinutes }
@@ -70,22 +79,31 @@ function Read-GissueMergedBranchDiskCache {
             $fetched = [datetime]::Parse("$($obj.fetchedAt)", [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
         }
         $age = [datetime]::UtcNow - $fetched
-        if ($age.TotalMinutes -lt 0 -or $age.TotalMinutes -gt $MaxAgeMinutes) { return $null }
+        if ($age.TotalMinutes -lt 0) { return $null }
+        if (-not $AllowStale -and $age.TotalMinutes -gt $MaxAgeMinutes) { return $null }
         $set = New-Object 'System.Collections.Generic.HashSet[string]'
         foreach ($b in @($obj.branches)) { if ($b) { [void]$set.Add("$b") } }
+        # 빈 집합 파일은 오염으로 취급한다 — 이미 디스크에 쓰인 빈 캐시가 있어도 히트로 쓰지 않는다.
+        if ($set.Count -eq 0) { return $null }
         return [pscustomobject]@{ Branches = $set; FetchedAt = $fetched; AgeMinutes = [int][math]::Floor($age.TotalMinutes) }
     } catch {
         return $null
     }
 }
 
-# 성공한 조회 결과만 쓴다. 임시 파일에 쓰고 Move-Item -Force 로 원자적으로 교체하므로
+# 성공한 조회 결과만 쓴다. 빈 집합은 절대 쓰지 않는다 — 빈 결과는 조회 실패이지
+# "머지 PR 0건"이 아니며, 빈 파일을 쓰면 다음 조회부터 전부 '미머지'가 된다
+# (2026-11-26 실측). 빈 집합이면 기존 파일을 건드리지 않고 $false 를 돌려준다.
+# 임시 파일에 쓰고 Move-Item -Force 로 원자적으로 교체하므로
 # 읽는 쪽이 쓰는 도중의 반쪽 파일을 볼 일이 없다. 쓰기 실패는 조용히 삼킨다(캐시는 최적화일 뿐).
+# 반환: $true = 썼다, $false = 빈 집합 거부 또는 쓰기 실패.
 function Write-GissueMergedBranchDiskCache {
     param(
         [Parameter(Mandatory = $true)][string]$OwnerRepo,
         [Parameter(Mandatory = $true)]$Branches
     )
+    $list = @($Branches | ForEach-Object { "$_" } | Where-Object { $_ } | Sort-Object -Unique)
+    if ($list.Count -eq 0) { return $false }
     $tmp = $null
     try {
         $dir = Get-GissueGhCacheDir
@@ -94,14 +112,16 @@ function Write-GissueMergedBranchDiskCache {
         $payload = [pscustomobject]@{
             ownerRepo = $OwnerRepo
             fetchedAt = (Get-Date).ToUniversalTime().ToString('o')
-            branches  = @($Branches | ForEach-Object { "$_" } | Sort-Object -Unique)
+            branches  = $list
         }
         $json = $payload | ConvertTo-Json -Depth 3
         $tmp = "$path.tmp-$PID-$([guid]::NewGuid().ToString('N').Substring(0, 8))"
         [System.IO.File]::WriteAllText($tmp, $json, (New-Object System.Text.UTF8Encoding($false)))
         Move-Item -LiteralPath $tmp -Destination $path -Force
+        return $true
     } catch {
         if ($tmp -and (Test-Path -LiteralPath $tmp)) { try { Remove-Item -LiteralPath $tmp -Force } catch {} }
+        return $false
     }
 }
 
