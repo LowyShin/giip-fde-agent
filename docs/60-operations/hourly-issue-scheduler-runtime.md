@@ -397,11 +397,12 @@ powershell.exe -File "<REPO_ROOT>/scripts/gissue/run-gissue-claude.ps1" -DryRun 
 
 - **구현**: `scripts/gissue/lib/gh-cache.ps1` — 성공한 조회 결과만 디스크에 남겨 프로세스 너머로 공유한다. 실패는 절대 캐시하지 않으므로 fail-closed 동작은 그대로다.
 - **위치**: 레포당 1개 `<owner>__<repo>.merged.json` (`{ ownerRepo, fetchedAt, branches }`). 기본 디렉터리는 `<gissue 폴더>/logs/gh-cache`, 환경변수 `GISSUE_GH_CACHE_DIR` 로 재정의 가능.
-- **TTL**: 기본 50분, 환경변수 `GISSUE_GH_CACHE_TTL_MIN`(양의 정수, 분)으로 재정의. 파일 없음·만료·JSON 손상은 예외 없이 미스로 처리하고 gh 재조회로 떨어진다.
+- **TTL**: 기본 50분, 환경변수 `GISSUE_GH_CACHE_TTL_MIN`(양의 정수, 분)으로 재정의. 파일 없음·만료·JSON 손상·빈 집합은 예외 없이 미스로 처리하고 gh 재조회로 떨어진다.
 - **쓰기**: 임시 파일에 쓴 뒤 원자적으로 교체한다. 쓰기 실패는 조용히 무시한다(캐시는 최적화일 뿐이다).
+- **빈 집합 오염 방지(2026-11-26)**: `gh pr list` 가 종료코드 0 + 빈 stdout(또는 `[]`)으로 끝나면 그건 조회 실패이지 "머지 PR 0건"이 아니다. 실측: 02:07 회차가 정리 단계에서 03:18:53 이후 또 멈췄고, 로그에 처음 나타난 `[GH-CACHE] HIT LowyShin/Lowyworkenv (0 branches, age 6m)` 와 캐시 파일 실측(`branches: []`, fetchedAt 03:12:28Z)이 빈 집합이 디스크에 쓰여 50분간 전부 '미머지'로 처리됐음을 보였다. 같은 시각 직접 재현한 한도 초과 실패는 종료코드 1·빈 stdout·stderr `GraphQL: API rate limit already exceeded for user ID ...` 이며, 이 형태는 기존 실패 경로(캐시 미기록)로 처리된다 — 빈 캐시가 쓰인 경로는 종료코드 0 + 0개 파싱 결과(빈 stdout 또는 `[]`)인 성공 분기뿐이다(호출 지점은 그곳 하나뿐임을 코드 대조로 확인). 빈 stdout 이 생긴 gh 측 원인은 이 수정 범위를 벗어나며, 코드 측에서는 어떤 경우에도 빈 결과를 성공으로 취급하지 않게 막는다. 대책은 세 겹이다. ① `Write-GissueMergedBranchDiskCache` 가 빈 집합 쓰기를 거부한다($false 반환, 기존 파일 유지). ② `Get-GissueMergedBranchSet` 이 빈 결과를 조회 실패로 취급한다(WARN 로그, Ok=$false, 캐시 미기록). ③ `Read-GissueMergedBranchDiskCache` 가 디스크에 이미 있는 빈 집합 파일도 $null 로 거른다(오염 치유). 조회 실패 시에는 TTL이 지났어도 비어 있지 않은 마지막 유효 캐시를 `[GH-CACHE] STALE` 로 임시 사용한다(Read `-AllowStale`). 한도 초과 실패는 `[GH-RATE-LIMIT]` 으로 구분해 로그에 남긴다. 진짜로 머지 PR이 0건인 레포도 빈 결과를 캐시하지 않으므로 매번 gh 를 다시 부른다(정확성 우선, 드문 경우).
 - **무효화**: `merge-standing-prs.ps1` 이 PR 머지 성공 직후 그 레포의 캐시를 지운다. 러너의 busy 해제 판정(`run-gissue-claude.ps1`)도 같은 집합을 먼저 보며, 집합에 있을 때만 긍정 판정하고 없거나 실패면 기존 per-branch `gh pr list --head` 호출 그대로다.
-- **로그**: 캐시 히트 시 `[GH-CACHE] HIT <owner/repo> (<n> branches, age <m>m)` 를 남긴다.
-- **테스트**: `scripts/gissue/tests/test-gh-cache.ps1` — 라운드트립·TTL·손상 JSON·Clear·캐시 히트 시 gh 미호출을 검증한다.
+- **로그**: 캐시 히트 시 `[GH-CACHE] HIT <owner/repo> (<n> branches, age <m>m)` 를 남긴다. 조회 실패 시 만료 캐시를 임시로 쓰면 `[GH-CACHE] STALE <owner/repo> (<n> branches, age <m>m) — 조회 실패로 만료된 캐시를 임시 사용` 을 남긴다. 한도 초과 실패 시 `[GH-RATE-LIMIT]` 을 남긴다.
+- **테스트**: `scripts/gissue/tests/test-gh-cache.ps1` — 라운드트립·TTL·손상 JSON·Clear·캐시 히트 시 gh 미호출·빈 집합 오염 방지(F: 쓰기 거부·기존 파일 유지·빈 파일 Read $null·-AllowStale)·빈 결과 실패 처리와 STALE 폴백 및 한도 초과 구분(G)을 검증한다(42건).
 
 ## 외부 호출 타임아웃 (gh-call-timeout) — 정리 단계 hang 방지
 
