@@ -9,6 +9,12 @@
 # 이 파일은 외부 호출 1회를 Start-Process + WaitForExit(유한 대기)로 실행해,
 # 한도를 넘기면 자식 프로세스를 죽이고 TimedOut=$true 로 돌려준다. 호출자는
 # 타임아웃을 "실패"로 취급해 fail-closed 로 처리하고 다음 레포·항목으로 진행한다.
+# 유한 대기가 true 를 돌려줘도 리다이렉트 출력 펌프가 파일을 다 쓰기 전일 수
+# 있으므로(.NET 문서: WaitForExit(타임아웃) 반환 시 비동기 출력 처리가 끝나지
+# 않았을 수 있음 — Unix 의 파이프+펌프 구현에서 실측됨), 파일을 읽기 전에
+# 인자 없는 WaitForExit()로 펌프가 끝날 때까지 한 번 더 기다린다. 이 호출을
+# 빼먹으면 git 호출이 ExitCode=0 인데 stdout 이 비어 읽혀 "origin remote 없음"·
+# 빈 worktree 목록 같은 가짜 실패가 간헐적으로 난다(2026-11-25 실측: 6회 중 3회).
 #
 # ── 계약 ─────────────────────────────────────────────────────────────────────────
 #   - 반환: @{ Started; TimedOut; ExitCode; StdOut; StdErr }
@@ -76,6 +82,10 @@ function Invoke-GissueBoundedProcess {
                 StdErr   = ''
             }
         }
+        # 유한 대기가 true 를 돌려줘도 출력 펌프가 파일을 다 쓰지 못했을 수 있다.
+        # 인자 없는 WaitForExit()는 비동기 출력 처리가 끝날 때까지 기다린다
+        # (.NET 문서 권장 패턴). 프로세스는 이미 종료했으므로 펌프 비우기만 기다린다.
+        try { $null = $proc.WaitForExit() } catch {}
         $stdOut = ''
         $stdErr = ''
         if (Test-Path -LiteralPath $outFile) { $stdOut = [System.IO.File]::ReadAllText($outFile, [System.Text.Encoding]::UTF8) }
