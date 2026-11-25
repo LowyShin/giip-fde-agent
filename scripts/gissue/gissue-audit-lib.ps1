@@ -16,7 +16,12 @@
 # gair 허용 목록 판정의 정본(lib/gair-gate.ps1)을 적재한다 — 판정 호출의 gair 경유
 # (Get-GissueJudgeGairPlan / Invoke-GissueJudge)가 러너와 같은 목록 해석을 쓰기 위해서다.
 # 이미 적재돼 있으면(호스트가 먼저 읽은 경우) 다시 읽지 않는다.
-if (-not (Get-Command Test-GissueGairCsnAllowed -ErrorAction SilentlyContinue)) {
+# 존재 검사는 Test-Path function: 으로 한다 — Get-Command 는 없는 명령을
+# -ErrorAction SilentlyContinue 로도 $Error 에 남기고, 이 파일이 잡의
+# InitializationScript 에서 닷소싱되면 그 $Error 때문에 잡이 시작 단계에서
+# State=Failed 가 된다(실측: "Running startup script threw an error").
+# Test-Path function: 은 없는 함수에도 오류를 남기지 않는다.
+if (-not (Test-Path function:\Test-GissueGairCsnAllowed)) {
     $gissueGairGateLib = Join-Path $PSScriptRoot 'lib/gair-gate.ps1'
     if (Test-Path -LiteralPath $gissueGairGateLib) { . $gissueGairGateLib }
 }
