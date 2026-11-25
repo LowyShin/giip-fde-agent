@@ -94,6 +94,16 @@ foreach ($repoPath in $RepoPaths) {
                                 $mergeOut = gh pr merge $num --squash --delete-branch 2>&1
                                 if ($LASTEXITCODE -eq 0) {
                                     Write-Log "[MERGED] PR #$num $title ($url)"
+                                    # 머지 직후 이 레포의 머지 집합 디스크 캐시를 비운다 — 다음 머지판정이
+                                    # 방금 머지된 브랜치를 stale 한 캐시 때문에 놓치지 않도록(lib/gh-cache.ps1).
+                                    if (Get-Command Clear-GissueMergedBranchDiskCache -ErrorAction SilentlyContinue) {
+                                        try {
+                                            $sweepOriginUrl = git remote get-url origin 2>$null
+                                            if ("$sweepOriginUrl" -match '[:/]([^/:]+)/([^/]+?)(\.git)?\s*$') {
+                                                Clear-GissueMergedBranchDiskCache -OwnerRepo "$($Matches[1])/$($Matches[2])"
+                                            }
+                                        } catch {}
+                                    }
                                 } else {
                                     Write-Log "[FAILED] PR #$num merge failed: $mergeOut"
                                 }

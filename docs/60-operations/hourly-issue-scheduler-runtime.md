@@ -390,3 +390,15 @@ powershell.exe -File "<REPO_ROOT>/scripts/gissue/run-gissue-claude.ps1" -DryRun 
 ### 18-8) 테스트
 
 - `scripts/gissue/tests/test-only-isn.ps1` — 판정(RUN 5건·CSN 차단·게이트 유지 9건), 스킵 코멘트 문구, [OPS] 접두사와 `list-issues.js`의 커플링을 네트워크 없이 검증한다. 게이트 기대 건수에 포함된다.
+
+## 머지 집합 디스크 캐시 (gh-cache) — gh 중복 호출 제거
+
+머지판정(`worktree-safety.ps1` 의 `Get-GissueMergedBranchSet`)은 레포마다 `gh pr list --state merged --limit 1000` 를 부른다. 이 조회는 GitHub GraphQL 예산(계정 전체 공유)을 먹는데, 프로세스 내 캐시만으로는 매시 러너·CSN별 잡·스윕이 같은 레포를 각자 다시 조회한다. 예산이 소진되면 조회가 전부 실패해 머지판정이 fail-closed 로 닫히고 MANUAL-REVIEW 가 폭증한다.
+
+- **구현**: `scripts/gissue/lib/gh-cache.ps1` — 성공한 조회 결과만 디스크에 남겨 프로세스 너머로 공유한다. 실패는 절대 캐시하지 않으므로 fail-closed 동작은 그대로다.
+- **위치**: 레포당 1개 `<owner>__<repo>.merged.json` (`{ ownerRepo, fetchedAt, branches }`). 기본 디렉터리는 `<gissue 폴더>/logs/gh-cache`, 환경변수 `GISSUE_GH_CACHE_DIR` 로 재정의 가능.
+- **TTL**: 기본 50분, 환경변수 `GISSUE_GH_CACHE_TTL_MIN`(양의 정수, 분)으로 재정의. 파일 없음·만료·JSON 손상은 예외 없이 미스로 처리하고 gh 재조회로 떨어진다.
+- **쓰기**: 임시 파일에 쓴 뒤 원자적으로 교체한다. 쓰기 실패는 조용히 무시한다(캐시는 최적화일 뿐이다).
+- **무효화**: `merge-standing-prs.ps1` 이 PR 머지 성공 직후 그 레포의 캐시를 지운다. 러너의 busy 해제 판정(`run-gissue-claude.ps1`)도 같은 집합을 먼저 보며, 집합에 있을 때만 긍정 판정하고 없거나 실패면 기존 per-branch `gh pr list --head` 호출 그대로다.
+- **로그**: 캐시 히트 시 `[GH-CACHE] HIT <owner/repo> (<n> branches, age <m>m)` 를 남긴다.
+- **테스트**: `scripts/gissue/tests/test-gh-cache.ps1` — 라운드트립·TTL·손상 JSON·Clear·캐시 히트 시 gh 미호출을 검증한다.
