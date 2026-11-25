@@ -6,9 +6,12 @@
 >
 > *(EN/JP 독자는 각 항목을 AI 에이전트에 번역 요청하세요. / Ask your AI assistant to translate entries.)*
 
-**기준일 (as of): 2026-11-24**
+**기준일 (as of): 2026-11-25**
 
 ---
+
+## 2026-11-25
+- **gissue 스케줄러: worktree 정리 단계에 시간 한도(타임박스) + stall 마커로 다음 실행 기록에 표면화** — 사후 스윕 WorktreeCleanup이 시간 한도 없이 동기 실행돼 worktree가 많은 레포에서 한 단계가 수십 분간 멈추고 러너 전체가 붙잡히는 구조를 고쳤다. ① 정리 엔진(`worktree-safety.ps1`)이 항목 경계마다 경과를 확인해 한도(기본 180초, env `GISSUE_WORKTREE_CLEANUP_BUDGET_SEC`로 덮어쓰기)에 걸리면 "시간 한도 도달 — 나머지는 다음 실행" 한 줄과 함께 정상 반환한다(throw 없음 — 러너가 다음 단계로 진행한다). 남은 항목은 다음 실행이 처리한다. 하루 1회 전체 스윕은 대상이 전 레포라 기본 600초(env `GISSUE_WORKTREE_SWEEP_BUDGET_SEC`)다. ② 한도에 걸린 단계는 멈추는 즉시 stall 마커(JSON)를 로그 디렉터리에 남긴다(`lib/stall-marker.ps1`). 그 실행이 강제종료돼 자기 종료 기록을 못 남겨도, 다음 실행 시작 시 마커를 읽어 CSN 로그에 `[STALL-PREV]`로 남기고 Complete-Run이 `[RUN-END-SUMMARY]`에 실어 실행 이력으로 올린다(기존 #6214 실행 기록 경로 재사용, 새 API 없음). 마커는 종료 기록에 실린 뒤에만 소비(삭제)한다. 회귀 테스트 신규 `tests/test-worktree-cleanup-timebox.ps1`(60건). → [정리 엔진](../scripts/gissue/worktree-safety.ps1), [stall 마커](../scripts/gissue/lib/stall-marker.ps1), [러너](../scripts/gissue/run-gissue-claude.ps1), [회귀 테스트](../scripts/gissue/tests/test-worktree-cleanup-timebox.ps1)
 
 ## 2026-11-24
 - **gissue 스케줄러: CJK-QA 게이트의 diff 수집 구간에 EAP 가드** — `Test-GissueCjkContamination` 의 git diff 2곳(diff·diff --name-only)을 러너 본체의 기존 가드(#5102 등)와 같은 방식(EAP 저장 → 수집 구간만 `Continue` → finally 복원)으로 감쌌다. 호출자가 전역 `$ErrorActionPreference='Stop'` 인 Windows PowerShell 5.1 환경에서는 git 의 무해한 stderr 경고(LF→CRLF 경고 등)가 NativeCommandError 종료 오류가 됨을 호스트 실측으로 확인했다 — 첫 번째 diff 는 함수의 catch 가 조용히 return 해 게이트가 무동작이 되고, 두 번째 diff 는 함수 밖으로 throw 할 수 있었다. 동작·로그·분기 계약은 종전 그대로이며, 회귀 테스트 `tests/test-gair-judges.ps1` 에 가드 점검(B8)을 추가했다. → [러너](../scripts/gissue/run-gissue-claude.ps1), [회귀 테스트](../scripts/gissue/tests/test-gair-judges.ps1)

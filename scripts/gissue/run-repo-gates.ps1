@@ -83,7 +83,10 @@ try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } 
 #     돌 수 있어 CI 게이트가 돌지 않는 하위 디렉터리에 둔다 — 기대 건수에 넣지 않는다.
 # 2026-11-23: 자동 반영(자기 갱신) 회귀 테스트 1건(test-code-sync.ps1) + 실행 기록 summary 조립 회귀 테스트 1건(test-run-summary.ps1)
 #   추가(giip 6214) → 51 → 53. (병합 시점에 실재 ps1 테스트 53건으로 실측해 정확히 고정 — 슬랙 0)
-$ExpectedPs1TestCount = 53
+# 2026-11-25: worktree 정리 시간 한도 + stall 마커 회귀 테스트 1건(test-worktree-cleanup-timebox.ps1) 추가 → 53 → 54.
+#   (주의: 실재 ps1 테스트는 56건으로 기대값보다 2건 많다 — 53 고정 이후 기대값 상향 없이 들어온 테스트 2건의
+#    기존 슬랙이며, 이번 변경의 범위가 아니라 그대로 둔다. 게이트는 "기대보다 적을 때만" 실패한다.)
+$ExpectedPs1TestCount = 54
 $ExpectedMjsTestCount = 11
 
 function Write-Gate([string]$Message) {
