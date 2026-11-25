@@ -8,8 +8,8 @@
 # 띄우던 구조(pre-#1472)를 "저장소 정비 세션 1회 + 이슈당 세션 N개"로 바꾼다.
 #   (A) 저장소 정비 세션 1회: 이슈와 무관한 저장소/PR 레벨 작업([0] PR conflict·[E] PR CI 수정·
 #       [F] orphan stash 구조·[H] 최근 코멘트 재검증)을 CSN당 한 세션에서 처리. MiniMax 우선.
-#   (B) 이슈당 세션: Get-GissueIssueQueue 가 단일 우선순위 큐(PENDING / READY>=60분 /
-#       STALE_IN_PROGRESS>=60분 / REVIEW / TESTED)를 돌려주면 이슈 1건마다 전용 프롬프트로
+#   (B) 이슈당 세션: Get-GissueIssueQueue 가 단일 우선순위 큐(READY(시간 조건 없음·최우선) / STALE_IN_PROGRESS>=60분 /
+#       PENDING / REVIEW / TESTED)를 돌려주면 이슈 1건마다 전용 프롬프트로
 #       엔진을 개별 기동한다. 엔진 선택은 상태별 — PENDING/READY/STALE_IN_PROGRESS 는 MiniMax
 #       우선(폴백 claude), REVIEW/TESTED 는 MiniMax 시도 없이 claude 직행(giip #1404/#1407
 #       재발 방지 취지를 "그 이슈 자신"으로만 좁혀 적용 — CSN 전체를 claude 로 강제하면 REVIEW
@@ -41,7 +41,7 @@
 #                 귀속 안내/worktree 정리).
 #
 #   - PENDING   : 시간 무관, 보이면 항상 정제(작업지시서→READY)만 하고 멈춤.
-#   - READY 실행([C]): READY 로 1시간 이상 경과한 것만.
+#   - READY 실행([C]): READY 인 것 전부 — 시간 조건 없음. READY 가 되면 다음 회차에 바로 처리한다(Lowy님 지시 2026-11-25, giip #6328).
 #   - IN_PROGRESS 회수([D]): 1시간 이상 멈춘 IN_PROGRESS 를 이어받아 완수(죽은 세션 선점 복구).
 #   - REVIEW 재검증([G]): 최신 코멘트가 [ACTIONFLOW-TEST] 가 아닌 REVIEW 만 재검증 → SUCCESS 면 TESTED.
 #   - 다른 프로세스 점유 시 대기, 30분 예산: workdir/nested repo 가 base 브랜치가 아니면(다른
@@ -58,7 +58,7 @@
 param(
     [switch]$DryRun,          # claude 미기동, 무엇을 실행할지 로그만
     [string]$OnlyCsn = '',    # 특정 CSN만 (테스트용)
-    [int]$OnlyIsn = 0,        # 이슈 번호 지정 실행 (0=미지정) — 큐 우선순위·READY 경과 조건만 우회하고 안전 게이트는 유지 (giip 5544, 판정 정본 lib/only-isn.ps1)
+    [int]$OnlyIsn = 0,        # 이슈 번호 지정 실행 (0=미지정) — 큐 우선순위만 우회하고 안전 게이트는 유지 (giip 5544, 판정 정본 lib/only-isn.ps1)
     # [저장소 정비 2026-10-23] 아래 2개는 **테스트 전용** 파라미터다.
     #   -FunctionsOnly : 이 파일을 닷소싱(. .\run-gissue-claude.ps1)했을 때 **함수 정의만** 적재하고
     #                     스케줄러 본문(Phase 1 이후) 실행을 건너뛴다. 닷소싱은 top-level 코드가 전부
@@ -976,7 +976,7 @@ $BlockB = @'
   - 내용을 분석해 구체적 작업 지시서를 코멘트로 등록하고 상태를 READY 로 변경한다.
   - .agent/workflows/gissue-refine.md 로직을 따르되 사용자 컨펌 단계는 생략한다.
   - READY 로 바꾼 뒤에는 여기서 멈춘다. 같은 실행에서 곧바로 [C](실제 처리)로 이어가지 않는다.
-    이 이슈는 READY 로 최소 1시간 경과해야 다음 :07 스케줄에서 [C] 대상이 된다(사람이 지시서를 검토할 시간 확보).
+    이 이슈는 READY 가 되면 시간 조건 없이 다음 :07 스케줄에서 바로 [C] 대상이 된다.
 '@
 
 # ── 이슈 처리 공통 블록: [C] 실행 로직 + [C-보강] 아사(starvation) 방지 ────────────────────
@@ -984,8 +984,7 @@ $BlockB = @'
 # 결합해 쓴다(복붙 금지 — giip #2425 와 동일 원칙).
 $BlockC = @'
 [C] 작업 지시서 코멘트가 있는 READY 이슈의 실행 로직:
-  - 이 이슈는 스케줄러가 "READY 로 1시간 이상 경과" 조건(list-issues.js --status READY --min-age-minutes 60
-    동등 조건)으로 이미 선정했다 — 목록을 다시 재조회할 필요 없이 곧바로 착수한다.
+  - 이 이슈는 스케줄러가 READY 상태(시간 조건 없음)만으로 이미 선정했다 — 목록을 다시 재조회할 필요 없이 곧바로 착수한다.
   - 처리 대상이면 먼저 상태를 IN_PROGRESS 로 변경한다(작업 착수 표시, 위 [선점] 참고).
   - 지시서대로 실제 처리한다(소스 수정·기능 추가 포함). .agent/workflows/gissue-proc.md 로직을 따르되 컨펌 단계는 생략한다.
   - **진단 연속성(필수, giip #1195/#1210 인시던트)**: 이슈에 이미 이전 세션이 남긴 진단/분석 note
@@ -1367,7 +1366,7 @@ $HeadPendingIssue = @'
 '@
 
 $HeadReadyIssue = @'
-너는 GIIP issue 자동 처리 에이전트다. CSN {CSN} 전용이며, 모든 작업은 프로젝트 폴더 {PROJECT} 안에서만 수행한다. 이번 세션은 오직 isn={ISN}(제목: {TITLE}) 이슈 1건만 처리한다 — 다른 이슈는 조회·처리하지 않는다. 이 이슈는 READY 로 1시간 이상 경과한 조건으로 이미 이 스크립트가 선정했다 — 목록을 다시 재조회할 필요 없이 곧바로 처리에 착수한다. 사용자 확인/컨펌 절차는 전부 생략하고 끝까지 자율 실행한다.
+너는 GIIP issue 자동 처리 에이전트다. CSN {CSN} 전용이며, 모든 작업은 프로젝트 폴더 {PROJECT} 안에서만 수행한다. 이번 세션은 오직 isn={ISN}(제목: {TITLE}) 이슈 1건만 처리한다 — 다른 이슈는 조회·처리하지 않는다. 이 이슈는 READY 상태라 이미 이 스크립트가 선정했다 — 목록을 다시 재조회할 필요 없이 곧바로 처리에 착수한다. 사용자 확인/컨펌 절차는 전부 생략하고 끝까지 자율 실행한다.
 
 **쓰기 직전 재검증(giip #1053 인시던트 재발방지)**: 이 isn={ISN} 에 코멘트를 남기거나 상태를 바꾸는 "그 순간"에 다시 한 번 이 이슈가 실제로 CSN {CSN} 소속인지 확인 후에만 쓴다. 아래 [조회·쓰기 도구]의 get-issue.sh 경로에는 이 게이트가 내장돼 있다(불일치 시 exit 2). 불일치하면 이 이슈는 절대 건드리지 말고 즉시 조용히 종료한다.
 '@
@@ -1650,14 +1649,14 @@ function Get-GissueAllProjectRepoPaths($mapObj, [scriptblock]$Log) {
 }
 
 # ── 이슈 우선순위 큐 조회(giip #1472, 우선순위 그룹 giip #1560/#1564/#1651) ─────────────────
-# PENDING + READY(>=60분) + STALE_IN_PROGRESS(>=60분) + REVIEW(최신 코멘트가 [ACTIONFLOW-TEST] 로
+# READY(시간 조건 없음) + STALE_IN_PROGRESS(>=60분) + PENDING + REVIEW(최신 코멘트가 [ACTIONFLOW-TEST] 로
 # 시작하지 않는 것만) + TESTED(동일 dedup) 를 단일 우선순위 큐로 반환한다.
 #
 # [lowyworkenv 운영본과의 구현 차이 — 이 레포의 핵심 제약] lowyworkenv 는 이 큐를 giipdb 에 직접
 # 접속하는 execSQLFile.ps1 + 단일 T-SQL(UNION ALL + qprio/is_user_req/has_comment/elapsed_min ORDER BY)
 # 로 뽑는다. 이 레포에는 DB 직접접근이 없으므로 **같은 우선순위 계약을 list-issues.js --queue 가
 # giipfaw API(giipIssues + giipIssueComments)로 재현**한다. 정렬 계약은 SQL 과 동일하다:
-#   qprio(0=STALE_IN_PROGRESS, 1=PENDING, 2=READY, 3=REVIEW/TESTED — 재확인은 READY 실작업 이후)
+#   qprio(0=READY, 1=STALE_IN_PROGRESS, 2=PENDING, 3=REVIEW/TESTED — READY 최우선(giip #6328), 재확인은 실작업 이후)
 #   → is_user_req DESC([USER-REQUEST] 코멘트가 있는 이슈 우선)
 #   → has_comment ASC(코멘트 없는 신생 이슈 우선, giip #1651)
 #   → elapsed_min DESC(가장 오래 정지/대기한 것 우선)
