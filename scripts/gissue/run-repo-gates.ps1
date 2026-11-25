@@ -86,7 +86,9 @@ try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } 
 # 2026-11-25: worktree 정리 시간 한도 + stall 마커 회귀 테스트 1건(test-worktree-cleanup-timebox.ps1) 추가 → 53 → 54.
 #   (주의: 실재 ps1 테스트는 56건으로 기대값보다 2건 많다 — 53 고정 이후 기대값 상향 없이 들어온 테스트 2건의
 #    기존 슬랙이며, 이번 변경의 범위가 아니라 그대로 둔다. 게이트는 "기대보다 적을 때만" 실패한다.)
-$ExpectedPs1TestCount = 54
+# 2026-11-25: 외부 호출 타임아웃 회귀 테스트 1건(test-bounded-process.ps1) 추가 → 54 → 55.
+#   (실재 ps1 테스트 58건으로 2026-11-25 실측 — 기대값보다 3건 많다. 게이트는 기대보다 적을 때만 실패한다.)
+$ExpectedPs1TestCount = 55
 $ExpectedMjsTestCount = 11
 
 function Write-Gate([string]$Message) {

@@ -14,8 +14,14 @@
 #   D. Clear — 파일이 사라지고 이후 read 는 $null.
 #   E. 통합 — 임시 git 레포(가짜 origin)에 캐시를 미리 심으면 Get-GissueMergedBranchSet 가
 #      gh 를 **부르지 않고** Ok=$true 로 그 집합을 돌려준다([GH-CACHE] HIT 로그 포함).
-#      실패를 캐시하지 않는 계약상, E 의 gh 는 호출 즉시 예외를 던지게 스텁한다 —
-#      캐시 히트 경로가 실제로 gh 를 건너뛰는지 이걸로 증명한다.
+#      실패를 캐시하지 않는 계약상, E 의 외부 호출 래퍼(Invoke-GissueExternalCall)는
+#      gh 호출 시 즉시 기록하고 예외를 던지게 스텁한다 — 캐시 히트 경로가 실제로 gh 를
+#      건너뛰는지 이걸로 증명한다. 예전에는 `function gh` 를 스텁했으나, 외부 호출이
+#      lib/bounded-process.ps1 경유(Start-Process)로 바뀌면서 PowerShell 함수 스텁은
+#      우회되므로 래퍼를 스텁하는 방식으로 바꿨다(2026-11-25 gh-call-timeout).
+#      단, 캐시 히트 경로도 owner/repo 를 알아내기 위해 `git remote get-url origin`
+#      1회는 한다(로컬 호출, 타임아웃付き) — 그래서 스텁은 git 호출은 실제 헬퍼로
+#      위임하고 gh 호출만 막는다. E-4 는 gh 미호출, E-5 는 외부 호출이 그 1회뿐임을 고정한다.
 #
 # 실행:
 #   powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gissue/tests/test-gh-cache.ps1
@@ -123,21 +129,35 @@ try {
 
     Write-GissueMergedBranchDiskCache -OwnerRepo $ownerRepo -Branches @('feat/merged-x', 'feat/other')
 
-    # gh 스텁: 불리는 즉시 기록하고 예외를 던진다 — 캐시가 히트하면 절대 불리면 안 된다.
+    # 외부 호출 래퍼 스텁: gh 호출이면 기록하고 예외를 던진다 — 캐시가 히트하면 gh 는 절대 불리면 안 된다.
+    # (Start-Process 경유라 `function gh` 스텁은 우회되므로 래퍼를 스텁한다.)
+    # git 호출은 실제 헬퍼로 위임한다 — 캐시 히트 경로도 origin URL 조회(git) 1회는 하기 때문이다.
+    # 원본 정의를 저장해 두었다가 finally 에서 복원한다(제거하면 이후 구간이 래퍼를 못 쓴다).
+    $origExternalCall = (Get-Command Invoke-GissueExternalCall -ErrorAction Stop).ScriptBlock
     $script:GhCalls = 0
-    function gh { $script:GhCalls++; throw 'gh stub — 캐시 히트 경로에서는 호출 금지' }
+    $script:ExternalCalls = 0
+    function Invoke-GissueExternalCall {
+        param([string]$FilePath, [string[]]$ArgumentList = @(), [int]$TimeoutSec = 0, [string]$Kind = 'Git')
+        $script:ExternalCalls++
+        if ($FilePath -eq 'gh') {
+            $script:GhCalls++
+            throw 'gh stub — 캐시 히트 경로에서는 호출 금지'
+        }
+        return (Invoke-GissueBoundedProcess -FilePath $FilePath -ArgumentList $ArgumentList -TimeoutSec $TimeoutSec)
+    }
     $logE = New-Object System.Collections.ArrayList
     $loggerE = { param($m) [void]$logE.Add([string]$m); Write-Output $m }
     try {
         $setE = Get-GissueMergedBranchSet -RepoPath $repoE -Log $loggerE
     } finally {
-        Remove-Item -Path 'Function:\gh' -ErrorAction SilentlyContinue
+        Set-Item -Path 'Function:\Invoke-GissueExternalCall' -Value $origExternalCall -ErrorAction SilentlyContinue
     }
     Assert-True (@($setE).Count -eq 1) 'E-1 반환값은 정확히 1개 객체' "count=$(@($setE).Count)"
     Assert-True ($setE.Ok -eq $true) 'E-2 Ok=$true (캐시 히트)'
     Assert-True ($setE.Branches.Contains('feat/merged-x') -and $setE.Branches.Contains('feat/other')) 'E-3 심어둔 집합이 그대로 돌아온다'
     Assert-Eq $script:GhCalls 0 'E-4 gh 가 한 번도 불리지 않았다'
-    Assert-True (@($logE | Where-Object { $_ -match '\[GH-CACHE\] HIT someowner/somerepo' }).Count -ge 1) 'E-5 [GH-CACHE] HIT 로그가 남는다' ($logE -join ' | ')
+    Assert-Eq $script:ExternalCalls 1 'E-5 외부 호출은 git remote get-url origin 1회뿐이다' "ExternalCalls=$($script:ExternalCalls)"
+    Assert-True (@($logE | Where-Object { $_ -match '\[GH-CACHE\] HIT someowner/somerepo' }).Count -ge 1) 'E-6 [GH-CACHE] HIT 로그가 남는다' ($logE -join ' | ')
 } finally {
     $env:GISSUE_GH_CACHE_DIR = $script:SavedCacheDir
     $env:GISSUE_GH_CACHE_TTL_MIN = $script:SavedTtl
