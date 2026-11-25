@@ -15,7 +15,11 @@
 | PENDING 방치 | 32건 중 22건이 24시간 이상, 가장 오래된 건 2026-11-20 등록 | |
 | watchdog 코멘트 | 최근 7일 **579건 / 117개 이슈** | gissue-scheduler-watchdog 작성 |
 
-주의: 1차 측정에서 T-SQL `LIKE`의 대괄호가 문자 클래스로 해석돼 [BUDGET] 건수가 부풀려진 값을 얻었다. 그 수치는 폐기하고 `CHARINDEX` 정확 매칭으로 다시 측정했다 (위 표가 재측정 값). 회차 실행 기록(tKVS scheduler_run_history)은 이번 조사에서 값을 얻지 못해 **미확인**으로 남긴다.
+주의: 1차 측정에서 T-SQL `LIKE`의 대괄호가 문자 클래스로 해석돼 [BUDGET] 건수가 부풀려진 값을 얻었다. 그 수치는 폐기하고 `CHARINDEX` 정확 매칭으로 다시 측정했다 (위 표가 재측정 값).
+
+**조사 방법 정정 (2026-11-25 후속)**: 초판 조사는 임시 쿼리를 매번 새로 만들어 던지는 방식이었고, 위 대괄호 오류와 실행 기록 누락이 모두 거기서 나왔다. 이후 이 조사는 표준 스크립트 `scripts/gissue/investigate-scheduler.ps1` 한 개로만 한다 (고정 증거 세트, [BUDGET]는 CHARINDEX 고정, 실행 기록 포함). 표준 스크립트 첫 실행(2026-11-25 14:45)으로 위 표를 재현했다 — [BUDGET]는 1,017건/138 이슈로, 시간 경과분만큼만 늘었다.
+
+**회차 실행 기록 — 확인 완료 (초판의 "미확인" 정정)**: 실행 기록은 tKVS에 `kType='lssn'`, `kFactor` ∈ {scheduler_run_start, scheduler_run_report, scheduler_run_history}로 쌓인다 (lib/kvs-report.ps1). 초판에서는 키 공간을 잘못 가정해 못 봤다. 최근 7일 적재량: start 3,067건 · report 2,767건 · history 2,907건, 최신은 2026-11-25 05:43 UTC — 기록 자체는 정상적으로 쌓이고 있다. history 값은 JSON이다 (예: `{"taskName":"GIIP_Gissue_Claude","ranAt":"2026-11-25 14:42:58","summary":"CSN [...] 처리 0 / 실패 0","hostname":"LOWY-DP01"}`).
 
 ## 2. 원인 (코드 실측)
 
