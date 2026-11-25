@@ -204,7 +204,10 @@ try {
     Assert-True (@($setC2).Count -eq 1) 'C-6 반환값은 정확히 1개 객체' "count=$(@($setC2).Count)"
     Assert-True ($setC2.Ok -eq $false) 'C-7 바로 실패하는 gh 면 Ok=$false (fail-closed)'
     Assert-Eq $setC2.Branches.Count 0 'C-8 바로 실패하는 gh 면 브랜치 집합은 비어 있다'
-    Assert-True (@($logC2 | Where-Object { $_ -match 'gh pr list --state merged 실패' }).Count -ge 1) 'C-9 gh 실패 WARN 로그가 남는다' ($logC2 -join ' | ')
+    Assert-True (@($logC2 | Where-Object { $_ -match 'gh pr list --state merged (실패|결과가 비어 있음)' }).Count -ge 1) 'C-9 gh 실패 WARN 로그가 남는다' ($logC2 -join ' | ')
+    # 주: Windows CI 에서는 가짜 gh 의 종료코드 1이 0으로 잘못 돌아오고(A-6 과 같은
+    # 환경 결함, main 에서도 동일하게 실패) 빈 stdout 이 되므로, 빈 결과 WARN
+    # ("결과가 비어 있음")이 남는다. 둘 다 실패 경로의 WARN 로그다.
     # D 를 위해 멈추는 가짜 gh 로 되돌린다.
     if ($IsWindows -or $PSVersionTable.PSEdition -eq 'Desktop') {
         Set-Content -LiteralPath $fakeGh -Value "@echo off`r`npowershell -NoProfile -Command `"Start-Sleep -Seconds 30`"`r`n" -Encoding ASCII
