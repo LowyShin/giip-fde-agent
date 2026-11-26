@@ -121,6 +121,22 @@ REVIEW/TESTED 이슈에 연결된 워크트리와 `git worktree list` 에 정식
 > 근거 규칙: [규칙 47](../../.agent/rules/47_auto_cleanup_safety_requirements.md) ·
 > 회귀 테스트: `scripts/gissue/tests/test-worktree-claude-session-guard.ps1`.
 
+> **확장(2026-11-27, giip 6401/6423)** — 위 "고유 커밋 없음"(조상) 판정은 **격리 계열 전용이 아니다**.
+> **모든 worktree** 에 병행한다. 추가한 이유: `gh pr list --state merged --json headRefName` 는
+> **PR 헤드 브랜치 이름**만 준다. PR 이 없는 로컬 전용 검증 브랜치이거나 PR 헤드 이름과 worktree 의
+> **로컬 브랜치 이름**이 다르면 그 worktree 는 PR 머지 게이트만으로는 **영영** '미머지' 로 남아
+> **정리 대상이 0건**이 된다 — 무한 누적의 잔류 경로다. 실측(giip 6401, 2026-11-26): 이 레포 잔여
+> worktree 5건 **전부** HEAD 가 `origin/main` 의 조상인데도 5건 전부 MANUAL-REVIEW 였다.
+>
+> **★ 하한선(필수)** — 조상 판정은 **커밋된 내용**만 증명한다("HEAD 가 조상" = 커밋된 내용은 이미
+> `main` 에 있음). **미커밋 산출물은 그 증명에 포함되지 않는다.** 그래서 이 경로는 dirty 판정을
+> **엄격하게** 태운다 — 미커밋 변경 1건이라도 있으면 **삭제하지 않고 보류**(MANUAL-REVIEW)한다
+> (규칙 57 의 "❌ 미커밋 변경이 있는 worktree 삭제" 가 그대로 적용된다).
+> PR 머지 게이트를 통과한 경로의 기존 동작(더티여도 진행)은 **그대로 둔다** — 변경 범위는 "조상 판정 경로" 다.
+> 근거 규칙: [규칙 47](../../.agent/rules/47_auto_cleanup_safety_requirements.md) ·
+> 회귀 테스트: `scripts/gissue/tests/test-worktree-ancestry-general-guard.ps1`
+> (조상+clean → 정리 대상 / 조상+미커밋 → 보류 / 조상+미반영 → 보류 / PR 게이트 경로 기존 동작 유지).
+
 **실행 셸**: 이 레포의 배포 대상에는 PowerShell 7(`pwsh`)이 없을 수 있습니다. 문서 예시와 실제
 호출은 전부 `powershell -NoProfile -ExecutionPolicy Bypass -File "<경로>"`(Windows PowerShell 5.1)
 로 씁니다 — `pwsh` 로 부르면 `command not found` 로 **아무 일도 하지 않고** 끝납니다(giip #2559).

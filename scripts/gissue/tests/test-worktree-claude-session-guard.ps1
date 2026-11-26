@@ -207,7 +207,10 @@ Assert-True ($manualPaths -contains $dirtyNorm) 'B-3b 대신 수동확인 목록
 # B-4 최근 활동 → 보호(idle 가드가 실행 중 에이전트 보호를 겸한다)
 Assert-True ($removedPaths -notcontains $recentNorm) 'B-4 최근 활동 worktree 는 보호' "Removed=$($removedPaths -join ', ')"
 
-# B-5 격리 계열이 아닌 일반 worktree 는 기존과 동일하게 "머지 없으면 미머지" 로 남는다
+# B-5 ★giip 6401/6423 정책 변경★ 일반 worktree 도 "고유 커밋 없음"(조상) 판정을 **받는다**.
+#   이전에는 이 계열만 조상 판정을 받아 일반 worktree 는 PR 머지 게이트로만 판정됐다 →
+#   PR 헤드 이름 ≠ 로컬 브랜치 이름인 worktree 가 영영 '미머지' 로 남아 정리 대상 0건(무한 누적).
+#   상세 하한선(dirty 시 보류) 회귀는 test-worktree-ancestry-general-guard.ps1 가 담당한다.
 $wtPlain = Join-Path $root 'wt-plain'
 Invoke-Git @('-C', $repo, 'worktree', 'add', '-q', '-b', 'feat/plain', $wtPlain, 'main')
 Set-TreeAge $wtPlain $oldUtc
@@ -219,7 +222,8 @@ Invoke-GissueWorktreeCleanupForRepo -RepoPath $repo -DryRun -Log $logger2 `
     -DeleteRemoteBranch $false -ResultRef ([ref]$r2)
 $removedPaths2 = @($r2.Removed | ForEach-Object { ([string]$_.Path).TrimEnd('\', '/') })
 $plainNorm = (Resolve-Path -LiteralPath $wtPlain).Path.TrimEnd('\', '/')
-Assert-True ($removedPaths2 -notcontains $plainNorm) 'B-5 일반 worktree 는 조상 판정을 받지 않는다(기존 동작 유지)' "Removed=$($removedPaths2 -join ', ')"
+Assert-True ($removedPaths2 -contains $plainNorm) 'B-5 일반 worktree 도 조상 판정을 받는다(giip 6401/6423 정책 변경)' "Removed=$($removedPaths2 -join ', ')"
+Assert-True (($logLines2 -join "`n") -match 'MERGED-BY-ANCESTRY') 'B-5b 일반 worktree 조상 판정 로그가 남는다' ''
 
 # B-6 DryRun 이므로 실제로는 아무것도 사라지지 않아야 한다
 Assert-True (Test-Path -LiteralPath $wtClean) 'B-6 DryRun 은 실제 삭제하지 않음(격리 잔해)' ''
