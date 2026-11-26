@@ -16,6 +16,12 @@
 #   조회 실패 시에는 TTL이 지났어도 비어 있지 않은 마지막 유효 캐시를 임시로 쓴다
 #   (Read -AllowStale, 호출자 Get-GissueMergedBranchSet 의 STALE 폴백).
 #
+#   **공백이 든 항목은 절대 읽지도 쓰지도 않는다** (2026-11-25 실측 — giip #6354):
+#   PowerShell 5.1 의 ConvertFrom-Json 배열 함정으로 브랜치 목록이 "공백 결합 문자열 1개"
+#   로 붕괴해 저장된 파일이다(539개가 1개로). git ref 이름에는 공백이 들어갈 수 없으므로
+#   공백 포함 항목이 하나라도 있으면 그 파일은 깨진 파일이다 — Read 는 $null 로 거르고
+#   (이미 디스크에 있는 오염 파일은 호스트 손대지 않고 자동 무효화된다), Write 는 거부한다.
+#
 # 파일: 레포당 1개 `<owner>__<repo>.merged.json`
 #   { "ownerRepo": "owner/repo", "fetchedAt": "<ISO 8601 UTC>", "branches": [...] }
 # 위치: $env:GISSUE_GH_CACHE_DIR 가 있으면 그곳, 없으면 <gissue 폴더>/logs/gh-cache
@@ -82,7 +88,17 @@ function Read-GissueMergedBranchDiskCache {
         if ($age.TotalMinutes -lt 0) { return $null }
         if (-not $AllowStale -and $age.TotalMinutes -gt $MaxAgeMinutes) { return $null }
         $set = New-Object 'System.Collections.Generic.HashSet[string]'
-        foreach ($b in @($obj.branches)) { if ($b) { [void]$set.Add("$b") } }
+        foreach ($b in @($obj.branches)) {
+            if (-not $b) { continue }
+            $name = "$b"
+            # ★ 공백이 든 항목은 깨진 파일이다(2026-11-25 실측 — giip #6354): PS 5.1 의
+            #   ConvertFrom-Json 배열 함정으로 브랜치 목록이 "공백 결합 문자열 1개" 로 붕괴해
+            #   저장된 파일이다. git ref 이름에는 공백이 들어갈 수 없으므로, 공백 포함 항목이
+            #   하나라도 있으면 파일 전체를 오염으로 거른다 — 이미 디스크에 있는 오염 파일은
+            #   호스트에서 손으로 지우지 않고 다음 조회에서 자동으로 무효화된다(#569 와 같은 precedent).
+            if ($name -match '\s') { return $null }
+            [void]$set.Add($name)
+        }
         # 빈 집합 파일은 오염으로 취급한다 — 이미 디스크에 쓰인 빈 캐시가 있어도 히트로 쓰지 않는다.
         if ($set.Count -eq 0) { return $null }
         return [pscustomobject]@{ Branches = $set; FetchedAt = $fetched; AgeMinutes = [int][math]::Floor($age.TotalMinutes) }
@@ -102,7 +118,20 @@ function Write-GissueMergedBranchDiskCache {
         [Parameter(Mandatory = $true)][string]$OwnerRepo,
         [Parameter(Mandatory = $true)]$Branches
     )
-    $list = @($Branches | ForEach-Object { "$_" } | Where-Object { $_ } | Sort-Object -Unique)
+    # ★ 배열 함정 방어(giip #6354): 중첩 배열이 들어오면 파이프라인이 원소 단위로 펼치지 못한 채
+    #   "공백 결합 문자열 1개" 로 뭉개진다. 원소를 직접 순회해 문자열로 정규화하고, 공백이 든
+    #   항목(정상 브랜치 이름이 아님)은 **쓰지 않는다**(fail-closed — 잘못된 캐시를 만들지 않는다).
+    $names = @()
+    foreach ($b in @($Branches)) {
+        foreach ($s in @($b)) {
+            if ($null -eq $s) { continue }
+            $name = "$s"
+            if (-not $name.Trim()) { continue }
+            if ($name -match '\s') { return $false }
+            $names += $name
+        }
+    }
+    $list = @($names | Sort-Object -Unique)
     if ($list.Count -eq 0) { return $false }
     $tmp = $null
     try {

@@ -256,6 +256,61 @@ try {
     } finally {
         Set-Item -Path 'Function:\Invoke-GissueExternalCall' -Value $origExternalCallG -ErrorAction SilentlyContinue
     }
+
+    # ──────────────────────────────────────────────────────────────────────────
+    Write-Output ''
+    Write-Output 'H. PS 5.1 ConvertFrom-Json 배열 함정 — 브랜치 목록 붕괴/오염 캐시 방지 (giip #6354)'
+    # 배경(2026-11-25 실측): PS 5.1 의 ConvertFrom-Json 은 JSON 배열을 "배열 객체 1개" 로 파이프에
+    # 흘린다. 그래서 `@(<stdOut> | ConvertFrom-Json)` 은 중첩 배열이 되고, `$p.headRefName` 이 멤버
+    # 열거로 String[] 가 되어 `HashSet<string>.Add(<String[]>)` 가 공백 결합 문자열 1개로 붕괴한다.
+    # 실측: 브랜치 539개 → 1개 → `Contains(<브랜치>)` 가 항상 false → 전 worktree '미머지' 오판 →
+    # 정리 대상 0건(무한 누적) + 머지목록 캐시가 매 회차 같은 모양으로 오염 재작성.
+    $origExternalCallH = (Get-Command Invoke-GissueExternalCall -ErrorAction Stop).ScriptBlock
+    $script:GhStubCodeH = 0
+    $script:GhStubOutH = ''
+    $script:GhStubErrH = ''
+    function Invoke-GissueExternalCall {
+        param([string]$FilePath, [string[]]$ArgumentList = @(), [int]$TimeoutSec = 0, [string]$Kind = 'Git')
+        if ($FilePath -eq 'gh') {
+            return [pscustomobject]@{ Started = $true; TimedOut = $false; ExitCode = $script:GhStubCodeH; StdOut = $script:GhStubOutH; StdErr = $script:GhStubErrH }
+        }
+        return (Invoke-GissueBoundedProcess -FilePath $FilePath -ArgumentList $ArgumentList -TimeoutSec $TimeoutSec)
+    }
+    try {
+        # H-1: gh 가 JSON 배열(요소 2개)을 돌려줘도 브랜치가 2개로 파싱되어야 한다(중첩배열 붕괴 방지).
+        if (Test-Path -LiteralPath $cacheFile) { Remove-Item -LiteralPath $cacheFile -Force }
+        $script:GissueMergedBranchCache.Clear()
+        $script:GhStubCodeH = 0
+        $script:GhStubOutH = '[{"headRefName":"feat/h-one"},{"headRefName":"fix/h-two"}]'
+        $script:GhStubErrH = ''
+        $logH1 = New-Object System.Collections.ArrayList
+        $setH1 = Get-GissueMergedBranchSet -RepoPath $repoE -Log { param($m) [void]$logH1.Add([string]$m) }
+        Assert-True ($setH1.Ok -eq $true) 'H-1 JSON 배열 조회는 Ok=$true 다'
+        Assert-Eq $setH1.Branches.Count 2 'H-2 브랜치 2개가 그대로 파싱된다(1개로 붕괴하지 않는다)'
+        Assert-True ($setH1.Branches.Contains('feat/h-one') -and $setH1.Branches.Contains('fix/h-two')) 'H-3 파싱된 브랜치명이 정확하다'
+        # H-4: 쓰인 캐시 파일도 원소 2개짜리 배열이다(공백 결합 문자열 1개가 아니다).
+        $hRaw = ([System.IO.File]::ReadAllText($cacheFile) | ConvertFrom-Json)
+        Assert-Eq @($hRaw.branches).Count 2 'H-4 캐시 파일 branches 가 원소 2개짜리 배열이다'
+        Assert-Eq "$(@($hRaw.branches)[0])" 'feat/h-one' 'H-5 캐시 파일 첫 원소가 브랜치명이다'
+        # H-6: 공백이 든 항목(중첩 배열 붕괴 흔적)은 Write 가 거부한다(fail-closed).
+        $wH6 = Write-GissueMergedBranchDiskCache -OwnerRepo $ownerRepo -Branches @('feat/ok', 'feat/broken name')
+        Assert-True ($wH6 -eq $false) 'H-6 공백 포함 항목이 있으면 Write 는 $false 를 돌려준다'
+        $afterH6 = ([System.IO.File]::ReadAllText($cacheFile) | ConvertFrom-Json)
+        Assert-Eq @($afterH6.branches).Count 2 'H-7 거부된 Write 는 기존 캐시 파일을 덮어쓰지 않는다'
+        # H-8: 손으로 쓴 오염 캐시(공백 결합 문자열 1개)는 Read 가 $null 로 거른다(오염 자동 치유).
+        $poisonObj = [pscustomobject]@{
+            ownerRepo = $ownerRepo
+            fetchedAt = (Get-Date).ToUniversalTime().ToString('o')
+            branches  = @('feat/h-one fix/h-two')
+        }
+        [System.IO.File]::WriteAllText($cacheFile, ($poisonObj | ConvertTo-Json -Depth 3), (New-Object System.Text.UTF8Encoding($false)))
+        $readH8 = Read-GissueMergedBranchDiskCache -OwnerRepo $ownerRepo
+        Assert-True ($null -eq $readH8) 'H-8 공백 결합 문자열로 뭉긴 오염 캐시는 Read 가 $null 로 거른다'
+        $readH9 = Read-GissueMergedBranchDiskCache -OwnerRepo $ownerRepo -AllowStale
+        Assert-True ($null -eq $readH9) 'H-9 -AllowStale 이어도 오염 캐시는 $null 이다(오염 자동 치유)'
+    } finally {
+        Set-Item -Path 'Function:\Invoke-GissueExternalCall' -Value $origExternalCallH -ErrorAction SilentlyContinue
+    }
 } finally {
     $env:GISSUE_GH_CACHE_DIR = $script:SavedCacheDir
     $env:GISSUE_GH_CACHE_TTL_MIN = $script:SavedTtl
