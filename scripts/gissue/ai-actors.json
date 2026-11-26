@@ -1,5 +1,5 @@
 {
-  "_comment": "AI 행위자 계정 공개 레지스트리 (giip #2613). 비밀값(AccessToken)은 여기에 두지 않는다 — AK 는 git 비추적 slack-bot/.secrets/giip-accounts.json 의 actors[<uloginid>].ak 에 있고, scripts/gissue/sync-ai-actor-credentials.ps1 이 DB 에서 그리로 직접 옮긴다. 이 파일은 '어떤 주체가 있고 어떤 계정을 쓰는가'만 기술한다. 정본 사양서: giipprj/giipdb/docs/30_Specs/SPEC_AiActorAccounts.md, 절차서: scripts/gissue/AI_ACTOR_ACCOUNTS.md",
+  "_comment": "AI 행위자 계정 공개 레지스트리 (giip #2613). 비밀값(AccessToken)은 여기에 두지 않는다 — AK 는 git 비추적 slack-bot/.secrets/giip-accounts.json 의 actors[<uloginid>].ak 에 있고, 이 저장소에는 DB 직접접속 수단이 없어 AK 를 옮기는 스크립트(sync-ai-actor-credentials.ps1)는 배포 대상이 아니다 — AK 는 DB 접근 권한이 있는 호스트에서 옮긴 뒤 그 결과물 파일을 이 체크아웃으로 가져오거나 환경변수 GIIP_ACCOUNTS_FILE 로 가리킨다. 이 파일은 '어떤 주체가 있고 어떤 계정을 쓰는가'만 기술한다. 정본 사양서: giipprj/giipdb/docs/30_Specs/SPEC_AiActorAccounts.md, 절차서: scripts/gissue/AI_ACTOR_ACCOUNTS.md",
   "namingRule": {
     "pattern": "ai.<host>.<process>",
     "prefix": "ai. — 사람 계정이 아님을 이름만 보고 판별할 수 있게 하는 고정 접두어. 집계도 author LIKE 'ai.%' 한 줄로 끝난다.",
