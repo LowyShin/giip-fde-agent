@@ -1022,9 +1022,31 @@ function Get-GissueMergedBranchSet {
             # 빈 stdout(`[]` 포함)은 빈 집합이 아니라 조회 실패로 취급한다 — 성공으로 보고
             # 캐시하면 빈 집합이 디스크에 남아 다음 조회부터 전부 '미머지'가 된다(2026-11-26 실측).
             # ConvertFrom-Json 은 빈 문자열에 던지므로 파싱 전에 가드한다.
-            $parsed = @()
-            if ("$($ghCall.StdOut)".Trim()) { $parsed = @("$($ghCall.StdOut)" | ConvertFrom-Json) }
-            foreach ($p in @($parsed)) { if ($p.headRefName) { [void]$result.Branches.Add($p.headRefName) } }
+            # ★ [PS 5.1 배열 함정, 2026-11-25 실측 — giip #6354] PowerShell 5.1 의 ConvertFrom-Json 은
+            #   JSON 배열을 "요소 N개" 가 아니라 "배열 객체 1개" 로 파이프에 흘린다(PS 6+ 와 다르다).
+            #   그래서 `@(<stdOut> | ConvertFrom-Json)` 은 **중첩 배열**(원소 1개 = Object[])이 되고,
+            #   아래 `foreach ($p in ...)` 의 `$p` 가 배열이 된다 → `$p.headRefName` 이 **멤버 열거**로
+            #   String[] 가 되고 → `HashSet<string>.Add(<String[]>)` 가 PS 의 배열→문자열 변환(공백 결합)
+            #   으로 **브랜치 539개가 문자열 1개로 붕괴**한다(실측: `'feat/alpha fix/beta'`).
+            #   결과적으로 `Contains(<브랜치>)` 가 항상 false → 전 worktree 가 '미머지' 로 오판되어
+            #   정리 대상이 0건이 되고(무한 누적 재현), 머지목록 디스크 캐시도 같은 모양으로 오염되어
+            #   매 회차 재생성된다. ⇒ 파이프라인을 @() 로 감싸지 말고 **변수에 직접 대입**한 뒤 순회한다.
+            #     (같은 규칙을 pr-attribution-lib.ps1 이 이미 문서화해 쓰고 있다 — 그 주석을 따른다.)
+            $parsed = $null
+            if ("$($ghCall.StdOut)".Trim()) { $parsed = "$($ghCall.StdOut)" | ConvertFrom-Json }
+            $branchNames = @()
+            foreach ($p in @($parsed)) {
+                if ($null -eq $p) { continue }
+                # $p 가 아직 배열이면(중첩 잔여) 원소 단위로 펼친다 — 멤버 열거 함정 재발 방지.
+                foreach ($q in @($p)) {
+                    if ($null -eq $q) { continue }
+                    $hn = $q.headRefName
+                    if ($null -eq $hn) { continue }
+                    if ($hn -is [System.Array]) { foreach ($h in $hn) { if ($h) { $branchNames += "$h" } } }
+                    elseif ("$hn".Trim()) { $branchNames += "$hn" }
+                }
+            }
+            foreach ($b in $branchNames) { [void]$result.Branches.Add($b) }
             if ($result.Branches.Count -eq 0) {
                 if ($Log) { & $Log "WARN: gh pr list --state merged 결과가 비어 있음($ghOwnerRepo) — 빈 집합은 캐시하지 않고 '미머지'로 보수적 처리" | Out-Null }
             } else {
