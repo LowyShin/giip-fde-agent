@@ -70,6 +70,14 @@ function Invoke-GissueBoundedProcess {
         }
         if ($WorkingDirectory) { $startArgs['WorkingDirectory'] = $WorkingDirectory }
         $proc = Start-Process @startArgs
+        # 핸들을 먼저 캐시한다 — 이것이 없으면 **종료 코드가 항상 0 으로 읽힌다**
+        # (.NET Framework 의 Process 는 핸들을 캐시하지 않은 채로 종료되면
+        #  ExitCode 를 0(=성공) 으로 돌려준다 — 2026-11-26 실측: PS 5.1 에서
+        #  `merge-base --is-ancestor`(조상 아님 → 종료코드 1)이 0 으로 돌아와
+        #  "HEAD 가 origin/main 의 조상" 판정을 내렸다 → 워크트리 삭제 가드가
+        #  **fail-open** 으로 뒤집혀 "미반영 커밋이 있는 워크트리"를 삭제했다).
+        #  핸들을 만지면 프로세스 객체가 그 핸들을 붙들어 종료 코드가 정상 전달된다.
+        $null = $proc.Handle
         $exited = $proc.WaitForExit($TimeoutSec * 1000)
         if (-not $exited) {
             try { $proc.Kill() } catch {}
