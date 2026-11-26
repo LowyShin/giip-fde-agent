@@ -78,6 +78,28 @@ push 직후의 clean 상태는 작업의 끝이 아니라 중간 지점이다.
 추가로 이 계열은 idle 임계가 일반 worktree 보다 보수적(`240분` 하한)이다 — 라이브 서브에이전트가
 오래 붙잡고 있는 경우를 보호하기 위함이며, "idle 가드가 실행 중 에이전트 보호를 겸한다".
 
+## 일반 worktree 의 "고유 커밋 없음"(조상) 판정 (giip 6401/6423 신설)
+
+> **판정은 한 곳에서만 한다** — `scripts/gissue/worktree-safety.ps1` 의
+> `Invoke-GissueWorktreeCleanupForRepo` 가 유일한 판정 지점이다(rule 48).
+
+위의 "고유 커밋 없음"(HEAD 가 `origin/main` 의 조상) 판정은 **Claude Code 격리 계열 전용이 아니다** —
+**모든 worktree** 에 병행한다. 추가한 이유:
+
+`gh pr list --state merged --json headRefName` 는 **PR 헤드 브랜치 이름**만 준다. PR 이 없는
+로컬 전용 검증 브랜치이거나 PR 헤드 이름과 worktree 의 **로컬 브랜치 이름**이 다르면, 그 worktree 는
+PR 머지 게이트만으로는 **영영** '미머지' 로 남아 **정리 대상이 0건**이 된다 — 무한 누적의 잔류 경로다.
+실측(giip 6401, 2026-11-26): 이 레포 잔여 worktree 5건 **전부** HEAD 가 `origin/main` 의 조상인데도
+5건 전부 MANUAL-REVIEW 였다.
+
+**★ 하한선(필수)** — 조상 판정은 **커밋된 내용**만 증명한다("HEAD 가 조상" = 커밋된 내용은 이미
+`main` 에 있음). **미커밋 산출물은 그 증명에 포함되지 않는다.** 그래서 이 경로는 dirty 판정을
+**엄격하게** 태운다 — 미커밋 변경 1건이라도 있으면 **삭제하지 않고 보류**(ManualReview)한다
+(rule 57 의 "❌ 미커밋 변경이 있는 worktree 삭제" 가 이 경로에 그대로 적용된다).
+
+PR 머지 게이트를 통과한 경로의 기존 동작(더티여도 진행)은 **그대로 둔다** — 이 변경의 범위는
+"조상 판정 경로" 다.
+
 정리 도구가 **못** 지우는 것(타 세션 소유 · 미커밋 산출물 · 진행 중)은
 [`.agent/rules/57_worktree_cleanup_on_completion.md`](57_worktree_cleanup_on_completion.md) 절차로
 **위임자(오케스트레이터)가 직접** 판단해 정리하거나 보고한다.

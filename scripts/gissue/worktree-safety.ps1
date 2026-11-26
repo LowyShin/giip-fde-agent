@@ -1242,7 +1242,8 @@ function Test-GissueWorktreeIdleEnough {
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 6.6 giip 5175 — Claude Code 격리 worktree 계열 전용 판정 2종
+# 6.6 giip 5175 — "고유 커밋 없음"(조상) 판정 + dirty 경로 판정 2종
+#    (giip 6401/6423: 조상 판정은 Claude Code 격리 계열 전용이 아니라 **모든 worktree** 에 병행된다)
 # ──────────────────────────────────────────────────────────────────────────────
 
 # (1) "이 worktree 에 고유한 커밋이 이미 main 에 반영되었는가" 판정 — fail-closed.
@@ -1348,6 +1349,16 @@ function Get-GissueWorktreeDirtyPaths {
 #     (= 고유 커밋 없음, 내용 유실 없음) 판정을 PR 머지 판정과 **병행**하고,
 #     ② `.claude/settings.local.json`(격리 메커니즘 자체의 부산물)만 dirty 판정에서 제외한다.
 #     그 밖의 미커밋 변경 · locked · detached · 미머지는 여전히 자동 삭제 금지다.
+#   - **일반 worktree** → **giip 6401/6423 로 정책 변경**:
+#     "고유 커밋 없음"(HEAD 가 origin/main 의 조상) 판정을 PR 머지 판정과 **병행**한다.
+#     왜 필요한가: `gh pr list --state merged` 는 **PR 헤드 브랜치 이름**만 준다. PR 이 없거나
+#     (로컬 전용 검증 브랜치) PR 헤드 이름과 worktree 의 **로컬 브랜치 이름**이 다르면 그 worktree 는
+#     PR 게이트만으로는 **영영** '미머지' 로 남아 정리 대상이 0건이 된다 = 무한 누적의 잔류 경로
+#     (실측 giip 6401, 2026-11-26: 이 레포 잔여 worktree 5건 **전부** HEAD 가 origin/main 의 조상인데도
+#     5건 전부 MANUAL-REVIEW 였다).
+#     ★ 하한선: 조상 판정은 **커밋된 내용**만 증명한다 — **미커밋 산출물은 증명에 포함되지 않는다**.
+#     그래서 이 경로는 dirty 판정을 **엄격하게** 태운다(미커밋 1건이라도 있으면 ManualReview 보류).
+#     PR 머지 게이트를 통과한 경로의 기존 동작(더티여도 진행)은 그대로 둔다 — surgical.
 #   - 머지판정은 `gh pr list --state merged` 로만 한다(ahead-count 금지 — squash-merge 오판).
 #     "워킹트리가 clean 하고 push 됐다"는 것만으로는 절대 삭제하지 않는다 — 세션은 push 이후에도
 #     CI 대기·머지·이슈 코멘트·사양서 갱신을 계속한다(giip #2463). 머지된 PR + idle 가드 둘 다 통과해야 한다.
@@ -1538,6 +1549,7 @@ function Invoke-GissueWorktreeCleanupForRepo {
         #   "판정 불가" 와 "미머지" 는 결론(삭제 금지)은 같지만 사유가 다르므로 분리해 기록한다.
         $mergedBranches = $null
         $mergeBasisNote = '머지 확인'
+        $mergedByAncestry = $false
         if ($null -ne $merged) { $mergedBranches = $merged.Branches }
         if ($null -eq $mergedBranches) {
             & $say "MANUAL-REVIEW(머지판정 불가 — 자동삭제 대상 아님): $ePath (branch=$($e.Branch))"
@@ -1550,27 +1562,32 @@ function Invoke-GissueWorktreeCleanupForRepo {
             continue
         }
         if (-not $mergedBranches.Contains($e.Branch)) {
-            # ── giip 5175: Claude Code 격리 worktree 계열은 "고유 커밋 없음" 판정을 병행한다 ──
-            #   이 계열의 브랜치(`worktree-agent-<id>`)는 PR 이 없는 로컬 전용 브랜치가 대부분이라
-            #   PR 머지 게이트만으로는 정리 대상이 0건이다(실측 27건 중 8건만 머지 PR 있음).
-            #   "HEAD 커밋이 origin/main 의 조상"이면 **이 worktree 에 고유한 커밋이 이미 main 에
-            #   반영된 상태**이므로 내용 유실 없이 정리할 수 있다.
+            # ── "고유 커밋 없음" 판정을 **모든** worktree 에 병행한다 (giip 5175 → giip 6401) ──
+            #   왜 일반 worktree 에도 필요한가:
+            #   `gh pr list --state merged --json headRefName` 는 **PR 헤드 브랜치 이름**만 준다.
+            #   PR 이 없거나(로컬 전용 검증 브랜치·main 에서 직접 만든 브랜치) PR 헤드 이름과
+            #   worktree 의 로컬 브랜치 이름이 다른 경우, 그 worktree 는 PR 게이트만으로는
+            #   **영영** '미머지' 로 남아 정리 대상이 0건이 된다 — 그게 바로 무한 누적의 잔류 경로다.
+            #   실측(giip 6401, 2026-11-26): 이 레포의 잔여 worktree 5건 **전부** HEAD 가
+            #   origin/main 의 조상(= 커밋된 내용이 이미 main 에 있음)인데도 5건 전부 MANUAL-REVIEW 였다.
+            #
+            #   판정: HEAD 커밋이 origin/main 의 **조상**이면 이 worktree 에 고유한 커밋이 없다
+            #   → 커밋된 내용은 main 에 이미 반영되어 있다 → 내용 유실 없이 정리할 수 있다.
             #   판정 불가/미반영은 둘 다 삭제 금지(fail-closed)로 수렴한다.
-            $contentInMain = $null
-            if ($isClaudeSessionWorktree) {
-                $contentInMain = Test-GissueWorktreeContentInMain -RepoPath $repoFull -WorktreePath $ePath
-                if ($contentInMain.Determined -and $contentInMain.InMain) {
-                    $mergeBasisNote = '머지 판정(고유 커밋 없음 — HEAD 가 origin/main 의 조상)'
-                    & $say "MERGED-BY-ANCESTRY(giip 5175 — PR 없음이나 고유 커밋이 이미 main 에 반영됨): $ePath (branch=$($e.Branch)) — $($contentInMain.Detail)"
-                } else {
-                    & $say "MANUAL-REVIEW(미머지 — 자동삭제 대상 아님): $ePath (branch=$($e.Branch)) — $($contentInMain.Detail)"
-                    $result.ManualReview += [pscustomobject]@{ Path = $ePath; Branch = $e.Branch
-                        Reason = "머지 PR 없음 + 아직 main 에 미반영(사람 확인 필요 — 미완료 작업일 수 있음): $($contentInMain.Detail)" }
-                    continue
-                }
+            #
+            #   ★ 하한선: 조상 판정은 **커밋된 내용**만 증명한다. 미커밋 변경은 main 에 없을 수
+            #   있으므로, 일반 worktree 는 **clean 일 때만** 조상 판정으로 삭제 허용한다
+            #   (아래 dirty 판정 절). PR 머지 게이트를 통과한 경로의 기존 동작(더티여도 진행)은
+            #   그대로 둔다 — surgical.
+            $contentInMain = Test-GissueWorktreeContentInMain -RepoPath $repoFull -WorktreePath $ePath
+            if ($contentInMain.Determined -and $contentInMain.InMain) {
+                $mergeBasisNote = '머지 판정(고유 커밋 없음 — HEAD 가 origin/main 의 조상)'
+                $mergedByAncestry = $true
+                & $say "MERGED-BY-ANCESTRY(giip 5175/6401 — PR 없음이나 고유 커밋이 이미 main 에 반영됨): $ePath (branch=$($e.Branch)) — $($contentInMain.Detail)"
             } else {
-                & $say "MANUAL-REVIEW(미머지 — 자동삭제 대상 아님): $ePath (branch=$($e.Branch))"
-                $result.ManualReview += [pscustomobject]@{ Path = $ePath; Branch = $e.Branch; Reason = '머지 PR 없음(사람 확인 필요 — 미완료 작업일 수 있음)' }
+                & $say "MANUAL-REVIEW(미머지 — 자동삭제 대상 아님): $ePath (branch=$($e.Branch)) — $($contentInMain.Detail)"
+                $result.ManualReview += [pscustomobject]@{ Path = $ePath; Branch = $e.Branch
+                    Reason = "머지 PR 없음 + 아직 main 에 미반영(사람 확인 필요 — 미완료 작업일 수 있음): $($contentInMain.Detail)" }
                 continue
             }
         }
@@ -1631,8 +1648,18 @@ function Invoke-GissueWorktreeCleanupForRepo {
         #   worktree **전체**에 항상 붙어 있다(실측 27건 중 26건). 이를 산출물로 취급하면
         #   이 계열은 영영 정리 대상이 0건이 된다. 그 밖의 미커밋 변경이 있으면 자동 삭제 금지.
         $dirtyNote = ''
-        if ($isClaudeSessionWorktree) {
-            $dirtyInfo = Get-GissueWorktreeDirtyPaths -WorktreePath $ePath -IgnorePaths $script:GissueClaudeWorktreeInfrastructurePaths
+        # ── giip 6401/6423: **조상 판정(ancestry) 경로** 도 clean 일 때만 삭제 허용한다 ──
+        #   조상 판정은 **커밋된 내용**만 증명한다("HEAD 가 origin/main 의 조상" = 커밋된 내용은
+        #   이미 main 에 있음). **미커밋 산출물은 그 증명에 포함되지 않는다** — 미커밋 변경이 있는
+        #   worktree 를 조상 판정만으로 지우면 다른 세션의 유일한 산출물을 잃는다(rule 57 금지).
+        #   그래서 ancestry 경로는 dirty 판정을 **엄격하게** 태운다(미커밋 1건이라도 있으면 보류).
+        #   PR 머지 게이트를 통과한 경로의 기존 동작(더티여도 진행)은 그대로 둔다 — surgical.
+        $strictDirty = ($isClaudeSessionWorktree -or $mergedByAncestry)
+        if ($strictDirty) {
+            # 격리 계열만 격리 메커니즘의 부산물(`.claude/settings.local.json`)을 제외한다.
+            # ancestry 경로의 일반 worktree 는 제외 대상이 없다 — 미커밋 1건이라도 보류.
+            $dirtyIgnore = if ($isClaudeSessionWorktree) { $script:GissueClaudeWorktreeInfrastructurePaths } else { @() }
+            $dirtyInfo = Get-GissueWorktreeDirtyPaths -WorktreePath $ePath -IgnorePaths $dirtyIgnore
             if ($dirtyInfo.TimedOut) {
                 # dirty 판정 자체가 안 났다 — "모르면 지우지 않는다". 삭제 없이 보류한다.
                 & $say "MANUAL-REVIEW(git status 시간 초과 — dirty 판정 불가, 삭제 보류): $ePath"
@@ -1650,9 +1677,16 @@ function Invoke-GissueWorktreeCleanupForRepo {
                 $dirtyNote = " [격리 메커니즘 부산물만 미커밋($($dirtyInfo.Ignored -join ', ')) — 산출물 아님]"
                 & $say "NOTE(giip 5175 — 격리 메커니즘 부산물로 보고 미커밋 판정에서 제외): $ePath — $($dirtyInfo.Ignored -join ', ')"
             }
+            elseif ($mergedByAncestry) {
+                # clean 확인 사실은 **로그로만** 남긴다. $dirtyNote 는 "이 worktree 가 dirty 였다"는
+                # **플래그**로 쓰인다(remove 실패 시 --force 재시도 분기의 조건 — rule 57 은
+                # `--force` 를 금지한다). 조상 판정 경로는 clean 이므로 이 플래그는 **빈 값**이어야 한다.
+                & $say "NOTE(giip 6401/6423 — 조상 판정 경로: 미커밋 산출물 없음(clean) 확인됨): $ePath"
+            }
         } else {
             # 유한한 타임아웃付き — 멈추면 dirty 여부를 알 수 없으므로 비고만 생략하고
             # 진행한다(참고용 메모라 삭제 판정에 쓰이지 않는다).
+            # NOTE(giip 6401/6423): 여기로 오는 worktree 는 PR 머지 게이트를 통과한 경로다(조상 판정 경로가 아님).
             $dirtyCall = Invoke-GissueExternalCall -FilePath 'git' -ArgumentList @('-C', $ePath, 'status', '--porcelain') -Kind Git
             if (-not $dirtyCall.TimedOut -and $dirtyCall.ExitCode -eq 0 -and "$($dirtyCall.StdOut)".Trim()) { $dirtyNote = ' [dirty 상태였음 — 머지 PR 확인되어 진행]' }
         }

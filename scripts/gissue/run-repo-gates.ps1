@@ -88,7 +88,10 @@ try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } 
 #    기존 슬랙이며, 이번 변경의 범위가 아니라 그대로 둔다. 게이트는 "기대보다 적을 때만" 실패한다.)
 # 2026-11-25: 외부 호출 타임아웃 회귀 테스트 1건(test-bounded-process.ps1) 추가 → 54 → 55.
 #   (실재 ps1 테스트 58건으로 2026-11-25 실측 — 기대값보다 3건 많다. 게이트는 기대보다 적을 때만 실패한다.)
-$ExpectedPs1TestCount = 55
+# 2026-11-27: 일반 worktree 조상(ancestry) 정리 경로 + dirty 하한선 회귀 테스트 1건
+#   (test-worktree-ancestry-general-guard.ps1, giip 6401/6423) 추가 → 55 → 56.
+#   (실재 ps1 테스트 61건으로 2026-11-27 실측 — 기대값보다 5건 많다. 게이트는 기대보다 적을 때만 실패한다.)
+$ExpectedPs1TestCount = 56
 $ExpectedMjsTestCount = 11
 
 function Write-Gate([string]$Message) {
