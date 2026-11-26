@@ -154,25 +154,31 @@ API 하나뿐" 이라는 설계와 같은 이유로, 아래 3건은 의도적으
 | `sync-csn-mapping-from-db.ps1` | `dbo.tGissueCsnMapping` 을 정본으로 보고 `csn-projects.json` 을 DB 에서 덮어씀(giip #2363) | 이 레포는 `csn-projects.json` **파일 자체가 정본**입니다(§13 2단계). 원본과 정본 방향이 다르다는 점만 알고 있으면 됩니다. 참조부 없음. |
 | `sync-ai-actor-credentials.ps1` | AI 행위자 계정의 AK 를 giipdb → `slack-bot/.secrets/giip-accounts.json` 으로 직접 이동(giip #2613) | AK 를 **수동으로** 채워야 합니다. 절차서 `scripts/gissue/AI_ACTOR_ACCOUNTS.md` §3-3 이 이미 이 항목을 `미이식` 로 표기하고 있습니다. |
 
-⚠️ **`scripts/gissue/ai-actors.json` 의 `_comment` 가 이 미이식 파일을 가리킵니다** —
-"`sync-ai-actor-credentials.ps1` 이 DB 에서 그리로 직접 옮긴다"고 쓰여 있으나 **그 파일은 이 레포에
-없습니다.** 신규 PC 에서는 그 문장을 따라갈 수 없으므로, AK 는 `AI_ACTOR_ACCOUNTS.md` 의 절차대로
-직접 기입하십시오. (문구 교정은 이 문서 작업의 범위 밖이라 후속 이슈 소관입니다 — 로직·설정 파일을
-건드리지 않고 사실만 여기 남깁니다.)
+✅ **`scripts/gissue/ai-actors.json` 의 `_comment` 는 더 이상 이 미이식 파일을 가리키지 않습니다** —
+"그 파일이 DB 에서 그리로 직접 옮긴다"는 문구는 "이 저장소에는 DB 직접접속 수단이 없어 그 스크립트는
+배포 대상이 아니다 — AK 는 DB 접근 권한이 있는 호스트에서 옮긴 뒤 결과물 파일을 가져오거나
+`GIIP_ACCOUNTS_FILE` 로 가리킨다"로 고쳐졌습니다(giip #2648 결손 3-3). 신규 PC 는 이제 그 문장을
+따라갈 수 있습니다.
 
 ### 13-2-3) ⚠️ 알려진 결손 — 고쳐야 하지만 아직 안 고쳐진 것
 
-**아래 2건은 "이식됐지만 원본과 동등하지 않은" 상태입니다. 후속 이슈 소관입니다.**
+**현재 알려진 결손은 없습니다.** 아래 2건은 2026-09-17(giip #2648 결손 처리) 에 해소되었고,
+§13-2-4 에 이력을 남깁니다.
 
-| 항목 | 실측 내용 | 신규 PC 에 미치는 영향 |
-| :-- | :-- | :-- |
-| `scripts/gissue/pr-gate-sweep.ps1` 이 **구버전** | 이 레포 19,753 바이트 vs 원본 43,108 바이트. 원본에만 있는 함수: `Format-PrEvidence` / `Invoke-GateEscalate` / `Set-IssueNeedsDecision` | **게이트 에스컬레이션 / NEEDS_DECISION 전이 경로가 없습니다.** 게이트 실패가 사람에게 올라가지 않고 그대로 머무를 수 있습니다. |
-| `scripts/gissue/get-issue.sh` 에 **`--role` 플래그 없음** | 원본은 `--role` 로 구조화 필드 `loadedRole` 을 채웁니다(giip #1324/#1452). 이 레포의 `get-issue.sh` / `post-comment.js` / `comment-api.js` 에는 그 경로 자체가 없습니다(`role` 문자열 출현 0회 vs 원본 8회). | 이 레포가 남기는 코멘트는 **`loadedRole=null`** 이 됩니다. 어느 역할로 처리했는지가 이슈에 기록되지 않습니다. |
+| 항목 | 상태 |
+| :-- | :-- |
+| `scripts/gissue/pr-gate-sweep.ps1` 의 원본 대비 동등성 | ✅ 해소 — §13-2-4 참조 |
+| `scripts/gissue/get-issue.sh` 의 `--role` 플래그 | ✅ 해소 — §13-2-4 참조 |
 
 ### 13-2-4) 해소된 결손 (giip #2645 — 이력)
 
 PR #86 시점에 이 절이 "알려진 결손"으로 적어 둔 것 중 아래 2건은 **고쳐졌습니다.** 같은 증상을
 다시 만났을 때 "원래 그런 것"으로 오인하지 않도록 이력을 남깁니다.
+
+| 항목 | 그때 상태 | 지금 |
+| :-- | :-- | :-- |
+| `scripts/gissue/pr-gate-sweep.ps1` 의 **원본 대비 동등성** | "구버전"(이 레포 19,753 B vs 원본 43,108 B, `Invoke-GateEscalate` / `Set-IssueNeedsDecision` 결손) | 2026-09-17 에 568줄 교체로 원본을 이식(giip #2648 결손 1) → 이후 양쪽이 각자 진화해 이 레포 73,565 B / 원본 61,937 B. 원본에만 있던 `Invoke-GateCommentOnly`(giip #2667 "코멘트 보충 경로" — 상태를 READY 로 되돌리지 않고 REVIEW 유지 + note 만) 는 이 레포에 없어 **2026-11-26 에 이식**했다(giip #2648 결손 1 잔여). 그 뒤 남은 차이는 원본에만 있는 폴백 경로 계통(`FallbackWarnMarker` 등) 이며, 이 레포는 자체 `Invoke-GatedRevertGate` / `Invoke-ReportDone` / `Invoke-ReportRevert` 로 그 구간을 대체한다. |
+| `scripts/gissue/get-issue.sh` 의 **`--role` 플래그** | `get-issue.sh` / `post-comment.js` / `comment-api.js` 3개 파일 모두에 `loadedRole` 경로 없음 → 코멘트의 `loadedRole=null` | 2026-09-17 에 3개 파일 모두 이식(`--role` → `roleArg` 7번째 인자 → `loadedRole` → `giipIssueCommentsV2`). 러너 프롬프트(`run-gissue-claude.ps1`)도 `--role` 을 쓰도록 복원. **라이브 확인 완료**(giip #2648 결손 2) |
 
 | 항목 | 그때 상태 | 지금 |
 | :-- | :-- | :-- |

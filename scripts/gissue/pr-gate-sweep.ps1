@@ -228,6 +228,30 @@ function Invoke-GateRevert($isn, $marker, $author, $note, $logLabel) {
     }
 }
 
+# ── 코멘트 보충 전용 경로 (giip #2667) ──
+# "코드는 정상, 진행 코멘트만 미충족" 판정의 목적지는 READY 가 아니다. READY 로 되돌리면 이미 머지된
+# 이슈를 "다시 구현할 대상"으로 만들어 큐 머리를 막는다(giip #2667 실측: READY 56건 중 31건이 그런
+# 이슈로 밀려 착수조차 못 했다). 상태는 REVIEW 그대로 두고 코멘트만 남긴다.
+#
+# 원본(lowyworkenv) PR #808 과 같은 동작. 이 저장소에는 DB 직접접속 수단이 없고 쓰기는 전부
+# giipfaw API(get-issue.sh) 경로이므로 Invoke-IssueWrite 를 재사용한다(giip #3535/#3536).
+function Invoke-GateCommentOnly($isn, $marker, $author, $note, $logLabel) {
+    if ($DryRun) {
+        Write-SweepLog "[DRYRUN] COMMENT-ONLY isn=$isn REVIEW 유지 ($logLabel)"
+        return
+    }
+    $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("gissue_{0}_note_{1}_{2}.txt" -f $author, $isn, [guid]::NewGuid().ToString('N'))
+    try {
+        [System.IO.File]::WriteAllText($tmp, $note, (New-Object System.Text.UTF8Encoding $true))
+        Invoke-IssueWrite $isn @('--comment-file', $tmp)
+        Write-SweepLog "ROUTED isn=$isn REVIEW 유지 ($logLabel) + note 등록"
+    } catch {
+        Write-SweepLog "[WRITE-FAIL] COMMENT-ONLY isn=$isn ($logLabel): $($_.Exception.Message)"
+    } finally {
+        Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+    }
+}
+
 # ── 보고형 완료 게이트(giip #3801): 의뢰↔결과 대조가 FULFILLED → REVIEW→DONE 자동 종결 ──
 # 마커만 보고 닫는 게 아니라, Invoke-ReportCompletionJudge 가 "의뢰대로 처리됨"으로 판정한 경우에만
 # 호출된다. 판정 근거(모델 출력)를 그대로 코멘트에 실어 사람이 사후 확인할 수 있게 남긴다.
@@ -475,7 +499,8 @@ function Invoke-CommentRevert($isn, $prInfo, $rationale, $priorAttemptCount) {
 $CommentRevertMarker (재검증 시각: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))
 이번이 ${attempt}번째 되돌림입니다(최대 $MaxGateRevertAttempts 회).
 gissue 스케줄러의 comment-gate 판정(giip #1210, 3회 캡 구조는 giip #2085)이 이 이슈를
-REVIEW → READY 로 되돌렸습니다.
+**코멘트 보충 전용 경로**로 보냅니다. 상태는 REVIEW 그대로 둡니다 — READY 로 되돌리지 않습니다
+(giip #2667: READY 되돌림이 이미 머지된 이슈를 다시 구현 대상으로 만들어 큐를 막고 있었습니다).
 
 **중요: PR/코드는 정상입니다 — 다시 고치라는 뜻이 아닙니다.** PR #$($prInfo.number)($($prInfo.url))이
 실제로 존재하고, scope-match 판정도 이미 통과했습니다(=이 PR 이 신고된 증상을 실제로 다룬다는 뜻).
@@ -500,7 +525,7 @@ $rationale
 최대 $MaxGateRevertAttempts 회를 초과하면 더 이상 자동으로 되돌리지 않고 REVIEW 유지 + 사람 확인
 필요로 전환됩니다.
 "@
-    Invoke-GateRevert $isn $CommentRevertMarker $CommentRevertAuthor $note "comment-gate UNSATISFIED (attempt=$attempt/$MaxGateRevertAttempts)"
+    Invoke-GateCommentOnly $isn $CommentRevertMarker $CommentRevertAuthor $note "comment-gate UNSATISFIED → 코멘트 보충 경로 (attempt=$attempt/$MaxGateRevertAttempts)"
 }
 
 # ══ [giip #4334] 의뢰 체크리스트 판정 ════════════════════════════════════════════════
