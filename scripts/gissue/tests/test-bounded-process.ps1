@@ -87,6 +87,36 @@ try {
     Assert-True ($nonZero.Started -and -not $nonZero.TimedOut) 'A-5 0 아닌 종료도 TimedOut=$false 로 돌아온다'
     Assert-True ($nonZero.ExitCode -ne 0) 'A-6 0 아닌 종료 코드가 그대로 돌아온다' "ExitCode=$($nonZero.ExitCode)"
 
+    # ── A-6b 회귀(2026-11-26) — 워크트리 삭제 가드가 fail-open 으로 뒤집힌 사건 ──
+    # `.claude/worktrees` 격리 worktree 정리(giip 5175, PR #428)의 안전 판정은
+    # "HEAD 가 origin/main 의 조상인가"를 `git merge-base --is-ancestor` 종료 코드로
+    # 판정한다(조상 아님 = 미반영 커밋 있음 = 삭제 금지). 이 종료 코드가 0(=성공)으로
+    # 잘못 도착하면 **미반영 커밋이 있는 워크트리가 삭제 대상**으로 넘어간다.
+    # 창작한 회귀: 비조상 커밋에 대해 종료 코드가 1 로 정확히 도착하는지 + 그 결과
+    # 판정 함수가 fail-open 하지 않는지(=보호됨)를 함께 고정한다.
+    $repoAnc = Join-Path $tempRoot 'repo-ancestry'
+    New-Item -ItemType Directory -Path $repoAnc -Force | Out-Null
+    Invoke-Git @('-C', $repoAnc, 'init', '-q', '-b', 'main')
+    Invoke-Git @('-C', $repoAnc, 'config', 'user.email', 'test@example.invalid')
+    Invoke-Git @('-C', $repoAnc, 'config', 'user.name', 'gissue-test')
+    Set-Content -LiteralPath (Join-Path $repoAnc 'base.txt') -Value 'base' -Encoding UTF8
+    Invoke-Git @('-C', $repoAnc, 'add', '-A')
+    Invoke-Git @('-C', $repoAnc, 'commit', '-q', '-m', 'base')
+    $ancBase = ("$(Invoke-Git @('-C', $repoAnc, 'rev-parse', 'HEAD'))").Trim()
+    Invoke-Git @('-C', $repoAnc, 'checkout', '-q', '-b', 'side')
+    Set-Content -LiteralPath (Join-Path $repoAnc 'side.txt') -Value 'side' -Encoding UTF8
+    Invoke-Git @('-C', $repoAnc, 'add', '-A')
+    Invoke-Git @('-C', $repoAnc, 'commit', '-q', '-m', 'side not merged')
+    $ancSide = ("$(Invoke-Git @('-C', $repoAnc, 'rev-parse', 'HEAD'))").Trim()
+    $ancCall = Invoke-GissueBoundedProcess -FilePath 'git' -ArgumentList @('-C', $repoAnc, 'merge-base', '--is-ancestor', $ancSide, $ancBase) -TimeoutSec 30
+    Assert-True ($ancCall.ExitCode -eq 1) 'A-6b 비조상 커밋의 merge-base 종료 코드가 1 로 돌아온다(0 이면 fail-open)' "ExitCode=$($ancCall.ExitCode)"
+    # 같은 판정을 실제 안전 함수로 — 비조상이면 InMain=false(보호)여야 한다.
+    $ancVerdict = Test-GissueWorktreeContentInMain -RepoPath $repoAnc -WorktreePath $repoAnc -MainRef $ancBase
+    Assert-True ($ancVerdict.Determined -and (-not $ancVerdict.InMain)) 'A-6b 비조상 HEAD 는 InMain=false 로 판정된다(삭제 금지)' "Detail=$($ancVerdict.Detail)"
+    # 존재하지 않는 MainRef 는 판정 불가(fail-closed)여야 한다 — 조상이면(1) 위험.
+    $ancMissing = Test-GissueWorktreeContentInMain -RepoPath $repoAnc -WorktreePath $repoAnc -MainRef 'origin/does-not-exist'
+    Assert-True ((-not $ancMissing.Determined) -and (-not $ancMissing.InMain)) 'A-6b 없는 MainRef 는 판정 불가(fail-closed)' "Detail=$($ancMissing.Detail)"
+
     $missing = Invoke-GissueBoundedProcess -FilePath 'gissue-definitely-not-a-real-exe-xyz' -ArgumentList @('--version') -TimeoutSec 5
     Assert-True (-not $missing.Started) 'A-7 없는 실행 파일은 Started=$false'
     Assert-True (-not $missing.TimedOut) 'A-8 없는 실행 파일은 TimedOut=$false'
@@ -107,7 +137,13 @@ try {
     Invoke-Git @('-C', $repoSpace, 'init', '-q', '-b', 'main')
     $spaced = Invoke-GissueBoundedProcess -FilePath 'git' -ArgumentList @('-C', $repoSpace, 'rev-parse', '--show-toplevel') -TimeoutSec 30
     Assert-True ($spaced.ExitCode -eq 0) 'A-13 공백 포함 경로 인자도 정상 실행된다' "$($spaced.StdErr)".Trim()
-    Assert-True ("$($spaced.StdOut)".Trim() -eq $repoSpace) 'A-14 공백 포함 경로가 1개 인자로 전달된다' "$($spaced.StdOut)".Trim()
+    # git 은 Windows 에서도 경로를 **정방향 슬래시**로 출력한다(`C:/Users/...`).
+    # Join-Path 는 역슬래시를 주므로 그대로 비교하면 항상 다르다 — 이 검증의
+    # 목적은 "공백이 들어간 경로가 1개 인자로 전달됐는가"이므로 비교 전에
+    # 슬래시를 정규화한다(구버전: 슬래시 차이 때문에 Windows CI 에서 항상 실패).
+    $spacedOut = "$($spaced.StdOut)".Trim() -replace '\\', '/'
+    $spacedExpect = ($repoSpace -replace '\\', '/').TrimEnd('/')
+    Assert-True ($spacedOut -eq $spacedExpect) 'A-14 공백 포함 경로가 1개 인자로 전달된다' "expected=$spacedExpect actual=$spacedOut"
 
     # 출력 배수(drain) 회귀 — WaitForExit(타임아웃)만으로는 리다이렉트 출력이
     # 파일에 다 쓰이기 전에 반환될 수 있어(특히 Unix 파이프+펌프) stdout 이
