@@ -166,7 +166,34 @@ function Format-GissueOvertimeCauseComment($Isn, $Cause, $Settings, [string]$Sta
     $sb.ToString().TrimEnd()
 }
 
-# 규칙 2 입력: 원본 본문 "## 완료조건" 섹션의 코드펜스 밖 미체크 항목 + (있으면) 최근 CHECKLIST-REVERT 미충족 항목.
+# 잔여 작업 절 판정용 절 제목 allowlist (giip 5200). "## 완료조건" 서술과 분리한다 —
+# 완료조건 절의 서술형 불릿은 "무엇을 검증하는지" 설명이지 잔여 작업이 아니므로 추출 대상이 아니다.
+# 잔여 작업 절(남은 결함/해야 할 일/구현 대상/TODO 등)에서만 번호 목록·불릿·미체크 체크박스를 잔여 작업으로 본다.
+$script:GissueResidualSectionRe = '(?i)(남은|잔여|미완료|미처리|미해결|해야\s*할|할\s*일|구현\s*대상|남겨진|후속\s*작업|다음\s*작업|TODO|TO-?DO)'
+
+# 본문에 "잔여 작업으로 보이는 절"(완료조건 절이 아닌, 제목 allowlist 매칭 절)이 하나라도 있는지(순수, giip 5200).
+# 항목 추출이 0건이어도 이 절이 있으면 분할 불가 사유를 '항목 형식 미인식'으로 구분해 남긴다(오판 방지).
+function Test-GissueHasResidualWorkSection($IssueContent) {
+    $inFence = $false
+    foreach ($line in ("$IssueContent" -split '\r?\n')) {
+        if ($line -match '^\s*```') { $inFence = -not $inFence; continue }
+        if ($inFence) { continue }
+        if ($line -match '^#{2,6}\s+(.+?)\s*$') {
+            $heading = $Matches[1]
+            if ($heading -match '완료\s*조건') { continue }
+            if ($heading -match $script:GissueResidualSectionRe) { return $true }
+        }
+    }
+    return $false
+}
+
+# 규칙 2 입력: 원본 본문에서 잔여 작업 항목을 모은다(순수, giip 5200 로 확장).
+#   (1) 최근 CHECKLIST-REVERT 코멘트의 미충족 항목(gissue-audit-lib.ps1 이 로드돼 있을 때만)
+#   (2) 본문 "## 완료조건" 절: 미체크 체크박스(- [ ])만 — 서술형 불릿/번호목록은 "무엇을 검증하는지"
+#       설명이라 잔여 작업으로 잡지 않는다(giip 5200 요구사항 (c), 기존 동작 유지=(d)).
+#   (3) 본문의 "잔여 작업 절"(제목 allowlist 매칭): 번호 목록(1. ) · 미체크 체크박스 · 일반 불릿(- )
+#       을 모두 잔여 작업으로 추출한다(giip 5200 요구사항 (a)(b)). 체크된 체크박스(- [x])는 완료 항목이라 제외.
+#   verify 등 코드펜스 안은 어느 경로에서도 건너뛴다.
 function Get-GissueRemainingChecklistItems($IssueContent, $Comments) {
     $items = New-Object System.Collections.ArrayList
     $seen = @{}
@@ -179,19 +206,33 @@ function Get-GissueRemainingChecklistItems($IssueContent, $Comments) {
         $seen[$key] = $true
         [void]$items.Add([pscustomobject]@{ Text = $t; Source = $src })
     }
-    # 1) 최근 CHECKLIST-REVERT 코멘트의 미충족 항목(gissue-audit-lib.ps1 이 로드돼 있을 때만)
+    # 1) 최근 CHECKLIST-REVERT 코멘트의 미충족 항목
     if (Get-Command Get-LatestUnmetChecklistItems -ErrorAction SilentlyContinue) {
         try { foreach ($u in @(Get-LatestUnmetChecklistItems @($Comments))) { & $add $u.Text 'checklist-revert' } } catch { }
     }
-    # 2) 본문 "## 완료조건" 섹션의 미체크 항목 (verify 코드펜스 안은 건너뛴다)
-    $inSection = $false
+    # 2)(3) 본문 절별 추출. 절 종류: done-condition | residual | other
+    $sectionKind = 'other'
     $inFence = $false
     foreach ($line in ("$IssueContent" -split '\r?\n')) {
         if ($line -match '^\s*```') { $inFence = -not $inFence; continue }
         if ($inFence) { continue }
-        if ($line -match '^##\s*완료\s*조건') { $inSection = $true; continue }
-        if ($inSection -and $line -match '^##\s') { break }
-        if ($inSection -and $line -match '^\s*[-*]\s*\[\s\]\s*(.+)$') { & $add $Matches[1] 'body' }
+        if ($line -match '^#{2,6}\s+(.+?)\s*$') {
+            $heading = $Matches[1]
+            if ($heading -match '완료\s*조건') { $sectionKind = 'done-condition' }
+            elseif ($heading -match $script:GissueResidualSectionRe) { $sectionKind = 'residual' }
+            else { $sectionKind = 'other' }
+            continue
+        }
+        if ($sectionKind -eq 'done-condition') {
+            # 완료조건 절: 미체크 체크박스만 (서술형 불릿/번호목록 제외 — giip 5200 (c))
+            if ($line -match '^\s*[-*]\s*\[\s\]\s*(.+)$') { & $add $Matches[1] 'body' }
+        } elseif ($sectionKind -eq 'residual') {
+            # 잔여 작업 절: 번호 목록 / 미체크 체크박스 / 일반 불릿. 체크된 체크박스는 제외.
+            if ($line -match '^\s*\d+[.)]\s+(.+)$') { & $add $Matches[1] 'residual' }
+            elseif ($line -match '^\s*[-*]\s*\[\s\]\s*(.+)$') { & $add $Matches[1] 'residual' }
+            elseif ($line -match '^\s*[-*]\s*\[[xX]\]\s*') { }
+            elseif ($line -match '^\s*[-*]\s+(.+)$') { & $add $Matches[1] 'residual' }
+        }
     }
     return @($items)
 }
@@ -205,10 +246,12 @@ function Get-GissueVerifyBlocks($IssueContent) {
 }
 
 # 규칙 2: 분할 계획(순수). 항목 0건이면 분할 불가. 서브 이슈는 2~5건이 적정하되 항목 수가 적으면 항목 수만큼.
-function New-GissueOvertimeSplitPlan($Isn, $Title, $Items, $VerifyBlocks, $IssueUrl, $CauseSummary, [int]$MaxChildren = 5) {
+function New-GissueOvertimeSplitPlan($Isn, $Title, $Items, $VerifyBlocks, $IssueUrl, $CauseSummary, [int]$MaxChildren = 5, [bool]$HasResidualSection = $false) {
     $arr = @($Items | Where-Object { $_ })   # 함수 반환으로 빈 배열이 $null 로 풀려 들어와도 0건으로 센다
     if ($arr.Count -eq 0) {
-        return [pscustomobject]@{ Splittable = $false; Reason = '원본에 잔여 체크리스트 항목이 없어 나눌 단위가 없다'; Children = @() }
+        # giip 5200: 잔여 작업 절이 있는데도 항목 형식을 인식 못 한 경우와, 애초에 잔여 작업이 없는 경우를 구분한다(오판 방지).
+        $reason = if ($HasResidualSection) { '잔여 작업 절은 있으나 인식 가능한 항목 형식이 없어 분할 불가' } else { '원본에 잔여 체크리스트 항목이 없어 나눌 단위가 없다' }
+        return [pscustomobject]@{ Splittable = $false; Reason = $reason; Children = @() }
     }
     $n = [math]::Min($MaxChildren, $arr.Count)
     $size = [math]::Ceiling($arr.Count / $n)
@@ -504,7 +547,8 @@ function Invoke-GissueOvertimeSplit($Ctx, [string]$Mode, $Ports) {
         & $log "같은 원본의 미해결 서브/후속 이슈가 이미 있어 새로 등록하지 않는다(rule 69-4): $($childIsns -join ', ')"
     } else {
         $items = Get-GissueRemainingChecklistItems $Ctx.Content $Ctx.Comments
-        $plan = New-GissueOvertimeSplitPlan $isn $Ctx.Title $items (Get-GissueVerifyBlocks $Ctx.Content) "$($Ctx.IssueUrlBase)$isn" $cause.Summary $script:GissueOvertimeMaxChildren
+        $hasResidual = Test-GissueHasResidualWorkSection $Ctx.Content
+        $plan = New-GissueOvertimeSplitPlan $isn $Ctx.Title $items (Get-GissueVerifyBlocks $Ctx.Content) "$($Ctx.IssueUrlBase)$isn" $cause.Summary $script:GissueOvertimeMaxChildren $hasResidual
         $res.Splittable = $plan.Splittable
         if (-not $plan.Splittable) {
             $splitReason = $plan.Reason
