@@ -982,8 +982,36 @@ function Get-GissueMergedBranchSet {
         $script:GissueMergedBranchCache[$key] = $result
         return $result
     }
+    # ★ giip 6479(2026-11-27): **실패 유형을 구분한다** — 이전에는 아래 4가지가 전부
+    #   "origin remote 없음" 이라는 **한 문구**로 뭉개졌다:
+    #     (a) 외부 호출 자체가 **시작되지 못한** 경우(Start-Process 실패 등 · Started=$false)
+    #     (b) git 이 실행됐지만 **비정상 종료**한 경우(ExitCode != 0)
+    #     (c) git 이 성공(exit=0)했는데 **stdout 이 빈** 경우 = 진짜로 remote 가 없는 경우
+    #     (d) 위와 무관한 그 밖의 비정상 stdout
+    #   (a)/(b) 는 "remote 가 없다"는 사실과 무관한데도 같은 문구로 남았다 → 운영자가
+    #   "origin 이 왜 사라졌지" 를 먼저 뒤지게 되는 **오진단**이 된다.
+    #   실측(2026-11-27): 라이브 러너가 origin 이 **존재하는** 저장소에 대해
+    #   "머지판정 불가(origin remote 없음)" 를 남기며 그 저장소의 worktree 정리를 통째로
+    #   건너뛰었다(그날 8회 중 4회). 같은 시각에 0xE9(콘솔 모드 획득 실패) 예외가 함께
+    #   기록돼 있어 (a) 경로였음이 확인된다.
+    #   → 실패 유형별 **서로 다른 문구**로 남기고, git 의 stderr 를 함께 실어 진짜 원인을
+    #     로그만으로 판별할 수 있게 한다. **판정 결과(Ok=false · 삭제 금지)는 그대로다** —
+    #     어떤 실패 유형이든 fail-closed 를 유지한다(안전 판정 단일 소스 — rule 48).
+    if (-not $originCall.Started) {
+        # (a) 외부 호출이 시작조차 못 함 — "remote 없음"과는 무관한 환경/실행 실패.
+        if ($Log) { & $Log "머지판정 불가(외부 호출 기동 실패 — git remote get-url origin 을 실행하지 못함): $repoFull — $($originCall.StdErr)" | Out-Null }
+        $script:GissueMergedBranchCache[$key] = $result
+        return $result
+    }
+    if ($originCall.ExitCode -ne 0) {
+        # (b) git 이 실제로 실행됐고 비정상 종료 — stderr 가 진짜 원인을 말해 준다.
+        if ($Log) { & $Log "머지판정 불가(git remote get-url origin 실패 · 종료코드 $($originCall.ExitCode)): $repoFull — $($originCall.StdErr)" | Out-Null }
+        $script:GissueMergedBranchCache[$key] = $result
+        return $result
+    }
     if ($originCall.ExitCode -eq 0) { $originUrl = "$($originCall.StdOut)".Trim() }
     if (-not $originUrl) {
+        # (c) git 이 성공했는데 출력이 비었다 = 진짜로 remote 가 없는 경우(유일하게 이 문구가 맞다).
         if ($Log) { & $Log "머지판정 불가(origin remote 없음): $repoFull" | Out-Null }
         $script:GissueMergedBranchCache[$key] = $result
         return $result
