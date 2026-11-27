@@ -9,7 +9,7 @@
 > 근거 이슈: giip 4428(복구 후 실가동 검증에서 발견된 강제 종료 원인 조사) → giip 4429(규칙 구현).
 > 코드: `scripts/gissue/lib/overtime-split.ps1`(순수 로직 + 포트 주입), `scripts/gissue/run-gissue-claude.ps1`(Phase 2 `Invoke-GissueOvertimeCheck`),
 > `scripts/gissue/gissue-audit-lib.ps1`(`Test-HasSplitCloseMarker`), `scripts/gissue/review-done-audit.ps1`(감사 면제).
-> 테스트: `scripts/gissue/tests/test-overtime-split.ps1`.
+> 테스트: `scripts/gissue/tests/test-overtime-split.ps1`, `scripts/gissue/tests/test-overtime-split-residual-items.ps1`(잔여 작업 절 추출 범위 · giip 6431).
 
 ### 왜 필요한가 (실측)
 
@@ -32,6 +32,13 @@
 2. 남은 작업을 나눌 수 있으면 **서브 이슈로 쪼개 등록**한다(원본 체크리스트 잔여 항목 기준, 최대 5건, 제목 `(원본 giip <isn> 분해 i/N)`,
    `## 완료조건` 에 ` ```verify ` 블록). 같은 원본의 미해결 서브/후속 이슈가 이미 있으면 새로 만들지 않는다(rule 69-4). 기존 서브 이슈 조회가
    실패하면 중복 등록 위험이 있으므로 분할을 보류한다(fail-closed). 나눌 수 없으면 사유 코멘트(`[OVERTIME-NOSPLIT]`) 후 **READY 로 복귀**하고 DONE 하지 않는다.
+   **잔여 작업 항목의 인식 범위** (giip 5200 C5 잔여 · giip 6431 반영): 분할 단위는 원본 본문에서 아래 3종으로 추출한다 —
+   ① `## 완료조건` 절의 **미체크 체크박스**(`- [ ]`)만(기존 동작 유지 — 그 절의 서술형 불릿·번호목록은 "무엇을 검증하는지" 설명이지 잔여 작업이 아니다),
+   ② **잔여 작업 절**(제목에 남은/잔여/미완료/미처리/미해결/해야 할/할 일/구현 대상/남겨진/후속 작업/다음 작업/TODO 가 match 되는 절)의
+   **번호 목록**(`1. ` / `1) `)·**미체크 체크박스**·**일반 불릿**(`- `) 전부, ③ 최근 `[REVIEW-AUDIT:CHECKLIST-REVERT]` 코멘트의 미충족 항목.
+   체크된 체크박스(`- [x]`)는 완료로 보고 제외하고, 코드펜스(verify 포함) 안은 어느 절에서도 건너뛴다.
+   잔여 작업 절이 **있는데** 인식 가능한 항목이 0건이면 "잔여 작업 절은 있으나 인식 가능한 항목 형식이 없어 분할 불가"로 사유를 구분해
+   "원본에 잔여 작업이 아예 없다"와 오판하지 않는다(사유 코멘트 `[OVERTIME-NOSPLIT]`).
 3. 그 뒤 **과시간 잡을 종료(Stop-Job)** 하고 이 러너가 만든 락만 정리한다: CSN 락 파일은 *락의 PID 가 이 러너 프로세스일 때만*,
    repo 락은 holder 가 `gissue-csn<이 CSN>:<pid>` 이고 pid 가 죽었을 때만(또는 이 잡 소유일 때만). 다른 CSN·다른 인스턴스(생존 PID)의 락과
    worktree 는 건드리지 않는다.

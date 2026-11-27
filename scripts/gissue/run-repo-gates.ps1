@@ -91,7 +91,13 @@ try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } 
 # 2026-11-27: 일반 worktree 조상(ancestry) 정리 경로 + dirty 하한선 회귀 테스트 1건
 #   (test-worktree-ancestry-general-guard.ps1, giip 6401/6423) 추가 → 55 → 56.
 #   (실재 ps1 테스트 61건으로 2026-11-27 실측 — 기대값보다 5건 많다. 게이트는 기대보다 적을 때만 실패한다.)
-$ExpectedPs1TestCount = 56
+# 2026-11-28: 2시간 초과 분할 잔여 작업 추출기 회귀 테스트 1건(test-overtime-split-residual-items.ps1, giip 6431) 추가 → 56 → 62.
+#   (실재 ps1 테스트 62건으로 2026-11-28 실측 — 신규 1건 반영 후 기대값과 정확히 일치(슬랙 0).
+#    지시서는 55 → 61 로 적었으나, 지시서 작성(2026-11-27) 이후 같은 파일의 기대값이 다른 작업
+#    (giip 6401/6423 ancestry 회귀 테스트 추가)으로 이미 55 → 56 으로 올라간 상태였다.
+#    기준선을 56 으로 잡고 신규 1건을 더해 62 로 고정한다 — 게이트는 "기대보다 적을 때만" 실패하므로
+#    기대값 == 실재 건수로 맞추면 어떤 ps1 회귀 테스트가 사라져도 잡힌다.)
+$ExpectedPs1TestCount = 62
 $ExpectedMjsTestCount = 11
 
 function Write-Gate([string]$Message) {
