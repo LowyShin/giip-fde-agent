@@ -229,10 +229,16 @@ secwatch 의 `secevt_*` 와 구분되는 이름. **결과 테이블 적재 없�
      `maskString` 이 지우는 것은 토큰·키 등 **알려진 비밀 패턴**(Slack/Anthropic/GitHub/JWT/AWS 키, `KEY=VALUE` 형 .env, JSON 의 `password`/`sk`/`authorization` 필드, Authorization 헤더)이다.
      개인정보·일반 업무 문장은 지우지 않는다(`secret-mask.js` 머리 주석: "완벽한 탐지가 아니라 알려진 형태를 확실히 지우는 것").
   2. 별도 승인 단계·사전 심사 문서·실데이터 투입 차단은 없다.
-- **사실 확인(중요, 기존 코드 기준)**: 현재 `maskString`/`maskDeep` 의 호출처는 `cost-tracker.js`, `progress-events.js`, `retry-checkpoint.js`, `task-evidence.js` 등
-  **디스크에 남기는 로그·체크포인트**다. 현행 `classifyRequest` 의 LLM 프롬프트와 `callClaude` 경로에는 `maskString` 호출이 **없다**(`grep` 확인).
+- **사실 확인(중요, 기존 코드 기준)**: `maskString`/`maskDeep` 의 호출처는 `cost-tracker.js`, `progress-events.js`, `retry-checkpoint.js`, `task-evidence.js` 등
+  **디스크에 남기는 로그·체크포인트**와, **의도 분류 경로(② Jev 어댑터·③ LLM 분류기)**다. 현행 `callClaude`(질문 응답·작업 실행) 경로에는 `maskString` 호출이 **없다**(`grep` 확인).
   즉 "기존 외부 AI 송신이 이미 마스킹된다"는 서술은 **사실이 아니다**. 이 사양은 새 Jev 송신에 한해 `maskString` 을 적용하도록 정하며,
   기존 외부 AI 송신 경로(`classifyRequest` LLM·`callClaude`)에 마스킹을 소급 적용할지는 **이 사양의 범위 밖**이다(미결 §10-1).
+- **소급 적용 결정(2026-11-28, giip #6564 — §10-1 종결)**: ③ `classifyRequest` 의 LLM 분류기 프롬프트에도 `maskString(text)` 통과본을 넣어 송신한다.
+  - 이유: ② Jev·③ LLM 분류기·판정 로그는 **판정에만 쓰이는 본문**이라 비밀값 자체가 필요 없고, 마스킹은 알려진 비밀 패턴만 지워 자연어 지시는 그대로 남는다.
+    세 경로가 같은 기준(마스킹 통과본이 곧 송신본)을 공유해야 §10-1 이 지목한 "경로 간 불균형"이 사라진다.
+  - 결정적 규칙 경로(①)는 프로세스 안에서만 판단해 외부로 나가지 않으므로 **원문을 그대로 쓴다**.
+  - `callClaude`(질문 응답·작업 실행)는 **원문 유지** — 답변과 작업 결과물이 사용자 원문 그대로여야 제품 기능이 성립하므로(마스킹하면 파일 내용이 바뀐다) 소급 적용하지 않는다.
+  - ① 과 `callClaude` 를 원문으로 두는 잔여 차이는 기능 요구에서 기인하며 §10-1 에 확정 사항으로 남긴다.
 - 외부 SaaS 로서의 Jev 의 보존·학습 이용·소재지 조건은 정본 §2·§9 에서 **미확인**으로 남아 있다. 이 사양은 그것을 해소했다고 주장하지 않는다.
 
 ### 6.2 로깅(재보정용)
@@ -285,7 +291,7 @@ secwatch 의 `secevt_*` 와 구분되는 이름. **결과 테이블 적재 없�
 **(A) 상태: DONE** — giipfaw PR #234(게이트웨이: `giipJevGateway/IntentRoute.ps1` 신규 · `run.ps1` 의 `kind` 분기 · `tests/Test-JevIntentRoute.ps1` 회귀 테스트) · giipdb PR #556(정본 사양서 §18 신설). 배치 결정: **같은 Function 내 `kind` 분기**(§4.1).
 
 **(B) 상태: 구현·머지 완료 / DONE 미전환** — 2026-11-04 에 이 저장소에서 구현해 PR #368(`a1fc168`)로 머지했다. `slack-bot/intent.js` 에 Jev 어댑터(`classifyWithJev`)·폴백(③)·스위치·안내문·판정 로그를 넣고 `slack-bot/handlers.js` 호출부 3곳에 `opts` 만 추가했으며, `slack-bot/i18n-ui.js` 에 `classifyFallbackHint` 키를 신설했다. 회귀 테스트는 `slack-bot/tests/intent-jev.test.js` (22 케이스). 스위치는 **기본 OFF** 이므로 머지되어도 트래픽은 없다.
-- 남은 2건: ① 해당 이슈의 완료조건 verify 블록이 `node --test <디렉터리>` 인자형이다 — Node v24 는 디렉터리 인자를 모듈로 로드해 `Cannot find module` 로 죽으므로 **거짓 실패**가 난다(아래 "완료조건" 절 주의). 그 결과 감사 게이트가 "완료조건 verify 실행" 항목을 판정불가로 처리해 이슈가 REVIEW → NEEDS_DECISION 에 머물러 있다. ② §10-1 마스킹 소급 여부는 **사용자 결정 대기**다.
+- 남은 2건은 **2026-11-28 에 모두 해소**했다(giip #6564): ① 완료조건 verify 블록은 디렉터리 인자형(`node --test slack-bot/tests/`)이 Node 24 에서 거짓 실패를 내므로 **glob/파일 단위 인자형**(`node --test "slack-bot/tests/*.test.js"`)으로 실행한다 — 아래 "완료조건" 절에 이미 반영돼 있다. ② §10-1 마스킹 소급 적용은 §6-1 결정으로 종결했다(③ 분류 LLM 프롬프트에 `maskString` 적용, `callClaude` 는 원문 유지 — 기능 요구).
 
 **(C) 상태: DONE** — 2026-11-04, PR #369(`d70cb91`)로 머지했다. 코퍼스 38건(ko14/ja12/en12)·평가 하니스(`slack-bot/eval/intent/`)·[EVAL](INTENT_ROUTING_JEV_EVAL.md) 신설, §5 임계값 확정(T_hi=0.7 / P_hi=0.5 / P_lo=0.2).
 
@@ -348,7 +354,10 @@ git -C <lowyworkenv> grep -n -i "jev" origin/main -- MODEL_USAGE_SPEC.md   # 기
 
 ## 10. 미결·리스크 (확인하지 못한 것은 "미확인")
 
-1. **기존 외부 AI 송신의 마스킹 부재**: 현행 `classifyRequest` LLM 프롬프트·`callClaude` 에는 `maskString` 이 적용되지 않는다(§6.1). 신규 Jev 송신만 마스킹하면 경로 간 불균형이 생긴다. 소급 적용 여부는 사용자 결정 사항 — **미결**. (B) 구현은 **신규 Jev 송신 경로에만** 마스킹을 적용했고(§6.2), **기존 LLM 경로의 소급 마스킹은 손대지 않았다**(기존 동작 불변 원칙).
+1. **기존 외부 AI 송신의 마스킹 부재 — 2026-11-28 에 종결(giip #6564)**: §6-1 결정에 따라 ③ `classifyRequest` LLM 분류기 프롬프트도 `maskString` 통과본을 송신한다(② Jev 와 동일 기준).
+   **잔여 차이(확정 사항 — 결함 아님)**: 결정적 규칙 경로(①)와 `callClaude`(질문 응답·작업 실행)는 원문을 유지한다.
+   ① 은 외부로 나가지 않고, `callClaude` 는 답변·작업 결과물이 사용자 원문 그대로여야 제품 기능이 성립하므로(마스킹하면 파일 내용이 바뀐다) 원문이 기능적으로 필수다.
+   따라서 확정 기준은 "분류 경로(②③)만 마스킹"이고, 원문이 필요한 경로의 차이는 되돌리지 않기로 결정했다.
 2. **Jev 한국어·일본어 의도 분류 정확도: 코퍼스 기준은 측정됨, 범용 정확도는 미확인.** (C) 평가(2026-11-04, PR #369)로 38건 코퍼스(ko14/ja12/en12) 기준 정확도 **89.5% → 92.1%**, Jev 가 실제 라우팅한 13건은 **전건 정답(오류 0)**, 같은 입력 3회 반복 판정 일치 **100%**(비-flaky), engine `jev-1.14.0` — 상세는 [EVAL](INTENT_ROUTING_JEV_EVAL.md). 다만 **코퍼스 규모(38건)와 실트래픽 분포가 작으므로 범용 한국어·일본어 정확도를 주장하지 않는다.** 정본 §2 도 "한국어·SQL·로그 형식 정확도"를 미확인으로 남긴다. 재평가 조건은 §10-10(engine 버전 변경·실트래픽 분포 변경).
 3. **`confidence` 교정(calibration) 정의: 미확인**(정본 §2). 임계값이 모델 버전에 따라 흔들릴 수 있다 — **버전 고정 여부는 (A) 에서 해소**: 보안 경로와 동일하게 `jev-latest` 를 쓰되(버전 고정 아님) **해석된 모델 id 를 매 응답의 `engine` 으로 돌려준다**(§4.5). calibration 자체는 (C) 의 평가 대상이다.
 4. **Jev 송신 데이터의 보존·학습 이용·소재지: 미확인.** 사용자 결정으로 별도 심사 게이트는 두지 않았으나(§6.1), 사실이 확인된 것은 아니다.

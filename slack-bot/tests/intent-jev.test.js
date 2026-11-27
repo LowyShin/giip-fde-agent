@@ -369,6 +369,36 @@ test('마스킹: Jev 요청 본문에 원문 비밀 패턴이 없다', async (t)
   assert.ok(!jsondata.includes(secret), '요청 본문 어디에도 원문 비밀이 있으면 안 된다');
 });
 
+// ③ LLM 분류기 경로도 ② Jev 경로와 같은 마스킹 기준을 쓴다(사양서 §6.1/§10-1 결정).
+test('마스킹: 분류 LLM 프롬프트에 원문 비밀 패턴이 없다', async (t) => {
+  envSandbox(t, {});  // 스위치 꺼짐 → ② 를 건너뛰고 ③ LLM 로 내려가는 경로
+  const secret = ['sk', 'ant', 'abcdefgh12345678'].join('-');
+  const raw = `키 ${secret} 가 들어있는 문서를 파일로 저장해줘`;
+  const spawn = makeSpawn({ status: 0, stdout: 'task\n', stderr: '' });
+
+  const intent = await classifyRequest(raw, '/tmp/proj', { spawn, accountResolver: () => ACCOUNT });
+
+  assert.strictEqual(spawn.calls.length, 1, '분류 LLM 이 1회 호출되어야 한다');
+  const prompt = spawn.calls[0].opts.input;
+  assert.ok(!prompt.includes(secret), '분류 프롬프트에 원문 비밀이 남아 있으면 안 된다');
+  assert.ok(prompt.includes('***REDACTED***'), '비밀 패턴이 REDACTED 로 바뀌어야 한다');
+  // 마스킹은 비밀 패턴만 지운다 — 판단의 근거가 되는 자연어 지시는 남아 있어야 한다.
+  assert.ok(prompt.includes('파일로 저장해줘'), '의도 판정에 필요한 자연어 지시가 지워지면 안 된다');
+  assert.strictEqual(intent, 'task', '마스킹 후에도 분류 결과가 같아야 한다');
+});
+
+test('마스킹: 분류 LLM 프롬프트에 비밀 패턴이 없으면 본문이 그대로 전달된다', async (t) => {
+  envSandbox(t, {});
+  const raw = '배포 스크립트 점검';
+  const spawn = makeSpawn({ status: 0, stdout: 'question\n', stderr: '' });
+
+  const intent = await classifyRequest(raw, '/tmp/proj', { spawn, accountResolver: () => ACCOUNT });
+
+  const prompt = spawn.calls[0].opts.input;
+  assert.ok(prompt.includes(raw), '비밀 패턴이 없으면 본문은 그대로 전달되어야 한다');
+  assert.strictEqual(intent, 'question');
+});
+
 // ── ⑼ 요청 스키마 ────────────────────────────────────────────────────────────
 test('요청 스키마: jsondata 필드와 token 이 계약을 따른다', async (t) => {
   envSandbox(t, { JEV_INTENT_ENABLED: '1', GIIP_JEV_GATEWAY_URL: GATEWAY_URL });
