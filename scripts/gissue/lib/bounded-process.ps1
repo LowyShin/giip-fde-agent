@@ -26,13 +26,18 @@
 #   - 인자는 공백·따옴표를 포함해도 자식에게 1개 인자로 전달되게 따옴표 처리한다
 #     (PS 5.1 의 Start-Process -ArgumentList 는 배열을 공백으로 이어붙일 뿐
 #     따옴표를 자동 추가하지 않는다).
+#   - -StandardInputFile 을 주면 그 파일을 자식의 stdin 으로 넘긴다(선택 — 기본 $null 이면
+#     종전 동작 그대로 = stdin 리다이렉트 없음). 판정 LLM 호출(claude CLI)이 프롬프트를
+#     stdin 으로 먹여야 유한 대기와 stdout/stderr 분리를 동시에 성립한다.
 #   - 이 파일은 함수 정의만 한다 — dot-source 시점에 부작용이 없어야 한다.
 #   - PowerShell 5.1 호환(잡·스레드 미사용 — Start-Process + WaitForExit 만 쓴다).
 #
 # ── 한도 기본값 ──────────────────────────────────────────────────────────────────
 #   - gh 호출: 60초 (실측 건강 상태 6초, 한도 소진 실패는 즉시 반환되므로 60초면 충분)
 #   - git 호출: 30초 (로컬 연산은 통상 2초 이내)
-#   - env GISSUE_GH_CALL_TIMEOUT_SEC / GISSUE_GIT_CALL_TIMEOUT_SEC(양의 정수, 초)로 재정의.
+#   - claude 호출: 300초 (실측 정상 판정 11~29초, 실측 무응답 9분+ — 유한해야 한다)
+#   - env GISSUE_GH_CALL_TIMEOUT_SEC / GISSUE_GIT_CALL_TIMEOUT_SEC / GISSUE_CLAUDE_CALL_TIMEOUT_SEC
+#     (양의 정수, 초)로 재정의.
 
 # 외부 프로세스 1회를 유한한 시간 안에 실행한다.
 function Invoke-GissueBoundedProcess {
@@ -40,7 +45,10 @@ function Invoke-GissueBoundedProcess {
         [Parameter(Mandatory = $true)][string]$FilePath,
         [string[]]$ArgumentList = @(),
         [int]$TimeoutSec = 60,
-        [string]$WorkingDirectory = $null
+        [string]$WorkingDirectory = $null,
+        # 선택: 자식의 stdin 으로 넘길 파일. $null(기본) 이면 종전 동작 그대로다.
+        #   파일은 호출자가 UTF-8 BOM 없이 써야 한다(BOM 이면 프롬프트 앞이 깨진다).
+        [string]$StandardInputFile = $null
     )
     if ($TimeoutSec -le 0) { $TimeoutSec = 60 }
     $outFile = $null
@@ -69,6 +77,11 @@ function Invoke-GissueBoundedProcess {
             ErrorAction            = 'Stop'
         }
         if ($WorkingDirectory) { $startArgs['WorkingDirectory'] = $WorkingDirectory }
+        # stdin 리다이렉트 — 프롬프트를 파일로 먹이는 호출(claude CLI 판정)에 쓴다.
+        if ($StandardInputFile) {
+            if (-not (Test-Path -LiteralPath $StandardInputFile)) { throw "stdin 파일 없음: $StandardInputFile" }
+            $startArgs['RedirectStandardInput'] = $StandardInputFile
+        }
         $proc = Start-Process @startArgs
         # 핸들을 먼저 캐시한다 — 이것이 없으면 **종료 코드가 항상 0 으로 읽힌다**
         # (.NET Framework 의 Process 는 핸들을 캐시하지 않은 채로 종료되면
@@ -124,10 +137,13 @@ function Invoke-GissueBoundedProcess {
 # 외부 호출 한도 해석 — 명시 env > 기본값. 양의 정수가 아니면 기본값을 쓴다.
 # Kind 'Gh': env GISSUE_GH_CALL_TIMEOUT_SEC, 기본 60초.
 # Kind 'Git': env GISSUE_GIT_CALL_TIMEOUT_SEC, 기본 30초.
+# Kind 'Claude': env GISSUE_CLAUDE_CALL_TIMEOUT_SEC, 기본 300초. (판정 LLM 호출.
+#   실측 정상 판정 11~29초, 실측 무응답 9분+. 300초면 여유가 있으면서 유한하다.)
 function Resolve-GissueBoundedCallTimeoutSec {
-    param([ValidateSet('Gh', 'Git')][string]$Kind)
+    param([ValidateSet('Gh', 'Git', 'Claude')][string]$Kind)
     if ($Kind -eq 'Gh') { $envName = 'GISSUE_GH_CALL_TIMEOUT_SEC'; $default = 60 }
-    else { $envName = 'GISSUE_GIT_CALL_TIMEOUT_SEC'; $default = 30 }
+    elseif ($Kind -eq 'Git') { $envName = 'GISSUE_GIT_CALL_TIMEOUT_SEC'; $default = 30 }
+    else { $envName = 'GISSUE_CLAUDE_CALL_TIMEOUT_SEC'; $default = 300 }
     $raw = [System.Environment]::GetEnvironmentVariable($envName)
     $n = 0
     if ($null -ne $raw -and [int]::TryParse("$raw".Trim(), [ref]$n) -and $n -gt 0) { return $n }

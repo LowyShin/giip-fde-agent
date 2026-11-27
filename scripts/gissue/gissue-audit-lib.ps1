@@ -26,6 +26,14 @@ if (-not (Test-Path function:\Test-GissueGairCsnAllowed)) {
     if (Test-Path -LiteralPath $gissueGairGateLib) { . $gissueGairGateLib }
 }
 
+# 외부 프로세스 유한 대기 헬퍼(lib/bounded-process.ps1) — 판정 LLM 호출(claude CLI)을
+#   stdout/stderr 분리 + 유한 대기로 실행한다(판정 호출이 9분+ 무응답으로 멈추던 결함의 해법).
+#   이미 적재돼 있으면(호스트가 먼저 읽은 경우) 다시 읽지 않는다.
+if (-not (Test-Path function:\Invoke-GissueBoundedProcess)) {
+    $gissueBoundedLib = Join-Path $PSScriptRoot 'lib/bounded-process.ps1'
+    if (Test-Path -LiteralPath $gissueBoundedLib) { . $gissueBoundedLib }
+}
+
 # workdir 자신 + 바로 아래 nested git 레포(디렉터리에 .git 존재) 경로 목록.
 # 다른 워커가 만든 임시 체크아웃/워크트리(예: giipv3-isn1026)가 같은 origin 을 공유하면
 # gh pr list 결과가 동일하므로, origin URL 기준으로 중복을 제거해 하나만 조회한다(속도+정확성).
@@ -910,7 +918,145 @@ function Resolve-GissueJudgeGairAk($csn) {
     return ''
 }
 
-function Invoke-GissueJudge($prompt, $model = 'claude-haiku-4-5') {
+# ─────────────────────────────────────────────────────────────────────────────────
+# 판정 LLM 호출( claude CLI ) 정본 수법 — stderr 종료성 오류 · 형식 불일치 · 무한 대기 제거
+#
+# 종전 결함(2026-11-26 실측, 이식본 수리본의 역반영):
+#   D1) `$prompt | & claude ... 2>&1` — 호출자 스코프가 $ErrorActionPreference='Stop'
+#       (pr-gate-sweep.ps1:121 / review-done-audit.ps1:94) 인데 stderr 가 합쳐지면
+#       PS 5.1 이 자식 stderr 한 줄을 NativeCommandError(ErrorRecord) 로 감싸 **종료성**으로
+#       만든다 → catch 에서 exit=-1 → ok=$false → Decision='HOLD'. 실측 근거: claude CLI 가
+#       "⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source
+#       is set and takes precedence over your claude.ai login" 을 stderr 에 찍는다
+#       (gair 경로에서는 항상 ANTHROPIC_API_KEY 가 설정되므로 항상 발생).
+#       ⇒ stderr 유무와 무관하게 판정 결과가 사라진다.
+#   D2) gair 라우터는 --model 을 받지 않는다 → 응답이 에이전트 마크업이라 ITEM| 파싱이
+#       0건 → HOLD. 실측: 직접 경로(BASE_URL/API_KEY 을 비운 진짜 claude CLI 로그인)는
+#       정상 ITEM| 줄을 준다.
+#   D3) 무한 대기 — 같은 호출이 9분+ 응답 없이 멈췄다.
+#
+# 해법:
+#   - stdout/stderr 를 분리한다(stderr 를 stdout 에 합치지 않는다).
+#   - 자식 종료코드를 직접 읽어 분기한다(stderr produced 여부가 아니라).
+#   - 유한 대기(lib/bounded-process.ps1, Start-Process + WaitForExit)로 자원을 푼다.
+#   - stderr 는 **진단 사유**로만 쓴다(판정 본문 아님) — 키/토큰은 마스킹한다.
+# ─────────────────────────────────────────────────────────────────────────────────
+
+# claude 실행 파일 해석 — Windows 는 npm 전역 설치라 claude.cmd 인 경우가 있고 이 PC 는 claude.exe 다.
+# env GISSUE_CLAUDE_EXE 로 강제 지정할 수 있다(회귀 테스트의 가짜 CLI 스텁이 이 경로를 쓴다).
+function Resolve-GissueClaudeExecutable {
+    if ($env:GISSUE_CLAUDE_EXE) { return "$env:GISSUE_CLAUDE_EXE" }
+    # Get-Command 는 없는 명령을 -ErrorAction SilentlyContinue 로도 $Error 에 남긴다 —
+    # 이 파일이 잡의 InitializationScript 에서 닷소싱되면 $Error 때문에 잡 시작이 Failed 가 된다
+    # (파일 헤더 주석의 관례). 그래서 여기서는 $Error 오염을 원복한다.
+    $errCount = @($Error).Count
+    $found = ''
+    try {
+        foreach ($c in @(Get-Command claude -CommandType Application -ErrorAction SilentlyContinue)) {
+            $src = ''
+            try { if ($c.Source) { $src = "$($c.Source)" } elseif ($c.Path) { $src = "$($c.Path)" } } catch {}
+            if ($src) { $found = $src; break }
+        }
+    } catch { $found = '' }
+    while (@($Error).Count -gt $errCount) { $Error.RemoveAt(@($Error).Count - 1) }
+    if ($found) { return $found }
+    # PATH 직접 탐색 폴백(claude.exe/.cmd/.bat).
+    foreach ($dir in @("$env:PATH" -split ';')) {
+        if (-not $dir) { continue }
+        foreach ($ext in @('.exe', '.cmd', '.bat')) {
+            $p = Join-Path $dir ("claude" + $ext)
+            if (Test-Path -LiteralPath $p -PathType Leaf) { return $p }
+        }
+    }
+    return 'claude'
+}
+
+# stderr 를 진단 사유 문자열로 만든다 — 키/토큰은 마스킹하고 300자로 자른다.
+function Format-GissueJudgeStderrSummary {
+    param([string]$Stderr, [int]$MaxLen = 300)
+    $s = "$Stderr"
+    if (-not $s.Trim()) { return '' }
+    $s = $s -replace '(?i)sk-[A-Za-z0-9_\-]{6,}', 'sk-***'
+    $s = $s -replace '(?i)(x-functions-key\s*[:=]\s*)\S+', '$1***'
+    $s = $s -replace '(?i)((?:ANTHROPIC_)?API[_-]?KEY\s*[:=]\s*)\S+', '$1***'
+    $s = $s -replace '(?i)(Bearer\s+)\S+', '$1***'
+    $s = ($s -replace '\r?\n', ' | ').Trim()
+    if ($s.Length -gt $MaxLen) { $s = $s.Substring(0, $MaxLen) + '...' }
+    return $s
+}
+
+# 판정 실패 사유 — 실제 종료코드 · 경로 · stderr 요약을 반드시 함께 남긴다.
+# 과거 사유는 "exit=<n>" 뿐이라 exit=1 사례가 설명되지 못했다. 이제는 로그/코멘트만 보고도
+# 왜 실패했는지(경로·종료코드·자식 stderr) 알 수 있다.
+function Format-GissueJudgeFailureReason {
+    param($Result, [string]$Prefix = '체크리스트 판정 호출 실패/차단')
+    $exit = '?'
+    $route = 'unknown'
+    $timedOut = $false
+    $stderr = ''
+    if ($Result) {
+        if ($null -ne $Result.exit) { $exit = "$($Result.exit)" }
+        if ($Result.route) { $route = "$($Result.route)" }
+        if ($Result.timedout) { $timedOut = $true }
+        $stderr = Format-GissueJudgeStderrSummary ("$($Result.stderr)")
+    }
+    $parts = @("$Prefix", "route=$route", "exit=$exit")
+    if ($timedOut) { $parts += 'timedout=1' }
+    if ($stderr) { $parts += "stderr=$stderr" }
+    return ($parts -join ' ')
+}
+
+# claude CLI 1회를 유한 대기 + stdout/stderr 분리 상태로 실행한다.
+# 반환: @{ ok; text; exit; stderr; timedout; started }
+#   - ok=$false 는 판정 실패다(HOLD 로 전이) — 절대 성공으로 취급하지 않는다.
+#   - stderr 는 진단용이다(판정 본문 아님).
+function Invoke-GissueClaudeCliCall {
+    param(
+        [Parameter(Mandatory = $true)][string]$Prompt,
+        [string[]]$CliArgs = @(),
+        [int]$TimeoutSec = 0
+    )
+    if ($TimeoutSec -le 0) {
+        $TimeoutSec = 300
+        if (Test-Path function:\Resolve-GissueBoundedCallTimeoutSec) {
+            try { $TimeoutSec = Resolve-GissueBoundedCallTimeoutSec -Kind 'Claude' } catch { $TimeoutSec = 300 }
+        }
+    }
+    $exe = Resolve-GissueClaudeExecutable
+    $stdinFile = $null
+    try {
+        # 프롬프트는 stdin 으로 준다 — 파일은 UTF-8 **BOM 없이**(BOM 이면 프롬프트 앞이 깨진다).
+        $stdinFile = Join-Path ([System.IO.Path]::GetTempPath()) ("gissue-judge-$PID-$([guid]::NewGuid().ToString('N').Substring(0,8)).txt")
+        [System.IO.File]::WriteAllText($stdinFile, $Prompt, (New-Object System.Text.UTF8Encoding $false))
+        # 네이티브 호출 구간에서만 EAP 를 'Continue' 로 내린다(함수 스코프 대입이라 호출자는 자동 복원).
+        #   stderr 는 stdout 과 합치지 않는다 — Start-Process 가 파일로 분리해 준다.
+        $prevEap = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = 'Continue'
+            $res = Invoke-GissueBoundedProcess -FilePath $exe -ArgumentList $CliArgs -TimeoutSec $TimeoutSec -StandardInputFile $stdinFile
+        } finally {
+            $ErrorActionPreference = $prevEap
+        }
+        $stderr = if ($res.StdErr) { "$($res.StdErr)".Trim() } else { '' }
+        if (-not $res.Started) {
+            return @{ ok = $false; text = ''; exit = -1; stderr = $stderr; timedout = $false; started = $false }
+        }
+        if ($res.TimedOut) {
+            return @{ ok = $false; text = ''; exit = -1; stderr = $stderr; timedout = $true; started = $true }
+        }
+        $text = if ($res.StdOut) { "$($res.StdOut)".Trim() } else { '' }
+        $exit = [int]$res.ExitCode
+        return @{ ok = ($exit -eq 0 -and $text.Length -gt 0); text = $text; exit = $exit; stderr = $stderr; timedout = $false; started = $true }
+    } catch {
+        return @{ ok = $false; text = ''; exit = -1; stderr = "$($_.Exception.Message)"; timedout = $false; started = $false }
+    } finally {
+        if ($stdinFile -and (Test-Path -LiteralPath $stdinFile)) {
+            try { Remove-Item -LiteralPath $stdinFile -Force -ErrorAction SilentlyContinue } catch {}
+        }
+    }
+}
+
+function Invoke-GissueJudge($prompt, $model = 'claude-haiku-4-5', $route = 'auto') {
     # [giip #1210 스모크 테스트 중 발견, PR #572 패턴에 대한 보강] --tools=""/--setting-sources="" 만으로는
     # 부족했다 — 실측: 이슈 content+PR diff 처럼 "giip 이슈/PR 처리" 문맥이 풍부한 긴 프롬프트를 태우면,
     # 기본 Claude Code 시스템 프롬프트(에이전트 정체성)가 남아 있어 모델이 "판정"이 아니라 실제 오케스트레이터
@@ -922,42 +1068,55 @@ function Invoke-GissueJudge($prompt, $model = 'claude-haiku-4-5') {
     #   방식 그대로 env(베이스 URL·AK·함수 키 헤더)만 바꿔 걸고 --model 은 고정하지 않으며,
     #   호출 뒤에는 env 를 원복한다. 계획 해석 자체가 실패하면 종전 직접 호출로 둔다(계획을
     #   세울 수 없는 스코프와 같은 취급).
+    # $route: 'auto'(기본 — gair 계획에 따라 자동 선택) | 'gair' | 'direct' | 'gair-fallback-direct'.
+    #   'gair-fallback-direct' 는 gair 응답 형식 불일치(ITEM| 0건) 후의 직접 경로 1회 폴백이다 —
+    #   실행은 direct 와 같지만 사유 문자열의 경로 표기가 다르다.
     $judgePlan = $null
-    try { $judgePlan = Get-GissueJudgeGairPlan } catch { $judgePlan = $null }
-    if ($judgePlan -and $judgePlan.Required -and -not $judgePlan.Active) {
-        # gair 필수 CSN 인데 AK 파생 실패 — 직접 폴백하지 않고 판정 실패로 표면화한다(giip #6229).
-        #   throw 가 아니라 ok=$false 반환인 이유: 이 함수의 호출부 전부가 "판정 호출 실패/차단 →
-        #   안전 폴백(REVIEW 유지)" 을 ok 계약으로 처리하고, 스윕의 이슈 루프에는 이슈별
-        #   try/catch 가 없어 throw 하면 그 CSN 스윕 전체가 중단된다. 엔진(러너)의 throw 는
-        #   잡 프레임워크가 세션 단위로 받아 실행 기록에 남기는 구조라 전파 범위가 다르다.
-        #   표면화는 exit=-2 와 아래 [GAIR] 줄, 호출부의 실패 로그로 남는다.
-        Write-Host "[GAIR] 판정 gair 필수(CSN $($judgePlan.Csn))이나 AK 파생 실패 — 직접 폴백 없이 판정 실패로 표면화"
-        return @{ ok = $false; text = '[GAIR] gair required but AK unavailable'; exit = -2; route = 'gair-blocked' }
+    if ($route -eq 'auto' -or $route -eq 'gair') {
+        try { $judgePlan = Get-GissueJudgeGairPlan } catch { $judgePlan = $null }
     }
-    if ($judgePlan -and $judgePlan.Active) {
+    if ($route -eq 'gair' -and (-not $judgePlan -or -not $judgePlan.Active)) { $route = 'direct' }
+    if ($route -eq 'auto') {
+        if ($judgePlan -and $judgePlan.Required -and -not $judgePlan.Active) {
+            # gair 필수 CSN 인데 AK 파생 실패 — 직접 폴백하지 않고 판정 실패로 표면화한다(giip #6229).
+            #   throw 가 아니라 ok=$false 반환인 이유: 이 함수의 호출부 전부가 "판정 호출 실패/차단 →
+            #   안전 폴백(REVIEW 유지)" 을 ok 계약으로 처리하고, 스윕의 이슈 루프에는 이슈별
+            #   try/catch 가 없어 throw 하면 그 CSN 스윕 전체가 중단된다. 엔진(러너)의 throw 는
+            #   잡 프레임워크가 세션 단위로 받아 실행 기록에 남기는 구조라 전파 범위가 다르다.
+            #   표면화는 exit=-2 와 아래 [GAIR] 줄, 호출부의 실패 로그로 남는다.
+            Write-Host "[GAIR] 판정 gair 필수(CSN $($judgePlan.Csn))이나 AK 파생 실패 — 직접 폴백 없이 판정 실패로 표면화"
+            return @{ ok = $false; text = '[GAIR] gair required but AK unavailable'; exit = -2; route = 'gair-blocked'; stderr = ''; timedout = $false }
+        }
+        if ($judgePlan -and $judgePlan.Active) { $route = 'gair' } else { $route = 'direct' }
+    }
+    if ($route -eq 'gair') {
         Write-Host "[GAIR] 판정 gair 경유 (CSN $($judgePlan.Csn), 모델 미고정 — gair 라우터가 선택)"
         $prevBase = $env:ANTHROPIC_BASE_URL; $prevKey = $env:ANTHROPIC_API_KEY; $prevHeaders = $env:ANTHROPIC_CUSTOM_HEADERS
         $env:ANTHROPIC_BASE_URL = $judgePlan.BaseUrl
         $env:ANTHROPIC_API_KEY = $judgePlan.Ak
         $env:ANTHROPIC_CUSTOM_HEADERS = if ($judgePlan.CustomHeaders) { $judgePlan.CustomHeaders } else { $null }
         try {
-            $output = $prompt | & claude -p --tools="" --setting-sources="" "--system-prompt=$judgeSystemPrompt" 2>&1
-            $exit = $LASTEXITCODE
-            $text = (($output | Out-String)).Trim()
-            return @{ ok = ($exit -eq 0 -and $text); text = $text; exit = $exit; route = 'gair' }
-        } catch {
-            return @{ ok = $false; text = $_.Exception.Message; exit = -1; route = 'gair' }
+            # gair 는 --model 을 고정하지 않는다(라우터가 선택). gair 라우터가 --model 을 honor 하지
+            #   않아 응답이 에이전트 마크업이 될 수 있다 — 그때는 호출부가 직접 경로로 폴백한다.
+            $cliArgs = @('-p', '--tools=', '--setting-sources=', "--system-prompt=$judgeSystemPrompt")
+            $res = Invoke-GissueClaudeCliCall -Prompt $prompt -CliArgs $cliArgs
+            return @{ ok = $res.ok; text = $res.text; exit = $res.exit; route = 'gair'; stderr = $res.stderr; timedout = $res.timedout }
         } finally {
             $env:ANTHROPIC_BASE_URL = $prevBase; $env:ANTHROPIC_API_KEY = $prevKey; $env:ANTHROPIC_CUSTOM_HEADERS = $prevHeaders
         }
     }
+    # 직접 경로 — gair/MiniMax 환경이 남아 있으면 자식이 MiniMax 에이전트 마크업을 돌려준다(D2).
+    #   그래서 BASE_URL·API_KEY·커스텀 헤더를 **비우고** 호출한 뒤 원복한다.
+    $prevBase = $env:ANTHROPIC_BASE_URL; $prevKey = $env:ANTHROPIC_API_KEY; $prevHeaders = $env:ANTHROPIC_CUSTOM_HEADERS
+    $env:ANTHROPIC_BASE_URL = $null
+    $env:ANTHROPIC_API_KEY = $null
+    $env:ANTHROPIC_CUSTOM_HEADERS = $null
     try {
-        $output = $prompt | & claude -p --tools="" --setting-sources="" "--system-prompt=$judgeSystemPrompt" --model $model 2>&1
-        $exit = $LASTEXITCODE
-        $text = (($output | Out-String)).Trim()
-        return @{ ok = ($exit -eq 0 -and $text); text = $text; exit = $exit; route = 'direct' }
-    } catch {
-        return @{ ok = $false; text = $_.Exception.Message; exit = -1; route = 'direct' }
+        $cliArgs = @('-p', '--tools=', '--setting-sources=', "--system-prompt=$judgeSystemPrompt", '--model', $model)
+        $res = Invoke-GissueClaudeCliCall -Prompt $prompt -CliArgs $cliArgs
+        return @{ ok = $res.ok; text = $res.text; exit = $res.exit; route = $route; stderr = $res.stderr; timedout = $res.timedout }
+    } finally {
+        $env:ANTHROPIC_BASE_URL = $prevBase; $env:ANTHROPIC_API_KEY = $prevKey; $env:ANTHROPIC_CUSTOM_HEADERS = $prevHeaders
     }
 }
 
@@ -1361,7 +1520,7 @@ function Resolve-ChecklistJudgeModel($model = $null) {
 # 체크리스트 분해 + 항목 판정 LLM 호출(기존 Invoke-GissueJudge 패턴 재사용: 도구 없음/설정 상속 차단/
 # 분류기 시스템 프롬프트/프롬프트 인젝션 방어). scope-gate/comment-gate/VERIFY-GATE/보고형 대조가 보던 것들은
 # 별도 게이트가 아니라 "항목 판정의 증거"로 프롬프트에 흡수했다.
-function Invoke-ChecklistJudge($isn, $issueContent, $commentsText, $prEvidenceText, $model = $null) {
+function Invoke-ChecklistJudge($isn, $issueContent, $commentsText, $prEvidenceText, $model = $null, $route = 'auto') {
     $model = Resolve-ChecklistJudgeModel $model
     # 프롬프트 크기 상한: 코멘트는 최신쪽을 남긴다.
     $maxC = 60000
@@ -1395,7 +1554,10 @@ ITEM|<code 또는 other>|<MET 또는 UNMET 또는 UNDETERMINED>|<항목 한 줄>
 ITEM|other|MET|운영 문서에 절차를 등록한다|결과 코멘트 2: docs/ops.md 에 절차 등록, 커밋 링크 포함
 ITEM|code|UNMET|스크립트 오류를 수정한다|머지된 PR 이 없고 코멘트에도 수정 내역이 없다
 "@
-    return (Invoke-GissueJudge $prompt $model)
+    # 경로 지정이 있을 때만 판정 호출에 넘긴다 — 종전 호출 형태(인자 2개)를 그대로 유지해
+    #   기존 스텁/테스트 계약이 깨지지 않게 한다.
+    if ($route -eq 'auto') { return (Invoke-GissueJudge $prompt $model) }
+    return (Invoke-GissueJudge $prompt $model $route)
 }
 
 # 한 이슈의 체크리스트 판정 전체(조회된 입력 -> 최종 판정). 부작용 없음(코멘트/상태 쓰기 없음).
@@ -1408,10 +1570,28 @@ function Invoke-ChecklistAssessment($isn, $issueContent, $Comments, $Pr, $model 
     $usedModel = Resolve-ChecklistJudgeModel $model
     $j = Invoke-ChecklistJudge $isn $issueContent $commentsText $prText $usedModel
     if (-not $j.ok) {
-        return @{ Ok = $false; Decision = 'HOLD'; Items = @(); Reason = "체크리스트 판정 호출 실패/차단(exit=$($j.exit)) - 근거 없이 되돌리지 않고 보류"; Raw = "$($j.text)"; Model = $usedModel }
+        # 사유에 실제 종료코드·경로·stderr 요약을 함께 남긴다(과거엔 "exit=<n>" 뿐이었다).
+        return @{ Ok = $false; Decision = 'HOLD'; Items = @(); Reason = (Format-GissueJudgeFailureReason $j '체크리스트 판정 호출 실패/차단') + ' - 근거 없이 되돌리지 않고 보류'; Raw = "$($j.text)"; Model = $usedModel }
     }
     $items = ConvertFrom-ChecklistJudgeOutput $j.text
     if (@($items).Count -eq 0) {
+        # gair 응답이 에이전트 마크업(ITEM| 0건)이면 **직접 경로로 1회** 폴백한다.
+        #   실측: gair 라우터는 --model 을 honor 하지 않아 MiniMax 에이전트 마크업을 돌려주는데,
+        #   BASE_URL/API_KEY 을 비운 직접 경로는 정상적인 ITEM| 줄을 준다.
+        #   폴백도 실패/0건이면 기존 HOLD 를 유지한다(성공으로 뒤집지 않는다).
+        if ("$($j.route)" -eq 'gair') {
+            Write-Host "[GAIR] 응답 형식 불일치(ITEM| 파싱 0건) — 직접 경로로 1회 폴백"
+            $j2 = Invoke-ChecklistJudge $isn $issueContent $commentsText $prText $usedModel 'gair-fallback-direct'
+            if ($j2.ok) {
+                $items2 = ConvertFrom-ChecklistJudgeOutput $j2.text
+                if (@($items2).Count -gt 0) {
+                    $d2 = Get-ChecklistDecision $items2 $Pr
+                    return @{ Ok = $true; Decision = $d2.Decision; Items = $d2.Items; Reason = $d2.Reason; Raw = "$($j2.text)"; Model = $usedModel }
+                }
+            }
+            $reason = Format-GissueJudgeFailureReason $j2 '체크리스트 항목 파싱 실패(gair 응답 형식 불일치 → 직접 경로 1회 폴백 후에도 ITEM| 0건)'
+            return @{ Ok = $false; Decision = 'HOLD'; Items = @(); Reason = $reason + ' - 근거 없이 되돌리지 않고 보류'; Raw = "$($j2.text)"; Model = $usedModel }
+        }
         return @{ Ok = $false; Decision = 'HOLD'; Items = @(); Reason = '체크리스트 항목을 파싱하지 못했다(분해 실패/형식 불일치) - 근거 없이 되돌리지 않고 보류'; Raw = "$($j.text)"; Model = $usedModel }
     }
     $d = Get-ChecklistDecision $items $Pr

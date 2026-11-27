@@ -319,6 +319,24 @@ A-3b 는 `-LiveCsn` 기본값(`0`)일 때 `csn-projects.json` 의 **첫 번째 e
 
 적용 범위: `review-done-audit` 에서는 구룰이 **PR-전용 REVERT** 를 내거나(Modification 분기) **DONE 승격(PASS)** 을 내는 지점에만 개입합니다. 구룰이 되돌리지 않던 경로(FINAL 유지, `[NO-PR-REASON]` 유지, Uncertain 스킵)에서 새 되돌림을 만들지는 않습니다.
 
+### 판정 호출 방식 — stderr 분리 · 자식 종료코드 판정 · 유한 대기
+
+판정 LLM 호출(`Invoke-GissueJudge` → claude CLI)은 **네이티브 CLI 를 부르는 한 지점**이며, 호출 방식이
+판정 결과 자체를 결정한다. 아래 3가지를 지켜야 한다.
+
+| 항목 | 규칙 | 근거 |
+|---|---|---|
+| **stdout/stderr 분리** | 자식 stderr 를 stdout 에 합치지 않는다(`2>&1` 금지). 성공/실패는 stderr 유무가 아니라 **자식의 실제 종료코드**로 판정한다. stderr 는 **진단 사유 전용**(판정 본문 아님)이고 300자로 자르며 `sk-…`·`x-functions-key`·`API_KEY`·`Bearer` 는 마스킹한다. | Windows PowerShell 5.1 은 네이티브 exe 가 stderr 에 **한 줄이라도** 쓰면 그것을 `NativeCommandError`(ErrorRecord)로 감싸 **종료성** 오류로 만든다. 호출자(`pr-gate-sweep.ps1`·`review-done-audit.ps1`)의 `$ErrorActionPreference='Stop'` 아래에서 함수의 catch 가 `exit=-1` 을 돌려주면 `ok=$false` → `Decision='HOLD'` 가 된다. claude CLI 는 `ANTHROPIC_API_KEY` 가 설정된 환경에서 "connectors are disabled" 경고를 stderr 에 항상 찍으므로 **gair 경유 판정은 매 회차** 이 상태에 걸린다. |
+| **유한 대기** | 판정 호출에는 시간 한도가 있다 — `GISSUE_CLAUDE_CALL_TIMEOUT_SEC`(기본 **300초**, `Resolve-GissueBoundedCallTimeoutSec -Kind 'Claude'`). 한도 초과 시 자식을 종료시키고 **실패**로 표면화한다(`timedout=1`). 타임아웃을 성공으로 취급하지 않는다. | 종전엔 타임아웃이 없어 판정 호출이 **무한 대기**했다(실측 9분+ 무응답). 스윕 전체가 그 동안 붙잡혀 있었다. |
+| **gair → 직접 폴백 1회** | gair 경로가 응답을 주었는데 `ITEM\|` 줄이 0건이면 **직접 경로로 1회** 재호출한다. 이때 `ANTHROPIC_BASE_URL`·`ANTHROPIC_API_KEY`·`ANTHROPIC_CUSTOM_HEADERS` 를 비운다(그대로 두면 같은 응답 형식이 그대로 나온다). 폴백까지 0건이면 기존 **HOLD 유지** — 실패를 성공으로 뒤집지 않는다. | gair 라우터는 `--model` 을 honor 하지 않아 응답이 에이전트 마크업일 수 있다 → `ITEM\|` 파싱 0건 → HOLD. 직접 경로는 정상 `ITEM\|` 줄을 준다. |
+
+**실패 사유**에는 실제 종료코드 · 경로(`gair` / `direct` / `gair-fallback-direct`) · stderr 요약이 반드시 들어간다
+(종전 사유는 `exit=<n>` 뿐이라 과거 `exit=1` 사례가 설명되지 못했다). 사유는 감사 코멘트와 로그에 남으므로
+사람이 로그만 보고 원인을 확인할 수 있어야 한다.
+
+판정 실패는 언제나 **전이 없음**(REVIEW 유지)이라는 계약은 그대로다. 회귀 테스트는
+`scripts/gissue/tests/test-checklist-judge-stderr.ps1`(가짜 CLI 스텁 · LLM/네트워크 미사용).
+
 ### 모드와 롤아웃 (Live 는 명시적으로만)
 
 `-ChecklistMode Off|Shadow|Live` (미지정이면 환경변수 `GISSUE_CHECKLIST_MODE`, 그것도 없으면 **Shadow**). `-Live`(쓰기 허용)와는 별개의 스위치입니다.
