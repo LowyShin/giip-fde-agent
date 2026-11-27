@@ -383,9 +383,15 @@ async function classifyRequest(text, workDir = BASE_DIR, opts = {}) {
   }
 
 
+  // ③ LLM 분류기로 송신하는 본문은 ② Jev 경로와 같은 기준을 쓴다 — maskString 통과본(사양서 §6.1/§10-1 결정).
+  //   분류 판정에는 비밀값 자체가 필요 없고(알려진 비밀 패턴만 지워질 뿐 자연어 지시는 그대로 남는다),
+  //   Jev 요청 본문·판정 로그와 동일하게 "마스킹 통과본이 곧 송신본"이라는 기준을 세 경로가 공유한다.
+  //   결정적 규칙 경로(①)는 프로세스 안에서만 판단하므로 원문을 그대로 쓴다 — 외부로 나가지 않는다.
+  const maskedText = maskString(text);
+
   const prompt = `You are an assistant that classifies the intent of Slack messages.
 
-Message: "${text}"
+Message: "${maskedText}"
 
 Classify using the following rules:
 - "task": applies when the request requires creating or modifying ANY file on disk:
