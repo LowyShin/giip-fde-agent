@@ -15,6 +15,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const querystring = require('node:querystring');
 const { classifyRequest } = require('../intent');
+const { maskString } = require('../secret-mask');
 
 // ── 테스트 픽스처 ────────────────────────────────────────────────────────────
 // Jev 가 쓰는 sk(테스트용 가짜 값 — 실제 자격 증명 아님). 리터럴로 적지 않고 만들어
@@ -397,6 +398,20 @@ test('마스킹: 분류 LLM 프롬프트에 비밀 패턴이 없으면 본문이
   const prompt = spawn.calls[0].opts.input;
   assert.ok(prompt.includes(raw), '비밀 패턴이 없으면 본문은 그대로 전달되어야 한다');
   assert.strictEqual(intent, 'question');
+});
+
+// 실트래픽 코퍼스(38건) 기준: 마스킹이 분류 입력을 한 글자도 바꾸지 않는다는 것을 고정한다.
+//   ③ 분류 LLM 프롬프트가 마스킹본을 쓰더라도(사양서 §6-1), 실제 분류 입력은 그대로여야 한다.
+test('마스킹: 실트래픽 코퍼스 38건의 분류 입력은 마스킹 후에도 바이트 동일', () => {
+  const corpusPath = path.join(__dirname, '..', 'eval', 'intent', 'corpus.jsonl');
+  const cases = fs.readFileSync(corpusPath, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+  assert.ok(cases.length >= 30, `코퍼스가 비어 보입니다: ${cases.length}건`);
+
+  const changed = cases.filter((c) => maskString(c.text) !== c.text);
+  assert.deepStrictEqual(
+    changed.map((c) => c.id), [],
+    '코퍼스에 비밀 패턴이 들어간 문장이 생기면 분류 입력이 바뀌므로 재검증이 필요하다'
+  );
 });
 
 // ── ⑼ 요청 스키마 ────────────────────────────────────────────────────────────
