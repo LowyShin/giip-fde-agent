@@ -44,3 +44,11 @@ docker/instances/
 
 # 개인용 슬랙봇 체크리스트(SLACKBOT_DASHBOARD=on 일 때만 생성) — 공용 레포에는 커밋하지 않음 (giip 이슈 4211)
 LOWY_ACTION_DASHBOARD.md
+
+# 에이전트 스크래치 산출물(저장소 루트) — 머신 로컬 임시 파일, 커밋 금지 (giip 이슈 6443)
+# base 브랜치에 미커밋 변경(dirt)이 남으면 자동 배포가 이 저장소를 "수동 PR 필요" 사유로
+# 건너뛰고 그 사실이 시드 이슈로 반복 등록되며, 자동 회수 경로는 dirt 전체를 junk PR 로 만든다.
+# → 루트 한정 규칙으로 porcelain 집합에서 제외해 base 브랜치를 깨끗하게 유지한다.
+#   (루트 한정이므로 .agent/ 하위와 추적 파일에는 영향이 없다)
+/scratch/
+/scratch_*
