@@ -196,6 +196,81 @@ Assert-True ($del.Ok -eq $false) 'C-3 삭제 실패를 Ok=false 로 알린다' "
 Assert-True ($del.Detail -is [string]) 'C-4 Detail 이 문자열이다(배열로 뭉개지지 않음)' "type=$(if ($null -ne $del.Detail) { $del.Detail.GetType().Name } else { 'NULL' })"
 Assert-True ($logC.Count -ge 1) 'C-5 실제로 로그를 남겼다(무의미한 통과 방지)' "logCount=$($logC.Count)"
 
+# ──────────────────────────────────────────────────────────────────────────────
+# D. 머지판정 실패 유형 구분 회귀 (giip 6479)
+# ──────────────────────────────────────────────────────────────────────────────
+# 실측(2026-11-27): 라이브 러너가 origin 이 **존재하는** 저장소에 대해
+# "머지판정 불가(origin remote 없음)" 를 남기며 그 저장소의 worktree 정리를 통째로
+# 건너뛰었다. 근본은 Get-GissueMergedBranchSet 가 서로 다른 실패 유형을 **한 문구**로
+# 뭉개던 것 — (a) 외부 호출 기동 실패 · (b) git 비정상 종료 · (c) 진짜 remote 없음이
+# 전부 "origin remote 없음" 로 남았다 → 운영자가 "origin 이 왜 사라졌지" 를 먼저
+# 뒤지게 되는 오진단.
+# 이 테스트는 그 구분(=로그 문구가 실패 유형별로 달라지는지)을 고정한다.
+# 판정 결과(Ok=false · 삭제 금지)는 어떤 유형이든 그대로여야 한다(안전 판정 단일 소스).
+Write-Output ''
+Write-Output 'D. Get-GissueMergedBranchSet — 머지판정 실패 유형이 로그에서 구분된다'
+
+# ★ B 절(126행)이 `Get-GissueMergedBranchSet` 을 통째로 스텁했으므로, 이 절에서 **실제 엔진
+#   정의를 다시 로드**해야 한다. 스텁이 살아 있으면(함수 조회는 호출 시점에 스코프 체인을
+#   따라간다 → dot-source 로 들어온 실 엔진이 테스트 스텁에 가려진다) 실제 코드가 한 번도
+#   실행되지 않아 이 절이 무의미한 실패가 된다.
+#   2026-11-27 실측: 스텁이 살아 있던 상태에서 D 절 7건이 전부 FAIL(로그 공백 + Ok=True).
+. $SafetyLib
+
+$origInvoke = Get-Command Invoke-GissueExternalCall -ErrorAction SilentlyContinue
+$script:StubExternalCallCount = 0
+function Invoke-GissueExternalCall {
+    param(
+        [Parameter(Mandatory = $true)][string]$FilePath,
+        [string[]]$ArgumentList = @(),
+        [int]$TimeoutSec = 0,
+        [ValidateSet('Gh', 'Git')][string]$Kind = 'Git'
+    )
+    $script:StubExternalCallCount++
+    return $script:StubExternalCallResult
+}
+
+function Get-MergeGateLog {
+    param([scriptblock]$Stub)
+    $script:StubExternalCallResult = & $Stub
+    $script:GissueMergedBranchCache = @{}
+    $script:StubExternalCallCount = 0
+    # ★ 변수명을 `$log` 로 두면 안 된다 — PowerShell 변수명은 대소문자를 구분하지 않고,
+    #   로거 스크립블록은 **호출자(Get-GissueMergedBranchSet) 스코프를 따라** 변수를 찾는다.
+    #   거기에는 `-Log` 파라미터(스크립블록)가 `$Log` 로 존재하므로 `$log` 가 그걸 가리켜
+    #   "ScriptBlock 에 Add 메서드가 없다" 로 죽는다(2026-11-27 실측).
+    #   A/B/C 절이 `$logA`/`$logB`/`$logC` 를 쓴 이유와 같다 — 여기만 이름이 겹쳤다.
+    $mgLog = New-Object System.Collections.ArrayList
+    $logger = { param($m) [void]$mgLog.Add([string]$m) }
+    $r = Get-GissueMergedBranchSet -RepoPath $repoB -Log $logger
+    return [pscustomobject]@{ Log = ($mgLog -join ' || '); Ok = $r.Ok; Calls = $script:StubExternalCallCount }
+}
+
+# (a) 외부 호출 기동 실패 — "origin remote 없음" 이라고 하면 **오진단**이다.
+$caseA = Get-MergeGateLog { [pscustomobject]@{ Started = $false; TimedOut = $false; ExitCode = -1; StdOut = ''; StdErr = 'The Win32 internal error "No process is on the other end of the pipe" 0xE9 occurred while getting the console mode.' } }
+Assert-True ($caseA.Log -match '외부 호출 기동 실패') 'D-1 외부 호출 기동 실패는 "기동 실패" 로 구분된다' "log=$($caseA.Log)"
+Assert-True ($caseA.Log -notmatch 'origin remote 없음') 'D-1b 기동 실패를 "origin remote 없음" 으로 오진단하지 않는다' "log=$($caseA.Log)"
+Assert-True ($caseA.Ok -eq $false) 'D-1c 기동 실패도 fail-closed(Ok=false) 다' "ok=$($caseA.Ok)"
+Assert-True ($caseA.Calls -ge 1) 'D-1d 외부 호출 스텁이 실제로 호출됐다(실 엔진이 실행됐다는 증거)' "calls=$($caseA.Calls)"
+
+# (b) git 이 실제로 실행됐고 비정상 종료 — stderr 가 원인을 말해 준다.
+$caseB = Get-MergeGateLog { [pscustomobject]@{ Started = $true; TimedOut = $false; ExitCode = 128; StdOut = ''; StdErr = "fatal: 'origin' does not appear to be a git repository" } }
+Assert-True ($caseB.Log -match '종료코드 128') 'D-2 git 비정상 종료는 종료코드와 함께 구분된다' "log=$($caseB.Log)"
+Assert-True ($caseB.Log -notmatch 'origin remote 없음') 'D-2b git 실패를 "origin remote 없음" 으로 오진단하지 않는다' "log=$($caseB.Log)"
+Assert-True ($caseB.Log -match 'does not appear to be a git repository') 'D-2c git stderr 가 로그에 포함된다(원인 판별 가능)' "log=$($caseB.Log)"
+Assert-True ($caseB.Ok -eq $false) 'D-2d git 실패도 fail-closed(Ok=false) 다' "ok=$($caseB.Ok)"
+Assert-True ($caseB.Calls -ge 1) 'D-2e 외부 호출 스텁이 실제로 호출됐다(실 엔진이 실행됐다는 증거)' "calls=$($caseB.Calls)"
+
+# (c) 진짜로 remote 가 없는 경우 — **유일하게** "origin remote 없음" 이 맞다.
+$caseC = Get-MergeGateLog { [pscustomobject]@{ Started = $true; TimedOut = $false; ExitCode = 0; StdOut = ''; StdErr = '' } }
+Assert-True ($caseC.Log -match 'origin remote 없음') 'D-3 진짜 remote 없음은 "origin remote 없음" 으로 남는다' "log=$($caseC.Log)"
+Assert-True ($caseC.Ok -eq $false) 'D-3b remote 없음도 fail-closed(Ok=false) 다' "ok=$($caseC.Ok)"
+Assert-True ($caseC.Calls -ge 1) 'D-3c 외부 호출 스텁이 실제로 호출됐다(실 엔진이 실행됐다는 증거)' "calls=$($caseC.Calls)"
+
+# 스텁을 걷어낸다(이후 케이스가 실제 외부 호출을 쓰게 한다).
+Remove-Item -Path 'function:Invoke-GissueExternalCall' -Force -ErrorAction SilentlyContinue
+if ($origInvoke) { Set-Item -Path 'function:Invoke-GissueExternalCall' -Value $origInvoke.Definition -Force }
+
 # ── 정리: 이 테스트가 만든 임시 레포만 제거한다(rule 55 — 링크 선검사 후 삭제) ──
 try {
     if (Test-GissueWorktreeHasLink $root) {
