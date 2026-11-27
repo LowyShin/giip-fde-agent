@@ -49,9 +49,19 @@ C10 "완료조건 verify 블록 실행" 이 **UNDETERMINED** 로 판정되었고
 - verify 실행 결과(exit 1)를 근거로 "구현 실패"를 주장할 때 — 형식 결함 가능성을 먼저 배제.
 - REVIEW→NEEDS_DECISION 전이 사유가 "증거 부족"일 때 — verify 블록 형식부터 본다.
 
+## 해소 경로 (2026-11-28 실측, giip 6564)
+
+이 함정은 **이슈 코멘트에 실행 가능한 완료조건을 제시하면** 해소된다. 사양서
+`slack-bot/docs/INTENT_ROUTING_JEV_SPEC.md` §9-B 의 완료조건 절에 이미 글로브 인자형이 적혀 있었지만,
+이슈 쪽 verify 블록은 디렉터리 인자형 그대로였고 그 탓에 감사 게이트가 해당 항목을 판정불가로 남겼다.
+실제 해법은 ① 이슈 코멘트에 ```verify 블록을 **글로브 인자형**으로 제시하고
+② `node scripts/gissue/verify-runner.mjs <isn> <csn> --comment --json` 로 **실제로 돌려 PASS 를 남기는 것**이었다
+(giip 6564 에서 6스텝 전부 exit 0 · PASS 확인). 재진단만 반복하지 말고 **돌릴 수 있는 완료조건부터 세울 것.**
+
 ## 관련
 
 - `KNOW-013` — 회차 기록의 "완료" 서술은 실행되지 않은 계획일 수 있다
 - `KNOW-022` — PR 머지는 이슈 측 쓰기 실행의 증거가 아니다
 - `KNOW-033` — verify-runner exit 4 는 "검증 미실행" 이다
+- `KNOW-057` — 미결 사양 항목(예: §10-1 마스킹 소급 여부)은 "사용자 결정 대기" 로 방치하면 해소되지 않는다 → 결정과 근거를 사양서에 기록할 것
 - 작업 기록: `.agent/work_history/20261104_2006_csn70424_giip-4219-jev-spec-status-sync.md`
