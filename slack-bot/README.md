@@ -254,6 +254,7 @@ Slack 메시지는 `intent.js` 에서 아래 순서로 분류된다(앞 단계�
 `SLACKBOT_DASHBOARD=on`(대소문자 무시)일 때만 동작하고, 미설정/그 외 값이면 파일 생성·git 호출을 전혀 하지 않는다.
 공용 레포 체크아웃에서는 켜지 말 것(레포 루트가 오염된다). `node dashboard.js` CLI 수동 실행은 스위치와 무관하게 동작한다.
 테스트: `node --test slack-bot/tests/dashboard.test.js`.
+근거·설계 이유: [k-layer KNOW-056](../.agent/k_layer/notes/KNOW-056_shared_repo_generated_artifact_must_be_off_by_default.md) (giip 4211).
 
 Jev 를 활용한 의도 분류 구조(구현 완료 — 단, 스위치 기본 OFF): [docs/INTENT_ROUTING_JEV_SPEC.md](docs/INTENT_ROUTING_JEV_SPEC.md)
 
