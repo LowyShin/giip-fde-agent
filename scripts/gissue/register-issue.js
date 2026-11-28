@@ -15,6 +15,7 @@
  *
  * 사용법:
  *   node register-issue.js --title "<제목>" --content-file <경로> [--csn 47]
+ *   node register-issue.js --title-file <경로> --content-file <경로> [--csn 47]   # [giip 6620] 따옴표가 든 제목
  *   node register-issue.js --title "<제목>" --content "<본문(짧을 때)>" [--csn 47]
  *   echo "<본문>" | node register-issue.js --title "<제목>"        # stdin 도 가능
  *   기본 csn: default 계정의 csn(=47, giipprj). --csn 으로 상위 지정 가능.
@@ -33,6 +34,7 @@ function parseArgs(argv) {
     const k = argv[i];
     const next = () => argv[++i];
     if (k === '--title') a.title = next();
+    else if (k === '--title-file') a.titleFile = next();
     else if (k === '--content') a.content = next();
     else if (k === '--content-file') a.contentFile = next();
     else if (k === '--csn') a.csn = Number(next());
@@ -47,10 +49,22 @@ function readStdin() {
   try { return fs.readFileSync(0, 'utf8'); } catch { return ''; }
 }
 
+// [giip 6620] 제목 결정 — 순수 함수로 분리한다(회귀 테스트가 require 해 검증할 수 있게).
+//   우선순위: --title-file(UTF-8 파일) → --title → 본문 첫 줄 → '(무제)'.
+function resolveTitle(a, content) {
+  let titleFromFile = null;
+  if (a.titleFile) {
+    const raw = fs.readFileSync(a.titleFile, 'utf8');
+    const firstLine = raw.split(/\r?\n/).map((l) => l.trim()).find((l) => l.length > 0);
+    if (firstLine) titleFromFile = firstLine;
+  }
+  return (titleFromFile || a.title || content.split(/\r?\n/)[0] || '(무제)').slice(0, 200).trim();
+}
+
 async function main() {
   const a = parseArgs(process.argv);
   if (a.help) {
-    console.log('usage: node register-issue.js --title "<제목>" (--content-file <경로> | --content "<본문>" | stdin) [--csn N] [--status PENDING] [--user-request]');
+    console.log('usage: node register-issue.js --title "<제목>" | --title-file <경로> (--content-file <경로> | --content "<본문>" | stdin) [--csn N] [--status PENDING] [--user-request]');
     process.exit(0);
   }
 
@@ -59,7 +73,19 @@ async function main() {
   if (!content && !process.stdin.isTTY) content = readStdin();
   content = (content || '').trim();
 
-  const title = (a.title || content.split(/\r?\n/)[0] || '(무제)').slice(0, 200).trim();
+  // [giip 6620] --title-file — 제목에 큰따옴표(")가 들어 있으면 PowerShell → 네이티브(node) 인자
+  //   경계에서 값이 **두 토큰으로 쪼개진다**(CommandLineToArgvW 의 따옴표 규칙). register-issue.js 는
+  //   `--title` 의 바로 다음 토큰만 제목으로 읽으므로 등록 제목이 첫 조각으로 잘리고
+  //   '(원본 giip #NNNN)' 표식이 통째로 사라진다(실측: isn 6606 제목이 '[후속] slack-bot 이 소켓은' 로
+  //   잘려 저장됨). 파일(UTF-8)로 넘기면 이 경계를 아예 건너지 않는다. 한글 제목이 시스템
+  //   코드페이지로 깨지는 문제(giip 4117)와 같은 계열의 해법이다. 첫 줄만 제목으로 쓴다.
+  let title;
+  try {
+    title = resolveTitle(a, content);
+  } catch (e) {
+    console.error('❌ --title-file 을 읽을 수 없습니다:', e.message);
+    process.exit(1);
+  }
   if (!content) { console.error('❌ 본문이 비었습니다. --content-file / --content / stdin 중 하나로 내용을 주세요.'); process.exit(1); }
 
   const acct = accounts.resolve(null); // default 계정
@@ -94,4 +120,9 @@ async function main() {
   }
 }
 
-main();
+// [giip 6620] 회귀 테스트가 이 모듈을 require 해 순수 함수를 검증할 수 있게 노출한다.
+//   main() 은 "직접 실행일 때만" 돈다 — require 시점에 등록이 시도되면 테스트가 실 환경에
+//   이슈를 만들어 버린다(형제 러너 register-issue.js 와 동일 구조).
+module.exports = { parseArgs, resolveTitle };
+
+if (require.main === module) main();

@@ -4275,12 +4275,20 @@ ${function:Invoke-GissueEngine}
                     $timeboxFollowupTitle = "[후속] $($issue.Title) - ${effectiveDeadlineMin}분 캡 초과 잔여 작업 (원본 giip #$($issue.Isn))"
                     $timeboxFollowupBody = "giip #$($issue.Isn) 처리가 시간 캡(${effectiveDeadlineMin}분)을 초과해 run-gissue-claude.ps1(giip #1565)이 강제 정리했습니다.`n`n원본 이슈 번호: $($issue.Isn)`n원본 제목: $($issue.Title)`n원본 상태(캡 초과 시점): $($issue.Status)`n`nGit 워킹 디렉토리 상태 스냅샷($workdir):`n$timeboxGitSnapshot"
                     $timeboxTmp = Join-Path ([System.IO.Path]::GetTempPath()) ("gissue_timebox_followup_{0}_{1}.txt" -f $issue.Isn, [guid]::NewGuid().ToString('N'))
+                    $timeboxTitleTmp = Join-Path ([System.IO.Path]::GetTempPath()) ("gissue_timebox_title_{0}_{1}.txt" -f $issue.Isn, [guid]::NewGuid().ToString('N'))
                     $timeboxNewIsn = $null
                     $timeboxRegOut = ''
                     try {
                         [System.IO.File]::WriteAllText($timeboxTmp, $timeboxFollowupBody, (New-Object System.Text.UTF8Encoding $true))
+                        # [giip 6620] 제목은 파일(UTF-8)로 넘긴다 — 원본 이슈 제목에 큰따옴표(")가 있으면
+                        #   PowerShell → node 네이티브 인자 경계에서 값이 **두 토큰으로 쪼개진다**.
+                        #   register-issue.js 는 `--title` 의 바로 다음 토큰만 제목으로 읽으므로 등록 제목이
+                        #   첫 조각으로 잘리고 '(원본 giip #NNNN)' 표식이 통째로 사라진다
+                        #   (실측: isn 6606 제목이 '[후속] slack-bot 이 소켓은' 로 잘려 저장됨).
+                        #   같은 파일의 타임 초과 분해 경로(4635행)가 이미 `--title-file` 을 쓰므로 그 패턴을 따른다.
+                        [System.IO.File]::WriteAllText($timeboxTitleTmp, $timeboxFollowupTitle, (New-Object System.Text.UTF8Encoding $false))
                         if (Test-Path -LiteralPath $registerIssueScript) {
-                            $timeboxRegOut = & node $registerIssueScript --title $timeboxFollowupTitle --content-file $timeboxTmp --csn $csn 2>&1
+                            $timeboxRegOut = & node $registerIssueScript --title-file $timeboxTitleTmp --content-file $timeboxTmp --csn $csn 2>&1
                             foreach ($line in @($timeboxRegOut)) {
                                 if ("$line" -match 'giip issue #(\d+)') { $timeboxNewIsn = [int]$Matches[1] }
                             }
@@ -4289,6 +4297,7 @@ ${function:Invoke-GissueEngine}
                         }
                     } finally {
                         Remove-Item -LiteralPath $timeboxTmp -Force -ErrorAction SilentlyContinue
+                        Remove-Item -LiteralPath $timeboxTitleTmp -Force -ErrorAction SilentlyContinue
                     }
                     $timeboxNewIsnText = if ($timeboxNewIsn) { "#$timeboxNewIsn" } else { "(등록 실패 또는 응답 파싱 실패 — 로그: $timeboxRegOut)" }
                     $timeboxNote = "[TIMEBOX] 이슈 1건 처리 시간이 ${effectiveDeadlineMin}분을 초과해 강제 정리했습니다. 후속 이슈 $timeboxNewIsnText 로 잔여 작업을 분리했습니다. (giip #1565)"
