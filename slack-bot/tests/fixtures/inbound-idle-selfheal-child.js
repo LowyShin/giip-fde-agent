@@ -46,6 +46,13 @@ const watchdog = attachInboundIdleWatchdog({
   probeIntervalMs: 1000,
   now: clock.now,
   onSuspect: dieAndRestart,
+  // 워치독의 판단 로그를 실제 출력에 연결한다 (index.js 의 log 주입과 같은 목적).
+  // 이게 없으면 "[Bot] 무수신 감지:" 줄이 삼켜져 "감지"와 "재시작" 사이가 증명되지 않는다.
+  log: (level, msg) => {
+    if (level === 'error') console.error(msg);
+    else if (level === 'warn') console.warn(msg);
+    else console.log(msg);
+  },
 });
 
 (async () => {
