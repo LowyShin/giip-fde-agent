@@ -395,6 +395,17 @@ async function main() {
     // 재현 모드에서는 소켓이 없으므로 점검 타이머가 프로세스를 붙잡아야 한다.
     keepAlive: SIMULATE_NO_INBOUND,
     onSuspect: (why) => dieAndRestart(why),
+    // 워치독의 판단(무수신 감지 · 진짜 유휴 · 판정 불가)을 운영 로그로 남긴다(사양 §2.3 로그 표).
+    // 이 옵션을 주지 않으면 워치독의 log 기본값이 no-op 이 되어
+    //   "[Bot] 무수신 감지: ..."(자가 재시작 발동) 와
+    //   "[Bot] 무수신 점검: ...(자가 재시작 안 함)"(진짜 유휴) 이 **출력되지 않는다** →
+    // 사양 §5.2 의 관측 절차(자가 재시작 확인 4~5단계 · 오탐 확인 6단계)가 전부 이 로그에 의존하므로
+    // 운영자가 확인할 수 없다. 즉 "감지는 되는데 아무도 모르는" 상태가 된다.
+    log: (level, msg) => {
+      if (level === 'error') console.error(msg);
+      else if (level === 'warn') console.warn(msg);
+      else console.log(msg);
+    },
   });
 
   if (SIMULATE_NO_INBOUND) {

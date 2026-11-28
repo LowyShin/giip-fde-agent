@@ -550,6 +550,19 @@ test('배선 계약: index.js 가 무수신 워치독을 붙이고 자가 재시
   assert.match(src, /inboundIdle\.noteConnected\(\)/, '재현 모드에서 워치독을 연결 상태로 둬야 한다');
 });
 
+// [giip #5141] 워치독은 "감지"와 "유휴 판정"을 console 로 알린다(사양 §2.3 로그 표).
+// 그런데 log 옵션을 주입하지 않으면 워치독의 log 기본값이 no-op 이 되어
+//   - "[Bot] 무수신 감지: ..." (자가 재시작 발동)  → pm2 로그에 안 남음
+//   - "[Bot] 무수신 점검: ... (자가 재시작 안 함)"   → 진짜 유휴 때도 아무 말 없음
+// 이 되어 사양 §5.2 의 4~6단계(자가 재시작 확인 · 오탐 확인) 를 운영자가 확인할 수 없다.
+// 즉 "모듈은 붙었는데 관측할 수 없다" 상태 → 배선 계약으로 막는다.
+test('배선 계약: index.js 가 워치독에 log 를 주입한다 (감지·점검 로그가 실제로 출력되어야 한다)', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'index.js'), 'utf8');
+  const attach = src.match(/attachInboundIdleWatchdog\(\{[\s\S]*?\n\s*\}\);/);
+  assert.ok(attach, 'attachInboundIdleWatchdog 호출 블록을 찾을 수 없다');
+  assert.match(attach[0], /\blog\s*:/, '워치독에 log 옵션을 주입해야 한다 — 안 주면 감지·점검 로그가 삼켜진다');
+});
+
 // ── 6. 프로세스 수명 — 타이머 unref 정책 ───────────────────────────────────────
 // 소켓이 연결돼 있으면 소켓이 이벤트 루프를 붙잡는다. 하지만 "소켓 없이 연결된 것처럼
 // 행동하는" 무수신 재현 모드에서는 워치독 타이머가 유일한 핸들이므로 unref 하면
@@ -600,4 +613,21 @@ test('자가 재시작 증거: 무수신 감지 → "[Bot] self-heal" 로그 + �
   assert.match(r.stderr, /\[Bot\] self-heal:/);
   assert.match(r.stderr, /no inbound frames/);
   assert.match(r.stderr, /Exiting so pm2 restarts/);
+});
+
+// [giip #5141] 이슈 완료조건은 "**감지 후** 자가 재시작이 일어나는 로그"를 요구한다.
+// 즉 자가 재시작 줄("[Bot] self-heal: ...") 만으로는 부족하고,
+// 감지 줄("[Bot] 무수신 감지: ...") 이 먼저 나온 뒤 재시작 줄이 뒤따라야 한다(사양 §2.3 로그 표).
+// 순서까지 고정한다 — 감지 로그가 재시작 로그보다 뒤면 "무수신 판정"이 아니라 "종료"만 기록된 것이다.
+test('자가 재시작 증거: 감지 로그("[Bot] 무수신 감지")가 자가 재시작 로그보다 먼저 나온다', () => {
+  const child = path.join(__dirname, 'fixtures', 'inbound-idle-selfheal-child.js');
+  const r = spawnSync(process.execPath, [child], { encoding: 'utf8', windowsHide: true });
+
+  assert.strictEqual(r.status, 1, `exit code 가 1 이어야 한다 (stdout=${r.stdout} stderr=${r.stderr})`);
+  const detectAt = r.stderr.indexOf('[Bot] 무수신 감지:');
+  const restartAt = r.stderr.indexOf('[Bot] self-heal:');
+  assert.ok(detectAt >= 0, `감지 로그("[Bot] 무수신 감지:")가 있어야 한다 (stderr=${r.stderr})`);
+  assert.ok(restartAt >= 0, `자가 재시작 로그("[Bot] self-heal:")가 있어야 한다 (stderr=${r.stderr})`);
+  assert.ok(detectAt < restartAt, '감지 로그가 자가 재시작 로그보다 먼저 나와야 한다');
+  assert.match(r.stderr, /no inbound frames/, '감지 로그에 무수신 사유(no inbound frames)가 있어야 한다');
 });
