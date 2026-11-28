@@ -32,13 +32,28 @@ CSN 필터 강제가 있었지만, **쓰기 직전에 "이 isn 이 실제로 의
    2. 요청 내용(`<대상 CSN>`·대상 객체·요청자·쓸 내용 요약, **비밀값 제외**)을 **`<작업 CSN>` 의 giip 이슈로
       등록**한다(작업 CSN 은 이 세션이 쓸 수 있는 CSN 이다). 이 등록은 위 3항의 "남의 큐 참견"이 아니다 —
       대상 CSN 에는 아무것도 쓰지 않고 자기 CSN 에만 기록한다.
-   3. 그 이슈의 **상태를 `NEEDS_DECISION` 으로 둔다.** 사람이 승인/거절하고, **승인되면 그때** 쓴다.
+   3. 그 이슈의 **상태를 `GIIP_DECISION` 으로 둔다**(사용자 지시 2026-11-28). giip 의 메인 판단이
+      승인/거절하고, **승인되면 그때** 쓴다.
 
-   > 상태값 주석: 사용자는 이 상태를 "giip_decision" 이라 불렀으나 이 레포의 사람판단 대기 상태값은
-   > `NEEDS_DECISION` 이다([`45_gate_cap_needs_decision.md`](45_gate_cap_needs_decision.md)) — **새 상태값을
-   > 만들지 않는다.**
-   > 이는 사용자 지시에 따른 처리이므로, 세션이 스스로 만든 결정 게이트를 금지하는 규칙(45 의 "사람의
-   > 판단뿐일 때만 `NEEDS_DECISION`")과 충돌하지 않는다 — 사용자가 직접 정한 승인 게이트다.
+   **상태값 3종 정의(사용자 원문, 2026-11-28)** — 아래 3개는 서로 다른 상태다.
+
+   | 상태값 | 의미(사용자 원문) |
+   | --- | --- |
+   | `GIIP_DECISION` | giip 의 메인 판단에 맡겨야하는 것. |
+   | `GIIP_FDE_DECISION` | giip-fde-agent 에서 기록 또는 수정 등 해결해야 하는 것. |
+   | `NEEDS_DECISION` | 사람이 해야 하는 것. |
+
+   적용: 다른 CSN 쓰기 요청(명시 지시 없음)은 `GIIP_DECISION`. giip-fde-agent 에서 기록·수정으로 풀어야
+   하는 요청은 `GIIP_FDE_DECISION`. 사람만 할 수 있는 것만 `NEEDS_DECISION`
+   ([`45_gate_cap_needs_decision.md`](45_gate_cap_needs_decision.md) 의 세션 자작 결정 게이트 금지는
+   `NEEDS_DECISION` 에 대한 것이며, 이 3종 정의가 상태값 정의의 정본이다).
+
+   **도구 지원 확인(2026-11-28 실측)**: `giipdb` 의 `mgmt/updateIssueStatus.ps1` 은 `-status` 값을 검증하지
+   않고 `UPDATE tGiipIssue SET status = '<값>'` 로 그대로 기록한다(허용값 목록·ENUM 없음). 대시보드 SP
+   `SP/pApiGIIPDashboardOverviewbyAK.sql`·`SP/pApiGIIPDashboardBlockedIssuesbyAK.sql` 은
+   `NEEDS_DECISION`/`GIIP_DECISION`/`GIIP_FDE_DECISION` 을 한 묶음(결정 대기)으로 집계한다. 이 레포의
+   스크립트에서 `GIIP_DECISION`/`GIIP_FDE_DECISION` 처리는 확인하지 못했다 — **도구 지원 미확인(이 레포
+   쪽) — 후속 필요**.
 
 ## 매핑에 CSN 을 추가할 때
 

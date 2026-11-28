@@ -16,6 +16,8 @@
 `REVIEW`(=검증 대기)와 `NEEDS_DECISION`(=사람의 결정 대기)을 구분한다. 남은 것이 **사람의 판단
 뿐**일 때만 `NEEDS_DECISION` 을 쓴다. 검증이 남았으면 `REVIEW` 다.
 
+> 상태값 3종(`GIIP_DECISION`·`GIIP_FDE_DECISION`·`NEEDS_DECISION`)의 정의는 [`46_cross_csn_write_scope.md`](46_cross_csn_write_scope.md) §6 이 정본이다 — `NEEDS_DECISION` 은 "사람이 해야 하는 것"이다.
+
 ### 2) 매시 재판정 스윕이 4분기로 재처리
 
 `NEEDS_DECISION` 이슈는 매 사이클 다시 열어 아래 4가지 중 하나로 분류하고, **(a)~(c) 는 세션이
