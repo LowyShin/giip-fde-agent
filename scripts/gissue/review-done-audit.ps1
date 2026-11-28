@@ -393,10 +393,15 @@ function New-FollowupIssueAudit($parentIsn, $title, $contentBody, $csn) {
     # 캡처한다 — register-issue.js 는 등록 결과("giip issue #N")를 stdout 으로 낸다.
     $ErrorActionPreference = 'Continue'
     $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("gissue_reviewaudit_followup_{0}_{1}.txt" -f $parentIsn, [guid]::NewGuid().ToString('N'))
+    # [giip 6620] 제목은 파일(UTF-8)로 넘긴다 — 후속 제목은 원본 이슈 제목에서 만들어지므로
+    #   큰따옴표(")가 들어 있으면 PowerShell → node 네이티브 인자 경계에서 값이 두 토큰으로 쪼개져
+    #   등록 제목이 첫 조각으로 잘리고 '(원본 giip #NNNN)' 표식이 사라진다(실측: isn 6606 제목 파손).
+    $tmpTitle = Join-Path ([System.IO.Path]::GetTempPath()) ("gissue_reviewaudit_title_{0}_{1}.txt" -f $parentIsn, [guid]::NewGuid().ToString('N'))
     try {
         [System.IO.File]::WriteAllText($tmp, $contentBody, (New-Object System.Text.UTF8Encoding $true))
+        [System.IO.File]::WriteAllText($tmpTitle, $title, (New-Object System.Text.UTF8Encoding $false))
         $global:LASTEXITCODE = 127
-        $out = & node $RegisterIssueScript --title $title --content-file $tmp --status READY --csn $csn
+        $out = & node $RegisterIssueScript --title-file $tmpTitle --content-file $tmp --status READY --csn $csn
         $registerExit = $LASTEXITCODE
         if ($registerExit -ne 0) {
             Write-AuditLog "isn=${parentIsn}: [경고] 후속 이슈 등록 실패(register-issue.js exit=$registerExit)" | Out-Null
@@ -408,6 +413,7 @@ function New-FollowupIssueAudit($parentIsn, $title, $contentBody, $csn) {
         return $null
     } finally {
         Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $tmpTitle -Force -ErrorAction SilentlyContinue
     }
 }
 
