@@ -1,0 +1,55 @@
+{
+  "$comment": [
+    "slack-bot 기능이 라이브 배포 트리에 실제로 반영됐는지 판정하기 위한 기능 매니페스트.",
+    "check-slackbot-deploy-parity.mjs 가 읽는다. 'files' 와 'wiring' 은 런타임에 반드시 있어야 하는 것(하나라도 없으면 FAIL),",
+    "'docs' 는 권장 항목(없으면 WARN 이지만 FAIL 은 아님).",
+    "여기에는 고객정보·CSN 번호·호스트 경로를 쓰지 않는다(공개 저장소 규칙). 경로는 저장소 상대 경로만 쓴다."
+  ],
+  "features": [
+    {
+      "id": "inbound-idle-watchdog",
+      "issue": "giip 5141",
+      "title": "무수신(connected-but-no-inbound) 감지·자가복구 워치독",
+      "mergedIn": "PR #420",
+      "files": [
+        "slack-bot/inbound-idle-watchdog.js",
+        "slack-bot/inbound-probe.js"
+      ],
+      "docs": [
+        "slack-bot/docs/INBOUND_IDLE_WATCHDOG.md"
+      ],
+      "wiring": [
+        {
+          "file": "slack-bot/index.js",
+          "pattern": "attachInboundIdleWatchdog",
+          "desc": "워치독 부착 호출"
+        },
+        {
+          "file": "slack-bot/index.js",
+          "pattern": "INBOUND_IDLE_MS",
+          "desc": "무수신 임계 상수 (사양 §2.1)"
+        },
+        {
+          "file": "slack-bot/index.js",
+          "pattern": "INBOUND_PROBE_INTERVAL_MS",
+          "desc": "능동 점검 주기 상수 (사양 §2.1)"
+        }
+      ]
+    },
+    {
+      "id": "inbound-idle-watchdog-log",
+      "issue": "giip 5141",
+      "title": "워치독 판단 로그 출력 배선 (사양 §2.3)",
+      "mergedIn": "PR #587",
+      "files": [],
+      "docs": [],
+      "wiring": [
+        {
+          "file": "slack-bot/index.js",
+          "pattern": "attachInboundIdleWatchdog\\([\\s\\S]{0,4000}?\\blog\\s*:",
+          "desc": "워치독 호출에 log 옵션 주입 — 없으면 판단 로그가 no-op 으로 삼켜져 '감지는 되는데 아무도 모르는' 상태가 된다"
+        }
+      ]
+    }
+  ]
+}
