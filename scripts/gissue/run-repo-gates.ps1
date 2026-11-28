@@ -103,7 +103,10 @@ try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } 
 # 2026-11-28: 후속(캐리오버) 이슈 제목이 큰따옴표에서 잘리는 결함 회귀 테스트 1건
 #   (test-followup-title-file.ps1, giip 6620) 추가 → 63 → 64.
 #   (실재 ps1 테스트 64건으로 2026-11-28 실측 — 신규 1건 반영 후 기대값과 정확히 일치(슬랙 0).)
-$ExpectedPs1TestCount = 65
+# 2026-11-28: 고아(Orphan) 경로 idle 가드·연결 이슈 판정 회귀 테스트 1건
+#   (test-orphan-scan-idle-guard.ps1, giip 6603/#6724) 추가 → 65 → 66.
+#   (실재 ps1 테스트 66건으로 2026-11-28 실측 — 신규 1건 반영 후 기대값과 정확히 일치(슬랙 0).)
+$ExpectedPs1TestCount = 66
 $ExpectedMjsTestCount = 11
 
 function Write-Gate([string]$Message) {

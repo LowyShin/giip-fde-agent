@@ -81,7 +81,7 @@
 | :-- | :-- |
 | `scripts/gissue/verify-nested-repo.ps1` | nested 체크아웃 무결성 6종 검사(경로 존재 / 유효 git 레포 / **bare 아님** / origin 접미사 일치 / `-RequiredFiles` 존재 / `-RequiredPsDir` 안 `*.ps1` 1개 이상). 마지막 줄은 항상 `RESULT: PASS` 또는 `RESULT: FAIL: <사유>…`, exit 0/1 |
 | `scripts/gissue/worktree-safety.ps1` | worktree 판정·삭제 엔진 정본(rule 55 절차 내장) |
-| `scripts/gissue/cleanup-worktrees.ps1` | 위 엔진의 CLI 진입점(`-RepoPath` / `-AllRepos` / `-OrphanScan` / `-RemnantScan`) |
+| `scripts/gissue/cleanup-worktrees.ps1` | 위 엔진의 CLI 진입점(`-RepoPath` / `-AllRepos` / `-OrphanScan` / `-RemnantScan`). **`-OrphanScan` 는 `-Csn` 이 필수**다(연결 이슈 상태 판정 수단 — 없으면 exit 1) |
 | `scripts/gissue/code-freshness.ps1` | "지금 메모리의 코드가 낡았는가" 가드. 낡았으면 파괴적 작업을 건너뛰고 다음 `:07` 에 넘긴다 |
 
 `verify-nested-repo.ps1` 은 **의도적으로 detect-and-halt 전용**입니다. 자동 재clone / 자동 복구를
@@ -92,6 +92,18 @@
 DONE 이거나 이슈 자체가 없고 (c) 24시간 이상 방치된** 것만 지웁니다. READY/PENDING/IN_PROGRESS/
 REVIEW/TESTED 이슈에 연결된 워크트리와 `git worktree list` 에 정식 등록된 워크트리는 **절대**
 건드리지 않습니다(사람이 그 안에서 작업 중일 수 있습니다). 배경은 §10 과 giip #1540 입니다.
+
+> **정정(2026-11-28, giip 6603/#6724)** — orphan 정리(`-OrphanScan`) 경로가 **idle 가드 없이**
+> 동작하고 있었습니다. 고아 판정은 `Get-GissueOrphanWorktree` 로 출발하는데 idle 파라미터를
+> 넘길 자리가 없었고, 고아 경로의 유일한 시간 가드는 **디렉터리 mtime** 이었습니다. Windows 에서
+> 디렉터리 mtime 은 안쪽 파일 편집으로 갱신되지 않으므로, **활동 중인 다른 세션의 worktree 가
+> "삭제 예정"으로 내려갈 수 있었습니다**. 이제 고아 경로도 공용 판정
+> (`worktree-safety.ps1` 의 `Get-GissueOrphanCleanupVerdict`) 을 태우며, 순서대로
+> ① 링크/정션 포함 → 수동확인 ② 공용 idle 가드 미달 → 보호 ③ 연결 이슈가 DONE 으로 **명시적으로
+> 확인되지 않음**(OPEN/UNKNOWN/식별불가) → 수동확인 ④ 등록정보 소실(dangling `.git`) → 수동확인
+> 순으로 강등됩니다. 삭제 허용은 **연결 이슈가 DONE 인 것이 확인된 경우에만** 성립합니다
+> (이슈 "부재" 와 "권한 없음" 이 API 응답으로 구분되지 않으므로 부재는 삭제 근거가 아닙니다).
+> `-OrphanScan` 은 **`-Csn` 이 필수**입니다(연결 이슈 상태 판정 수단 — 없으면 exit 1).
 
 > **정정(2026-11-14, isn=5175)** — 위 문장은 **orphan 정리(`-OrphanScan`) 경로**에 대한 것입니다.
 > `git worktree list` 에 **정식 등록된** 워크트리는 별도 경로(`-RepoPath` / `-AllRepos`)에서

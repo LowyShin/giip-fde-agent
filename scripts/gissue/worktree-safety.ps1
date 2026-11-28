@@ -2110,3 +2110,378 @@ function Invoke-GissueRemnantCleanup {
     }
     & $publish
 }
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 7. 고아(Orphan) 경로 안전 판정 — 공용 판정 함수 3종 + 엔진 (giip #6603 / #6724)
+#
+# 왜 필요한가:
+#   `cleanup-worktrees.ps1 -OrphanScan` 은 `MinIdleMinutes` 를 **전달하지 않았다**. 고아 판정은
+#   `Get-GissueOrphanWorktree` 로 출발하는데 idle 파라미터를 넘길 자리가 없었고, 고아 경로의 유일한
+#   시간 가드는 **디렉터리 mtime** 이었다. Windows 에서 디렉터리 mtime 은 직계 자식의 추가·삭제·
+#   이름 변경 때만 갱신되고 **안쪽 파일 편집으로는 갱신되지 않는다** → 활동 중인 다른 세션의
+#   worktree 가 오래된 디렉터리 mtime 을 달고 "삭제 예정"으로 내려갈 수 있다.
+#   실측(giip #6575/#6603): 연결 이슈가 READY 인 상태의 worktree 가 "삭제 예정"으로 분류됐다.
+#
+# ★ rule 48 — 판정은 함수 1개, 호출은 여러 곳. 고아 경로에 판정 로직을 복붙하지 말 것.
+# ★ rule 47 — 삭제 최종 조건: 5대 안전요건을 전부 통과했고 **연결 이슈가 DONE 인 경우에만** 삭제한다.
+# ──────────────────────────────────────────────────────────────────────────────
+
+# (a-0) 이슈 상태 1줄 JSON → 판정 객체 — **순수 함수**(부작용 없음, 네트워크 없음).
+#      `Get-GissueIssueCleanupVerdict` 의 파싱/판정 부분을 분리한 이유: 큰따옴표 문자열 안에서
+#      멤버 접근을 `$()` 로 감싸지 않으면("$j.status" → $j + 리터럴 ".status") 판정값이 조용히
+#      전부 Unknown 으로 붕괴한다 — **파일을 읽고 실행해야만 드러나는 부류의 결함**이라
+#      순수 함수로 떼어내 회귀 테스트가 직접 검증하게 한다.
+function ConvertTo-GissueIssueCleanupVerdict {
+    param(
+        [Parameter(Mandatory = $true)][string]$Line,
+        [int]$Isn = 0
+    )
+    $j = $null
+    try { $j = $Line | ConvertFrom-Json } catch { $j = $null }
+    if ($null -eq $j) {
+        return [pscustomobject]@{
+            Isn = $Isn; Found = $false; Status = $null; Verdict = 'Unknown'
+            Detail = '이슈 조회 결과 JSON 파싱 실패 — 조회 실패로 간주(rule 47 최종 조건 확인 불가)'
+        }
+    }
+    $verdict = if ($j.verdict) { "$($j.verdict)" } else { 'Unknown' }
+    if (@('Done', 'Open', 'Unknown') -notcontains $verdict) { $verdict = 'Unknown' }
+    $status = if ($j.status) { "$($j.status)" } else { $null }
+    return [pscustomobject]@{
+        Isn     = $Isn
+        Found   = [bool]$j.found
+        Status  = $status
+        Verdict = $verdict
+        Detail  = if ($j.detail) { "$($j.detail)" } else { '' }
+    }
+}
+
+# (a) 연결 이슈 상태 조회 래퍼 — 조회 수단은 신규 노드 헬퍼 `lib/issue-status.js`.
+#
+#     판정값: Done | Open | Unknown. **Absent(부재) 판정은 만들지 않는다** — giip API 는
+#     "이슈 없음"과 "권한 없음"을 같은 응답(404 + error_code=ISSUE_NOT_FOUND_OR_NO_PERMISSION)으로
+#     돌려주므로 부재를 삭제 허용 근거로 쓰면 **조회 권한만 없던 이슈가 삭제**된다(fail-open).
+#     그래서 삭제 허용은 **DONE 이 명시적으로 확인된 경우만**이고 나머지는 Unknown → ManualReview 다.
+#     조회 CSN 은 **SK 선택용**이고, 조회 대상 CSN 은 이슈 자체의 cSn 을 따른다.
+function Get-GissueIssueCleanupVerdict {
+    param(
+        [Parameter(Mandatory = $true)][int]$Isn,
+        [int]$Csn = 0
+    )
+    $unknown = {
+        param($detail)
+        [pscustomobject]@{ Isn = $Isn; Found = $false; Status = $null; Verdict = 'Unknown'; Detail = $detail }
+    }
+    $helper = Join-Path $PSScriptRoot 'lib\issue-status.js'
+    if (-not (Test-Path -LiteralPath $helper)) {
+        return (& $unknown "issue-status.js 헬퍼 없음 — 이슈 상태 판정 불가(rule 47 최종 조건 확인 불가)")
+    }
+    $nodeCmd = Get-Command node -ErrorAction SilentlyContinue
+    if (-not $nodeCmd) {
+        return (& $unknown "node 를 찾을 수 없음 — 이슈 상태 판정 불가(rule 47 최종 조건 확인 불가)")
+    }
+    $errPath = Join-Path ([System.IO.Path]::GetTempPath()) ("gissue-issue-status-$Isn-$PID.err")
+    $raw = $null
+    try {
+        $raw = & $nodeCmd.Source $helper $Isn $Csn 2> $errPath
+    } catch {
+        $errText = ''
+        try { $errText = (Get-Content -LiteralPath $errPath -Raw -ErrorAction SilentlyContinue) } catch {}
+        Remove-Item -LiteralPath $errPath -Force -ErrorAction SilentlyContinue
+        return (& $unknown "이슈 조회 실행 실패: $($_.Exception.Message) $errText")
+    }
+    $errText = ''
+    try { $errText = (Get-Content -LiteralPath $errPath -Raw -ErrorAction SilentlyContinue) } catch {}
+    Remove-Item -LiteralPath $errPath -Force -ErrorAction SilentlyContinue
+
+    $line = @(@($raw) | Where-Object { "$_".Trim() } | Select-Object -First 1)
+    if ($line.Count -eq 0) {
+        return (& $unknown "이슈 조회 결과가 비어 있음 — 조회 실패로 간주(rule 47 최종 조건 확인 불가) $errText")
+    }
+    # ★ 판정/파싱은 순수 함수 `ConvertTo-GissueIssueCleanupVerdict` 가 담당한다(rule 48).
+    #   여기서 JSON 필드를 큰따옴표 문자열로 직접 보간하지 않는다 — 멤버 접근을 $() 로 감싸지
+    #   않으면("$j.status" → $j + 리터럴 ".status") 판정값이 조용히 전부 Unknown 으로 붕괴한다.
+    return (ConvertTo-GissueIssueCleanupVerdict -Line "$line" -Isn $Isn)
+}
+
+# (b) 고아 디렉터리 → 연결 이슈 번호 추출(순수 함수).
+#     규칙: 디렉터리 리프 이름에서 `(?i)(?:isn|giip|issue|pr)[-_]?(\d+)` 첫 매치.
+#     예: isn6442-know103 → 6442 · giip-6558-mergegate-logtype → 6558 · task-giip-1545 → 1545.
+#     매치 없음 → $null(연결 이슈 식별 불가) — 호출부는 fail-closed 로 ManualReview 처리한다.
+function Get-GissueOrphanIssueNumber([string]$Path) {
+    if (-not $Path) { return $null }
+    $leaf = Split-Path -Leaf $Path
+    if (-not $leaf) { return $null }
+    if ($leaf -match '(?i)(?:isn|giip|issue|pr)[-_]?(\d+)') { return [int]$Matches[1] }
+    return $null
+}
+
+# (c) 고아 1건의 삭제 판정 — **순수 함수**(부작용 없음).
+#     시각은 -NowUtc 로 주입한다(회귀 테스트가 시각을 고정할 수 있게 한다).
+#     -Activity 를 주면 활동 판정 결과를 그대로 쓴다(없으면 파일시스템에서 산출).
+#     판정 순서(앞에서 하나라도 걸리면 확정):
+#       1. 링크/정션 포함 또는 링크 스캔 실패 → ManualReview (rule 55 §1-2)
+#       2. 공용 idle 판정 Idle=false          → Protected   (fail-closed)
+#       3. 연결 이슈 Open/Unknown              → ManualReview (rule 47 최종 조건)
+#       4. OrphanNoAdmin(등록정보 소실)        → ManualReview (미커밋 산출물 판정 불가)
+#       5. 그 외                                → Delete
+#     ★ 1~4 는 "강등"으로만 쓴다 — 기존에 삭제되던 것의 삭제 조건을 완화하지 않는다.
+function Get-GissueOrphanCleanupVerdict {
+    param(
+        [Parameter(Mandatory = $true)]$Orphan,
+        [int]$MinIdleMinutes = 120,
+        $LinkScan = $null,
+        $IssueVerdict = $null,
+        [datetime]$NowUtc = [datetime]::UtcNow,
+        $Activity = $null
+    )
+    # (1) 링크/정션 — 있으면 자동삭제 금지(rule 55 §1-2).
+    if ($null -ne $LinkScan) {
+        $linkCount = @(@($LinkScan.Links)).Count
+        if ($LinkScan.ScanFailed -or $linkCount -gt 0) {
+            $detail = "링크/정션 $($linkCount)건" + $(if ($LinkScan.ScanFailed) { '(링크 스캔 실패 포함)' } else { '' })
+            return [pscustomobject]@{
+                Decision = 'ManualReview'
+                Reason   = "$detail — 자동삭제 금지(rule 55 §1-2)"
+            }
+        }
+    }
+    # (2) 공용 idle 판정 — "실제 파일 활동" 기준(rule 47 §1). 판정 불가도 여기로 수렴(fail-closed).
+    $act = $Activity
+    if ($null -eq $act) {
+        $act = Get-GissueWorktreeActivity -WorktreePath ([string]$Orphan.Path) -Scan $LinkScan
+    }
+    $idle = Test-GissueWorktreeIdleEnough -Activity $act -MinIdleMinutes $MinIdleMinutes -NowUtc $NowUtc
+    if (-not $idle.Idle) {
+        return [pscustomobject]@{ Decision = 'Protected'; Reason = $idle.Reason }
+    }
+    # (3) 연결 이슈 상태 — DONE 이 명시적으로 확인된 경우만 삭제 허용(rule 47 최종 조건).
+    if ($null -eq $IssueVerdict) {
+        return [pscustomobject]@{
+            Decision = 'ManualReview'
+            Reason   = '연결 이슈 식별 불가(디렉터리 이름에서 isn 추출 실패) — rule 47 최종 조건 확인 불가(fail-closed)'
+        }
+    }
+    $iv = "$($IssueVerdict.Verdict)"
+    if ($iv -ne 'Done') {
+        $st = if ($IssueVerdict.Status) { "$($IssueVerdict.Status)" } else { '미확인' }
+        return [pscustomobject]@{
+            Decision = 'ManualReview'
+            Reason   = "연결 이슈 상태=$st — 삭제 보류(rule 47 최종 조건): $($IssueVerdict.Detail)"
+        }
+    }
+    # (4) 등록정보 소실(dangling .git) — 미커밋 산출물 여부를 확인할 수 없다(rule 47/57).
+    if ("$($Orphan.Status)" -eq 'OrphanNoAdmin') {
+        return [pscustomobject]@{
+            Decision = 'ManualReview'
+            Reason   = '등록정보 소실(dangling .git) — git status 로 미커밋 산출물 판정 불가(rule 47/57)'
+        }
+    }
+    return [pscustomobject]@{
+        Decision = 'Delete'
+        Reason   = "공용 idle 가드 통과 + 연결 이슈 DONE 확인 + 등록정보 정상: $($idle.Reason)"
+    }
+}
+
+# (d) 고아 경로 정리 엔진 — 판정 엔진의 정본(cleanup-worktrees.ps1 는 호출만 한다).
+#     `Invoke-GissueRemnantCleanup` 와 같은 모양이다(테스트 가능성 + rule 48).
+function Invoke-GissueOrphanCleanup {
+    param(
+        [string[]]$ScanRoot = @('D:\temp\worktrees'),
+        [int]$Csn = 0,
+        [int]$MinIdleMinutes = 120,
+        [int]$ProtectRecentMinutes = 60,
+        [string[]]$ProtectedPaths = @(),
+        [switch]$DryRun,
+        [scriptblock]$Log = $null,
+        [ref]$ResultRef = $null
+    )
+    $say = { param($m) if ($Log) { & $Log $m } else { Write-Output $m } }
+    $result = [pscustomobject]@{
+        ScannedTotal = 0; OrphanTotal = 0
+        Removed = @(); Protected = @(); ManualReview = @(); Malformed = @()
+        Aborted = $false; AbortReason = $null
+    }
+    $publish = { if ($ResultRef) { $ResultRef.Value = $result } }
+
+    # rule 47 최종 조건(연결 이슈 DONE 확인)을 수행할 수단이 없으면 삭제 경로를 열지 않는다.
+    if ($Csn -le 0) {
+        & $say 'ERROR: 연결 이슈 상태 판정 수단(-Csn)이 없습니다 — rule 47 최종 조건을 확인할 수 없으므로 삭제 경로를 열지 않습니다.'
+        $result.Aborted = $true
+        $result.AbortReason = '연결 이슈 판정 수단(-Csn) 없음'
+        & $publish
+        return
+    }
+
+    $all = @(Get-GissueOrphanWorktree -ScanRoot $ScanRoot)
+    $orphans = @($all | Where-Object { $_.Status -like 'Orphan*' })
+    $result.ScannedTotal = $all.Count
+    $result.OrphanTotal = $orphans.Count
+    & $say "디스크상 .git 보유 디렉터리 $($all.Count)건 발견"
+    foreach ($grp in ($all | Group-Object Status | Sort-Object Name)) {
+        & $say "  상태 $($grp.Name): $($grp.Count)건"
+    }
+
+    # `.git` 이 아예 없는 잔해는 이 스캐너의 정의 밖이다(보고만, 회수는 -RemnantScan 담당).
+    $noGit = @(Get-GissueNoGitRemnant -ScanRoot $ScanRoot)
+    if ($noGit.Count -gt 0) {
+        & $say "  상태 NoGit: $($noGit.Count)건 (이 모드의 정의 밖 — 회수는 -RemnantScan 으로, giip #2449)"
+        foreach ($n in $noGit) {
+            $linkNote = if ($n.ScanFailed) { '링크스캔실패' } elseif ($n.LinkCount -gt 0) { "링크 $($n.LinkCount)건" } else { '링크없음' }
+            & $say "    - $($n.Path) [$linkNote, 최상위 $($n.TopEntries)개]"
+        }
+    }
+
+    & $say "--- 고아 $($orphans.Count)건 (레포별 내역) ---"
+    foreach ($grp in ($orphans | Group-Object RepoLabel | Sort-Object Name)) {
+        & $say "  [$($grp.Name)] $($grp.Count)건: $((@($grp.Group | ForEach-Object { Split-Path -Leaf $_.Path })) -join ', ')"
+    }
+
+    # 경로 구분자 소실 탐지(등록된 것/디스크 양쪽) — 자동삭제하지 않고 보고만 한다.
+    $malformed = @()
+    foreach ($repo in @($all | Where-Object { $_.OwnerRepo } | Select-Object -ExpandProperty OwnerRepo -Unique)) {
+        foreach ($p in (Get-GissueRegisteredWorktreePath $repo)) {
+            if (Test-GissueMalformedWorktreePath $p) { $malformed += "[$repo] $p" }
+        }
+    }
+    if ($malformed.Count -gt 0) {
+        & $say "--- WARN: 경로 구분자가 소실된 worktree 등록 $($malformed.Count)건(자동삭제 안 함, giip #2439) ---"
+        foreach ($m in $malformed) { & $say "  - $m" }
+    }
+    $result.Malformed = @($malformed)
+
+    $protectNorm = New-Object 'System.Collections.Generic.HashSet[string]'
+    foreach ($p in @($ProtectedPaths)) { if ($p) { [void]$protectNorm.Add((ConvertTo-GissueComparablePath $p)) } }
+    $cutoff = (Get-Date).AddMinutes(-1 * $ProtectRecentMinutes)
+
+    # rule 55 §3 재검증 대상: 고아들이 속한 모든 레포 + 그 레포들의 형제 레포(ScanRoot 밖만).
+    $verifyRepos = @($all | Where-Object { $_.OwnerRepo } | Select-Object -ExpandProperty OwnerRepo -Unique)
+    $verifyRepos += @($verifyRepos | ForEach-Object {
+        $par = Split-Path -Parent $_
+        if ($par -and (Test-Path -LiteralPath $par)) {
+            Get-ChildItem -LiteralPath $par -Directory -Force -ErrorAction SilentlyContinue |
+                Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName '.git') } |
+                ForEach-Object { $_.FullName }
+        }
+    })
+    $verifyRepos = @($verifyRepos | Where-Object { $_ } | Where-Object {
+        $c = ConvertTo-GissueComparablePath $_
+        $inScan = $false
+        foreach ($r in $ScanRoot) {
+            $rc = ConvertTo-GissueComparablePath $r
+            if ($c -eq $rc -or $c.StartsWith($rc + '\')) { $inScan = $true }
+        }
+        -not $inScan
+    } | Select-Object -Unique)
+    if ($verifyRepos.Count -eq 0) {
+        & $say 'ERROR: 인접 nested repo 재검증 대상이 0개입니다 — rule 55 §3 검증을 할 수 없으므로 삭제를 수행하지 않습니다.'
+        $result.Aborted = $true
+        $result.AbortReason = '재검증 대상 0개'
+        & $publish
+        return
+    }
+    & $say "인접 nested repo 재검증 대상($($verifyRepos.Count)개): $($verifyRepos -join ', ')"
+
+    foreach ($o in $orphans) {
+        if ($result.Aborted) { break }
+
+        # (a) 명시 보호 — 판정 결과와 무관하게 무조건 제외.
+        if ($protectNorm.Contains((ConvertTo-GissueComparablePath $o.Path))) {
+            & $say "PROTECTED(명시 지정 — 다른 세션 작업 중): $($o.Path)"
+            $result.Protected += [pscustomobject]@{ Path = $o.Path; Reason = '-Protect 로 명시 지정됨(다른 세션 작업 중)' }
+            continue
+        }
+        # (b) 디렉터리 자체의 최근 수정 — 작업 중일 수 있으므로 남긴다.
+        if ($o.LastWriteTime -and ($o.LastWriteTime -gt $cutoff)) {
+            & $say "PROTECTED(최근 $ProtectRecentMinutes 분 내 수정 $($o.LastWriteTime)): $($o.Path)"
+            $result.Protected += [pscustomobject]@{ Path = $o.Path; Reason = "최근 $ProtectRecentMinutes 분 내 수정됨($($o.LastWriteTime)) — 작업 중일 수 있음" }
+            continue
+        }
+
+        # (c) 링크 스캔은 **1회만** 수행한다 — 링크 판정과 활동 시각 산출에 재사용한다
+        #     (원인 #6: 링크 검사와 활동 산출이 별개 스캔이라 판정이 어긋날 수 있었다).
+        $linkScan = Get-GissueWorktreeLinkScan -Path $o.Path -MaxLinks 2
+
+        # (d) 연결 이슈 상태 조회(삭제 허용은 DONE 확인 시에만).
+        $isn = Get-GissueOrphanIssueNumber $o.Path
+        $issueVerdict = $null
+        if ($null -ne $isn) {
+            $issueVerdict = Get-GissueIssueCleanupVerdict -Isn $isn -Csn $Csn
+            $istatus = if ($issueVerdict.Status) { $issueVerdict.Status } else { '미확인' }
+            & $say "  연결 이슈 isn=$isn 판정=$($issueVerdict.Verdict) (상태=$istatus)"
+        }
+
+        # (e) 공용 판정 — idle 가드 + 연결 이슈 + 등록정보 (rule 47/48).
+        #     ★ idle 판정은 어떤 git 명령보다 먼저 수행한다(git status 가 관리 디렉터리 mtime 을
+        #     "지금"으로 갱신하면 idle 가드가 영영 멈춘다 — giip #2463 실측).
+        $verdict = Get-GissueOrphanCleanupVerdict -Orphan $o -MinIdleMinutes $MinIdleMinutes `
+            -LinkScan $linkScan -IssueVerdict $issueVerdict -NowUtc ([datetime]::UtcNow)
+        if ($verdict.Decision -eq 'Protected') {
+            & $say "PROTECTED(idle 가드): $($o.Path) — $($verdict.Reason)"
+            $result.Protected += [pscustomobject]@{ Path = $o.Path; Reason = $verdict.Reason }
+            continue
+        }
+        if ($verdict.Decision -eq 'ManualReview') {
+            & $say "MANUAL-REVIEW: $($o.Path) — $($verdict.Reason)"
+            foreach ($d in (Get-GissueWorktreeLinkDetail $o.Path 5)) { & $say "      link: $d" }
+            $result.ManualReview += [pscustomobject]@{ Path = $o.Path; Reason = $verdict.Reason }
+            continue
+        }
+
+        # (f) 경로 형태 가드 — ScanRoot 밖이거나 reparse point 자체면 손대지 않는다.
+        $underRoot = $false
+        foreach ($r in $ScanRoot) {
+            if ((ConvertTo-GissueComparablePath $o.Path).StartsWith((ConvertTo-GissueComparablePath $r) + '\')) { $underRoot = $true }
+        }
+        if (-not $underRoot) {
+            & $say "MANUAL-REVIEW(ScanRoot 밖 경로 — 삭제 거부): $($o.Path)"
+            $result.ManualReview += [pscustomobject]@{ Path = $o.Path; Reason = 'ScanRoot 밖 경로' }
+            continue
+        }
+        $selfItem = Get-Item -LiteralPath $o.Path -Force -ErrorAction SilentlyContinue
+        if ($selfItem -and $selfItem.LinkType) {
+            & $say "MANUAL-REVIEW(대상 자체가 링크/정션 — 삭제 거부): $($o.Path)"
+            $result.ManualReview += [pscustomobject]@{ Path = $o.Path; Reason = '대상 디렉터리 자체가 심볼릭 링크/정션' }
+            continue
+        }
+
+        if ($DryRun) {
+            & $say "[DRY-RUN] 삭제 예정(고아, 링크 없음 확인됨): $($o.Path) — $($o.Reason) / 판정: $($verdict.Reason)"
+            $result.Removed += [pscustomobject]@{ Path = $o.Path; Reason = $o.Reason; Verdict = $verdict.Reason }
+            continue
+        }
+
+        # rule 55 §3 — 삭제 직전 스냅샷.
+        $preSnap = Get-GissueRepoIntegritySnapshot $verifyRepos
+        # 선검사와 삭제 사이의 경합 차단용 2차 링크 검사(직전).
+        if (Test-GissueWorktreeHasLink $o.Path) {
+            & $say "MANUAL-REVIEW(삭제 직전 2차 검사에서 링크 발견 — 중단): $($o.Path)"
+            $result.ManualReview += [pscustomobject]@{ Path = $o.Path; Reason = '삭제 직전 2차 링크 검사에서 링크 발견' }
+            continue
+        }
+        # 고아는 등록정보가 없어 `git worktree remove` 가 통하지 않는다 → 디렉터리 삭제로 회수.
+        $oDel = Remove-GissueDirectoryTreeSafely -Path $o.Path -Log $Log
+        $delOk = $oDel.Ok
+        if (-not $delOk) {
+            & $say "WARN: 고아 삭제 실패($($o.Path)) — $($oDel.Detail)"
+            $result.ManualReview += [pscustomobject]@{ Path = $o.Path; Reason = "삭제 실패: $($oDel.Detail)" }
+        }
+        # rule 55 §3 — 삭제 직후 즉시 재검증(성공/실패 무관).
+        $postSnap = Get-GissueRepoIntegritySnapshot $verifyRepos
+        $oIntegrity = Compare-GissueRepoIntegrity $preSnap $postSnap
+        foreach ($w in $oIntegrity.Warnings) { & $say "WARN(rule 55 §3, giip #2466): $w" }
+        $violations = @($oIntegrity.Violations)
+        if ($violations.Count -gt 0) {
+            foreach ($v in $violations) { & $say "CRITICAL: '$($o.Path)' 삭제 직후 — $v (giip #2232 재발 의심)" }
+            & $say 'CRITICAL: 즉시 중단합니다. 남은 항목은 처리하지 않습니다.'
+            $result.Aborted = $true
+            $result.AbortReason = ($violations -join ' / ')
+            break
+        }
+        if ($delOk) {
+            & $say "삭제됨(고아, 인접 레포 무결성 재검증 통과 — 검증 $($verifyRepos.Count)개 전부 정상): $($o.Path)"
+            $result.Removed += [pscustomobject]@{ Path = $o.Path; Reason = $o.Reason; Verdict = $verdict.Reason }
+        }
+    }
+    & $publish
+}
