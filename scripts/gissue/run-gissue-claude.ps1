@@ -2892,6 +2892,10 @@ foreach ($csn in $map.PSObject.Properties.Name) {
         # [giip 5544] 번호 지정 실행의 판정·조회 정본(잡은 별도 프로세스라 여기서 닷소싱).
         . (Join-Path $root 'lib/only-isn.ps1')
 
+        # [giip 6679] 시간 캡 초과 후속(캐리어오버) "중복 등록 방지" 판정(rule 69-4 / giip #2667).
+        # 순수 판정만 lib 로 분리해 회귀 테스트가 러너와 같은 코드를 닷소싱해 검증한다.
+        . (Join-Path $root 'lib/timebox-followup.ps1')
+
         # [ENCODING][giip #1073] watchdog 코멘트 안전 등록 헬퍼 — giipfaw API 경유(DB 직접 접근 불필요).
         # watchdog note 들은 모두 한글을 포함한다. 커맨드라인 인자로 직접 넘기면 무인(headless) 실행
         # 체인에서 시스템 기본 코드페이지 파싱을 타서 mojibake 가 될 수 있다(giip #581 → #1030 재발,
@@ -4278,29 +4282,55 @@ ${function:Invoke-GissueEngine}
                     $timeboxTitleTmp = Join-Path ([System.IO.Path]::GetTempPath()) ("gissue_timebox_title_{0}_{1}.txt" -f $issue.Isn, [guid]::NewGuid().ToString('N'))
                     $timeboxNewIsn = $null
                     $timeboxRegOut = ''
+                    # [giip 6679] 같은 원본의 **미해결 후속이 이미 있으면 새로 등록하지 않는다**(rule 69-4 / giip #2667).
+                    #   중복 판정 키 = 제목 안의 "(원본 giip #N)" 표식 — 제목 절단 결함은 PR #584 로 이미 수리됐다.
+                    #   실측: isn=5141 의 후속이 5208(11-13)·6606(11-27)·6679(11-28) 3건으로 증식돼 있었다.
+                    #   조회 실패 시에는 fail-open 으로 **기존처럼 등록**한다(조회 실패로 잔여 작업을 잃는 쪽이 더 나쁘다).
+                    $timeboxExisting = $null
                     try {
-                        [System.IO.File]::WriteAllText($timeboxTmp, $timeboxFollowupBody, (New-Object System.Text.UTF8Encoding $true))
-                        # [giip 6620] 제목은 파일(UTF-8)로 넘긴다 — 원본 이슈 제목에 큰따옴표(")가 있으면
-                        #   PowerShell → node 네이티브 인자 경계에서 값이 **두 토큰으로 쪼개진다**.
-                        #   register-issue.js 는 `--title` 의 바로 다음 토큰만 제목으로 읽으므로 등록 제목이
-                        #   첫 조각으로 잘리고 '(원본 giip #NNNN)' 표식이 통째로 사라진다
-                        #   (실측: isn 6606 제목이 '[후속] slack-bot 이 소켓은' 로 잘려 저장됨).
-                        #   같은 파일의 타임 초과 분해 경로(4635행)가 이미 `--title-file` 을 쓰므로 그 패턴을 따른다.
-                        [System.IO.File]::WriteAllText($timeboxTitleTmp, $timeboxFollowupTitle, (New-Object System.Text.UTF8Encoding $false))
-                        if (Test-Path -LiteralPath $registerIssueScript) {
-                            $timeboxRegOut = & node $registerIssueScript --title-file $timeboxTitleTmp --content-file $timeboxTmp --csn $csn 2>&1
-                            foreach ($line in @($timeboxRegOut)) {
-                                if ("$line" -match 'giip issue #(\d+)') { $timeboxNewIsn = [int]$Matches[1] }
-                            }
+                        $timeboxRows = @()
+                        $timeboxJson = (& node $listIssuesScript --csn $csn --status 'PENDING,READY,IN_PROGRESS,REVIEW,TESTED,NEEDS_DECISION' --json 2>$null | Out-String)
+                        try { $timeboxRows = @($timeboxJson | ConvertFrom-Json) } catch { $timeboxRows = @() }
+                        $timeboxExisting = Find-GissueOpenTimeboxFollowup -Rows $timeboxRows -OriginIsn $issue.Isn
+                    } catch {
+                        Write-Output "[WARN][TIMEBOX] isn=$($issue.Isn) 기존 후속 조회 실패($($_.Exception.Message)) — 신규 등록으로 진행"
+                    }
+                    try {
+                        if ($timeboxExisting) {
+                            # 미해결 후속이 이미 있다 → 신규 등록 생략, 그 후속에 이력만 남긴다.
+                            $timeboxNewIsn = [int]$timeboxExisting.Isn
+                            $timeboxRegOut = '기존 미해결 후속 재사용 — 신규 등록 안 함'
+                            $timeboxReuseNote = "[TIMEBOX] 원본 이슈가 ${effectiveDeadlineMin}분 캡을 다시 초과했습니다. 같은 원본의 미해결 후속(#$timeboxNewIsn, 상태 $($timeboxExisting.Status))이 이미 있어 새 후속 이슈를 만들지 않고 여기에 이력만 남깁니다. (giip #2667 / rule 69-4)`n`n$timeboxFollowupBody"
+                            Add-GissueWatchdogComment $root $accountsFile $apiBase $timeboxNewIsn $timeboxReuseNote $csn
+                            Write-Output "[TIMEBOX] isn=$($issue.Isn) 미해결 후속 $($timeboxNewIsn) 존재 — 신규 등록 생략(코멘트만 추가)"
                         } else {
-                            $timeboxRegOut = "register-issue.js 없음($registerIssueScript)"
+                            [System.IO.File]::WriteAllText($timeboxTmp, $timeboxFollowupBody, (New-Object System.Text.UTF8Encoding $true))
+                            # [giip 6620] 제목은 파일(UTF-8)로 넘긴다 — 원본 이슈 제목에 큰따옴표(")가 있으면
+                            #   PowerShell → node 네이티브 인자 경계에서 값이 **두 토큰으로 쪼개진다**.
+                            #   register-issue.js 는 `--title` 의 바로 다음 토큰만 제목으로 읽으므로 등록 제목이
+                            #   첫 조각으로 잘리고 '(원본 giip #NNNN)' 표식이 통째로 사라진다
+                            #   (실측: isn 6606 제목이 '[후속] slack-bot 이 소켓은' 로 잘려 저장됨).
+                            #   같은 파일의 타임 초과 분해 경로(4635행)가 이미 `--title-file` 을 쓰므로 그 패턴을 따른다.
+                            [System.IO.File]::WriteAllText($timeboxTitleTmp, $timeboxFollowupTitle, (New-Object System.Text.UTF8Encoding $false))
+                            if (Test-Path -LiteralPath $registerIssueScript) {
+                                $timeboxRegOut = & node $registerIssueScript --title-file $timeboxTitleTmp --content-file $timeboxTmp --csn $csn 2>&1
+                                foreach ($line in @($timeboxRegOut)) {
+                                    if ("$line" -match 'giip issue #(\d+)') { $timeboxNewIsn = [int]$Matches[1] }
+                                }
+                            } else {
+                                $timeboxRegOut = "register-issue.js 없음($registerIssueScript)"
+                            }
                         }
                     } finally {
                         Remove-Item -LiteralPath $timeboxTmp -Force -ErrorAction SilentlyContinue
                         Remove-Item -LiteralPath $timeboxTitleTmp -Force -ErrorAction SilentlyContinue
                     }
-                    $timeboxNewIsnText = if ($timeboxNewIsn) { "#$timeboxNewIsn" } else { "(등록 실패 또는 응답 파싱 실패 — 로그: $timeboxRegOut)" }
-                    $timeboxNote = "[TIMEBOX] 이슈 1건 처리 시간이 ${effectiveDeadlineMin}분을 초과해 강제 정리했습니다. 후속 이슈 $timeboxNewIsnText 로 잔여 작업을 분리했습니다. (giip #1565)"
+                    $timeboxNewIsnText = if ($timeboxExisting) { "#$timeboxNewIsn (기존 미해결 후속 재사용 — 신규 등록 안 함)" } elseif ($timeboxNewIsn) { "#$timeboxNewIsn" } else { "(등록 실패 또는 응답 파싱 실패 — 로그: $timeboxRegOut)" }
+                    $timeboxNote = if ($timeboxExisting) {
+                        "[TIMEBOX] 이슈 1건 처리 시간이 ${effectiveDeadlineMin}분을 초과해 강제 정리했습니다. 같은 원본의 미해결 후속 $timeboxNewIsnText 에 잔여 작업 이력만 남겼습니다(신규 후속 미등록 — rule 69-4 / giip #2667). (giip #1565)"
+                    } else {
+                        "[TIMEBOX] 이슈 1건 처리 시간이 ${effectiveDeadlineMin}분을 초과해 강제 정리했습니다. 후속 이슈 $timeboxNewIsnText 로 잔여 작업을 분리했습니다. (giip #1565)"
+                    }
                     Add-GissueWatchdogComment $root $accountsFile $apiBase $issue.Isn $timeboxNote $csn
                     # 실패하면 이 이슈가 IN_PROGRESS 에 박힌다 — 반드시 로그에 남긴다(giip #2645).
                     Set-GissueIssueStatusReady $bashExe $root $issue.Isn $csn 'TIMEBOX' | Out-Null
