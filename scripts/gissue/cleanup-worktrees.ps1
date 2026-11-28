@@ -109,7 +109,11 @@ param(
     # -RepoRoots: RootLevelScan 모드에서 스캔할 레포 루트 배열. 각 경로의 직계 자식을 훑는다.
     [Parameter(ParameterSetName = 'RootLevel')][string[]]$RepoRoots = @(),
     # -Csn: RootLevelScan 모드에서 giip 이슈 DONE/부재 확인용 CSN.
-    [Parameter(ParameterSetName = 'RootLevel')][int]$Csn = 0,
+    #   giip #6603/#6724: -OrphanScan 도 **연결 이슈 상태 확인**이 필수다(rule 47 최종 조건 —
+    #   연결 이슈가 DONE 으로 확인돼야 삭제한다). 판정 수단 없이 삭제 경로를 열지 않기 위해
+    #   Orphan parameter set 에도 붙이고, -Csn <= 0 이면 그 모드에서 exit 1 한다.
+    [Parameter(ParameterSetName = 'RootLevel')]
+    [Parameter(ParameterSetName = 'Orphan')][int]$Csn = 0,
     [string[]]$Protect = @(),
     # -ProtectFile (giip #2449): 보호 경로를 **파일에서** 읽는다(한 줄에 하나, `#` 주석/빈 줄 무시).
     #   왜 필요한가: `powershell.exe -File script.ps1 -Protect "a","b"` 형태는 셸(bash/cmd)이 따옴표를
@@ -441,189 +445,48 @@ if ($RootLevelScan) {
 # -OrphanScan 모드 (giip #2439) — 파일시스템 출발 고아 회수.
 # ===========================================================================
 if ($OrphanScan) {
-    Write-CleanupLog "=== 고아 worktree 스캔 시작 (ScanRoot=$($ScanRoot -join ', '), DryRun=$($DryRun.IsPresent)) ==="
-
-    $all = Get-GissueOrphanWorktree -ScanRoot $ScanRoot
-    Write-CleanupLog "디스크상 .git 보유 디렉터리 $($all.Count)건 발견"
-
-    # 상태별 집계
-    foreach ($grp in ($all | Group-Object Status | Sort-Object Name)) {
-        Write-CleanupLog "  상태 $($grp.Name): $($grp.Count)건"
-    }
-
-    # giip #2449: `.git` 이 아예 없는 잔해는 이 스캐너의 정의 밖이다(출발점이 `.git` 보유 디렉터리).
-    # 여기서는 **보고만** 하고 손대지 않는다 — 회수는 `-RemnantScan` 모드가 담당한다.
-    $noGit = @(Get-GissueNoGitRemnant -ScanRoot $ScanRoot)
-    if ($noGit.Count -gt 0) {
-        Write-CleanupLog "  상태 NoGit: $($noGit.Count)건 (이 모드의 정의 밖 — 회수는 -RemnantScan 으로, giip #2449)"
-        foreach ($n in $noGit) {
-            $linkNote = if ($n.ScanFailed) { '링크스캔실패' } elseif ($n.LinkCount -gt 0) { "링크 $($n.LinkCount)건" } else { '링크없음' }
-            Write-CleanupLog "    - $($n.Path) [$linkNote, 최상위 $($n.TopEntries)개]"
-        }
-    }
-
-    $orphans = @($all | Where-Object { $_.Status -like 'Orphan*' })
-    Write-CleanupLog "--- 고아 $($orphans.Count)건 (레포별 내역) ---"
-    foreach ($grp in ($orphans | Group-Object RepoLabel | Sort-Object Name)) {
-        Write-CleanupLog "  [$($grp.Name)] $($grp.Count)건: $((@($grp.Group | ForEach-Object { Split-Path -Leaf $_.Path })) -join ', ')"
-    }
-
-    # 경로 구분자 소실 탐지(등록된 것/디스크 양쪽) — 자동삭제하지 않고 보고만 한다.
-    $malformed = @()
-    foreach ($repo in @($all | Where-Object { $_.OwnerRepo } | Select-Object -ExpandProperty OwnerRepo -Unique)) {
-        foreach ($p in (Get-GissueRegisteredWorktreePath $repo)) {
-            if (Test-GissueMalformedWorktreePath $p) { $malformed += "[$repo] $p" }
-        }
-    }
-    if ($malformed.Count -gt 0) {
-        Write-CleanupLog "--- WARN: 경로 구분자가 소실된 worktree 등록 $($malformed.Count)건(자동삭제 안 함, giip #2439) ---"
-        foreach ($m in $malformed) { Write-CleanupLog "  - $m" }
-    }
-
-    $protectNorm = New-Object 'System.Collections.Generic.HashSet[string]'
-    foreach ($p in $Protect) { [void]$protectNorm.Add((ConvertTo-GissueComparablePath $p)) }
-    $cutoff = (Get-Date).AddMinutes(-1 * $ProtectRecentMinutes)
-
-    $oRemoved = @(); $oManual = @(); $oProtected = @()
-    $oAbort = $false; $oAbortReason = $null
-
-    # rule 55 §3 재검증 대상: 고아들이 속한 모든 레포 + 그 레포들의 형제 레포.
-    $verifyRepos = @($all | Where-Object { $_.OwnerRepo } | Select-Object -ExpandProperty OwnerRepo -Unique)
-    $verifyRepos += @($verifyRepos | ForEach-Object {
-        $par = Split-Path -Parent $_
-        if ($par -and (Test-Path -LiteralPath $par)) {
-            Get-ChildItem -LiteralPath $par -Directory -Force -ErrorAction SilentlyContinue |
-                Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName '.git') } |
-                ForEach-Object { $_.FullName }
-        }
-    })
-    # ScanRoot 하위 경로는 재검증 대상에서 제외한다 — 그 안의 항목은 **우리가 지우는 대상** 자체라,
-    # 정상 삭제만으로도 "인접 레포의 .git 이 사라짐" 위반이 떠 첫 항목에서 무조건 중단된다(2026-09-14
-    # 실측: giipAgentLinux 축소 실행에서 1건 삭제 직후 자기 자신을 인접 레포로 보고 오탐 abort).
-    # 재검증 대상은 ScanRoot 밖의 진짜 레포여야 한다.
-    $verifyRepos = @($verifyRepos | Where-Object { $_ } | Where-Object {
-        $c = ConvertTo-GissueComparablePath $_
-        $inScan = $false
-        foreach ($r in $ScanRoot) {
-            $rc = ConvertTo-GissueComparablePath $r
-            if ($c -eq $rc -or $c.StartsWith($rc + '\')) { $inScan = $true }
-        }
-        -not $inScan
-    } | Select-Object -Unique)
-    if ($verifyRepos.Count -eq 0) {
-        Write-CleanupLog "ERROR: 인접 nested repo 재검증 대상이 0개입니다 — rule 55 §3 검증을 할 수 없으므로 삭제를 수행하지 않습니다."
+    # giip #6603/#6724: 연결 이슈 상태 판정 수단(-Csn)이 없으면 rule 47 최종 조건을 확인할 수 없다.
+    #   조용히 "전부 ManualReview" 로 낮추면 호출자는 "왜 아무것도 안 지워졌지" 를 알 수 없다 —
+    #   fail loud 가 fail-closed 보다 안전하다(RootLevelScan 의 precedent 와 동일).
+    if ($Csn -le 0) {
+        Write-CleanupLog 'ERROR: -OrphanScan 에는 -Csn (giip CSN 번호 — 연결 이슈 상태 판정용)이 필요합니다.'
+        Write-CleanupLog 'ERROR: rule 47 최종 조건(연결 이슈 DONE 확인)을 확인할 수단이 없으므로 삭제 경로를 열지 않습니다 (giip #6603/#6724).'
         exit 1
     }
-    Write-CleanupLog "인접 nested repo 재검증 대상($($verifyRepos.Count)개): $($verifyRepos -join ', ')"
+    Write-CleanupLog "=== 고아 worktree 스캔 시작 (ScanRoot=$($ScanRoot -join ', '), DryRun=$($DryRun.IsPresent), Csn=$Csn) ==="
 
-    foreach ($o in $orphans) {
-        if ($oAbort) { break }
-        $leaf = Split-Path -Leaf $o.Path
-
-        # (a) 명시 보호 — 판정 결과와 무관하게 무조건 제외.
-        if ($protectNorm.Contains((ConvertTo-GissueComparablePath $o.Path))) {
-            Write-CleanupLog "PROTECTED(명시 지정 — 다른 세션 작업 중): $($o.Path)"
-            $oProtected += [pscustomobject]@{ Path = $o.Path; Reason = '-Protect 로 명시 지정됨(다른 세션 작업 중)' }
-            continue
-        }
-        # (b) 최근 수정 — 작업 중일 수 있으므로 남긴다("애매하면 남긴다").
-        if ($o.LastWriteTime -and ($o.LastWriteTime -gt $cutoff)) {
-            Write-CleanupLog "PROTECTED(최근 $ProtectRecentMinutes 분 내 수정 $($o.LastWriteTime)): $($o.Path)"
-            $oProtected += [pscustomobject]@{ Path = $o.Path; Reason = "최근 $ProtectRecentMinutes 분 내 수정됨($($o.LastWriteTime)) — 작업 중일 수 있음" }
-            continue
-        }
-        # (c) rule 55 §1-2 링크 선검사 — 링크가 있으면 절대 지우지 않는다(giip #2438 판단 대기).
-        if (Test-GissueWorktreeHasLink $o.Path) {
-            $detail = @(Get-GissueWorktreeLinkDetail $o.Path 5)
-            Write-CleanupLog "MANUAL-REVIEW(심볼릭 링크/정션 발견 — rule 55 §1-2, 자동삭제 금지): $($o.Path)"
-            foreach ($d in $detail) { Write-CleanupLog "      link: $d" }
-            $oManual += [pscustomobject]@{ Path = $o.Path; Reason = "심볼릭 링크/정션 포함(표본: $($detail -join ' | ')) — rule 55 §1-2 로 자동삭제 제외" }
-            continue
-        }
-        # (d) 경로 형태 가드 — ScanRoot 밖이거나 reparse point 자체면 손대지 않는다.
-        $underRoot = $false
-        foreach ($r in $ScanRoot) {
-            if ((ConvertTo-GissueComparablePath $o.Path).StartsWith((ConvertTo-GissueComparablePath $r) + '\')) { $underRoot = $true }
-        }
-        if (-not $underRoot) {
-            Write-CleanupLog "MANUAL-REVIEW(ScanRoot 밖 경로 — 삭제 거부): $($o.Path)"
-            $oManual += [pscustomobject]@{ Path = $o.Path; Reason = 'ScanRoot 밖 경로' }
-            continue
-        }
-        $selfItem = Get-Item -LiteralPath $o.Path -Force -ErrorAction SilentlyContinue
-        if ($selfItem -and $selfItem.LinkType) {
-            Write-CleanupLog "MANUAL-REVIEW(대상 자체가 링크/정션 — 삭제 거부): $($o.Path)"
-            $oManual += [pscustomobject]@{ Path = $o.Path; Reason = '대상 디렉터리 자체가 심볼릭 링크/정션' }
-            continue
-        }
-
-        if ($DryRun) {
-            Write-CleanupLog "[DRY-RUN] 삭제 예정(고아, 링크 없음 확인됨): $($o.Path) — $($o.Reason)"
-            $oRemoved += [pscustomobject]@{ Path = $o.Path; Reason = $o.Reason }
-            continue
-        }
-
-        # rule 55 §3 — 삭제 직전 스냅샷.
-        $preSnap = Get-GissueRepoIntegritySnapshot $verifyRepos
-        # 선검사와 삭제 사이의 경합 차단용 2차 링크 검사(직전).
-        if (Test-GissueWorktreeHasLink $o.Path) {
-            Write-CleanupLog "MANUAL-REVIEW(삭제 직전 2차 검사에서 링크 발견 — 중단): $($o.Path)"
-            $oManual += [pscustomobject]@{ Path = $o.Path; Reason = '삭제 직전 2차 링크 검사에서 링크 발견' }
-            continue
-        }
-        # 고아는 등록정보가 없어 `git worktree remove` 가 통하지 않는다(rule 55 §4 의 "우선 사용"
-        # 대상이 물리적으로 불가). 대신 직전 2차 링크 검사로 재귀삭제가 링크를 따라갈 여지를
-        # 없앤 뒤에만 디렉터리 삭제를 수행한다.
-        # giip #2449: `Remove-Item -Recurse` 는 260자 초과 경로에서 실패해 트리를 반쯤 지운 채
-        # 남긴다(pnpm 스토어에서 실측). 공용 헬퍼가 \\?\ 확장 경로로 폴백한다.
-        $oDel = Remove-GissueDirectoryTreeSafely -Path $o.Path -Log { param($m) Write-CleanupLog $m }
-        $delOk = $oDel.Ok
-        if (-not $delOk) {
-            Write-CleanupLog "WARN: 고아 삭제 실패($($o.Path)) — $($oDel.Detail)"
-            $oManual += [pscustomobject]@{ Path = $o.Path; Reason = "삭제 실패: $($oDel.Detail)" }
-        }
-        # rule 55 §3 — 삭제 직후 즉시 재검증(성공/실패 무관).
-        $postSnap = Get-GissueRepoIntegritySnapshot $verifyRepos
-        $oIntegrity = Compare-GissueRepoIntegrity $preSnap $postSnap
-        # giip #2466 — 다른 세션의 정상 커밋으로 HEAD 가 움직인 것은 손상이 아니다. 기록만 남기고 진행.
-        foreach ($w in $oIntegrity.Warnings) { Write-CleanupLog "WARN(rule 55 §3, giip #2466): $w" }
-        $violations = @($oIntegrity.Violations)
-        if ($violations.Count -gt 0) {
-            foreach ($v in $violations) { Write-CleanupLog "CRITICAL: '$($o.Path)' 삭제 직후 — $v (giip #2232 재발 의심)" }
-            Write-CleanupLog "CRITICAL: 즉시 중단합니다. 남은 항목은 처리하지 않습니다."
-            $oAbort = $true; $oAbortReason = ($violations -join ' / ')
-            break
-        }
-        if ($delOk) {
-            Write-CleanupLog "삭제됨(고아, 인접 레포 무결성 재검증 통과 — 검증 $($verifyRepos.Count)개 전부 정상): $($o.Path)"
-            $oRemoved += [pscustomobject]@{ Path = $o.Path; Reason = $o.Reason }
-        }
+    # ★ 판정 엔진의 정본은 worktree-safety.ps1 의 Invoke-GissueOrphanCleanup 이다
+    #   (rule 48 — 고아 경로의 판정 로직을 이 파일에 복붙하지 않는다).
+    #   고아 판정에 공용 idle 가드 + 연결 이슈 상태 판정 + 등록정보 소실 판정이 들어간다.
+    $oo = $null
+    Invoke-GissueOrphanCleanup -ScanRoot $ScanRoot -Csn $Csn -MinIdleMinutes $MinIdleMinutes `
+        -ProtectRecentMinutes $ProtectRecentMinutes -ProtectedPaths $Protect -DryRun:$DryRun `
+        -Log { param($m) Write-CleanupLog $m } -ResultRef ([ref]$oo)
+    if ($null -eq $oo) {
+        Write-CleanupLog 'ERROR: 고아 정리 엔진이 결과를 돌려주지 않았습니다.'
+        exit 1
     }
-
-    if ($oAbort) {
-        Write-CleanupLog "=== 중단됨(rule 55 §3 게이트 발동): $oAbortReason ==="
+    if ($oo.Aborted) { Write-CleanupLog "=== 중단됨(rule 55 게이트 발동): $($oo.AbortReason) ===" }
+    Write-CleanupLog "=== 고아 정리 요약: 삭제 $($oo.Removed.Count)건 / 보호 $($oo.Protected.Count)건 / 수동확인 $($oo.ManualReview.Count)건 (고아 총 $($oo.OrphanTotal)건) ==="
+    if ($oo.Protected.Count -gt 0) {
+        Write-CleanupLog '--- 보호(남김) 목록 ---'
+        foreach ($m in $oo.Protected) { Write-CleanupLog "  - $($m.Path) :: $($m.Reason)" }
     }
-    Write-CleanupLog "=== 고아 정리 요약: 삭제 $($oRemoved.Count)건 / 보호 $($oProtected.Count)건 / 수동확인 $($oManual.Count)건 (고아 총 $($orphans.Count)건) ==="
-    if ($oProtected.Count -gt 0) {
-        Write-CleanupLog "--- 보호(남김) 목록 ---"
-        foreach ($m in $oProtected) { Write-CleanupLog "  - $($m.Path) :: $($m.Reason)" }
+    if ($oo.ManualReview.Count -gt 0) {
+        Write-CleanupLog '--- 수동확인 필요(남김) 목록 ---'
+        foreach ($m in $oo.ManualReview) { Write-CleanupLog "  - $($m.Path) :: $($m.Reason)" }
     }
-    if ($oManual.Count -gt 0) {
-        Write-CleanupLog "--- 수동확인 필요(남김) 목록 ---"
-        foreach ($m in $oManual) { Write-CleanupLog "  - $($m.Path) :: $($m.Reason)" }
-    }
-
     [pscustomobject]@{
         Mode         = 'OrphanScan'
         DryRun       = [bool]$DryRun.IsPresent
-        ScannedTotal = $all.Count
-        OrphanTotal  = $orphans.Count
-        Removed      = $oRemoved
-        Protected    = $oProtected
-        ManualReview = $oManual
-        Malformed    = $malformed
-        Aborted      = $oAbort
-        AbortReason  = $oAbortReason
+        ScannedTotal = $oo.ScannedTotal
+        OrphanTotal  = $oo.OrphanTotal
+        Removed      = $oo.Removed
+        Protected    = $oo.Protected
+        ManualReview = $oo.ManualReview
+        Malformed    = $oo.Malformed
+        Aborted      = $oo.Aborted
+        AbortReason  = $oo.AbortReason
     }
     exit 0
 }
