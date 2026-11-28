@@ -103,7 +103,7 @@ try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } 
 # 2026-11-28: 후속(캐리오버) 이슈 제목이 큰따옴표에서 잘리는 결함 회귀 테스트 1건
 #   (test-followup-title-file.ps1, giip 6620) 추가 → 63 → 64.
 #   (실재 ps1 테스트 64건으로 2026-11-28 실측 — 신규 1건 반영 후 기대값과 정확히 일치(슬랙 0).)
-$ExpectedPs1TestCount = 64
+$ExpectedPs1TestCount = 65
 $ExpectedMjsTestCount = 11
 
 function Write-Gate([string]$Message) {
